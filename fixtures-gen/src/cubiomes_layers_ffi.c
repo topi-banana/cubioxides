@@ -55,6 +55,10 @@ void cubiomes_call_map_end(int mc, uint64_t seed, int *out, int x, int z, int w,
     mapEnd(&en, out, x, z, w, h);
 }
 
+int cubiomes_call_climate_to_biome(int mc, const uint64_t np[6]) {
+    return climateToBiome(mc, np, NULL);
+}
+
 void cubiomes_call_map_continent(uint64_t start_seed, int *out, int x, int z,
                                  int w, int h) {
     Layer l;

@@ -354,6 +354,10 @@ fn regenerate_noise() -> ExitCode {
         eprintln!("end fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_climate_fixture(&fixtures_dir.join("climate.bin")) {
+        eprintln!("climate fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote noise fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2674,6 +2678,50 @@ fn write_nether_fixture(path: &Path) -> std::io::Result<()> {
     file.flush()
 }
 
+/// `climateToBiome` parity record (kind = 43). One 6-axis climate
+/// tuple per record, paired with cubiomes' returned biome id.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ClimateRecord {
+    pub mc: u32,
+    pub biome_id: i32,
+    pub np: [u64; 6],
+}
+
+const CLIMATE_RECORDS: u64 = 2048;
+
+fn write_climate_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 43, CLIMATE_RECORDS)?;
+
+    // 1.18 (22), 1.19.2 (23), 1.19.4 (24), 1.20.6 (25), 1.21 WD (28)
+    let mc_versions: [i32; 5] = [22, 23, 24, 25, 28];
+
+    let mut rng_state: u64 = 0x0000_c11e_ea7e_5000;
+    for _ in 0..CLIMATE_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let mc = mc_versions[(rng_state as usize) % mc_versions.len()];
+        let mut np = [0u64; 6];
+        for slot in &mut np {
+            rng_state = lcg_step(rng_state);
+            // Climate values are typically in [-20000, 20000] (10000 *
+            // noise sample). Mix in occasional out-of-range values to
+            // exercise the wrap-around arithmetic on both sides of
+            // cubiomes' `(int64_t)a > 0` test.
+            let signed = (rng_state as i64) % 25000;
+            *slot = signed as u64;
+        }
+        let biome_id = unsafe { ffi::cubiomes_call_climate_to_biome(mc, np.as_ptr()) };
+        let rec = ClimateRecord {
+            mc: mc as u32,
+            biome_id,
+            np,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
 /// `EndNoise` parity record (kind = 42). Per-record digests of
 /// `mapEndBiome` (1:16 scale, raw heightmap dispatch) and `mapEnd`
 /// (1:4 wrapper) over a small grid.
@@ -3203,6 +3251,7 @@ mod ffi {
             w: c_int,
             h: c_int,
         );
+        pub fn cubiomes_call_climate_to_biome(mc: c_int, np: *const u64) -> c_int;
         pub fn cubiomes_call_gen_area_at(
             mc: c_int,
             large_biomes: c_int,
