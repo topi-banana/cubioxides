@@ -285,6 +285,16 @@ int cubiomes_call_gen_area_at(int mc, int large_biomes, uint64_t world_seed,
     return genArea(g.layers + layer_id_ord, out, x, z, w, h);
 }
 
+/* Run cubiomes' genArea at the per-version entry_1 (Voronoi1). */
+int cubiomes_call_gen_area_at_entry1(int mc, int large_biomes,
+                                     uint64_t world_seed, int *out, int x,
+                                     int z, int w, int h) {
+    LayerStack g;
+    setupLayerStack(&g, mc, large_biomes);
+    setLayerSeed(g.entry_1, world_seed);
+    return genArea(g.entry_1, out, x, z, w, h);
+}
+
 /* Dump (layerSalt, startSalt, startSeed) of every node in a freshly
  * setup LayerStack into `out` after a setLayerSeed(entry_1, seed).
  * Layout: 3 * L_NUM uint64s in cubiomes index order. */

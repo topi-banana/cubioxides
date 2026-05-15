@@ -563,6 +563,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("gen_area fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_gen_area_entry1_fixture(&fixtures_dir.join("gen_area_entry1.bin")) {
+        eprintln!("gen_area_entry1 fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1587,6 +1591,89 @@ fn post_biome_record(
         digest,
         pad: 0,
     }
+}
+
+/// `genArea` at `entry_1` (Voronoi) parity record (kind = 39). One
+/// record per `(mc, world_seed)` tuple — runs cubiomes' `genArea`
+/// against the per-version Voronoi entry, which exercises the entire
+/// DAG end-to-end for that MC. `(x, z, w, h)` is aligned to 4 so
+/// cubiomes writes every output cell (avoiding the stale-parent
+/// scratch quirk that bites Voronoi at unaligned origins).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct GenAreaEntry1Record {
+    pub mc: u32,
+    pub large_biomes: u32,
+    pub world_seed: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const GEN_AREA_ENTRY1_RECORDS: u64 = 384;
+
+fn write_gen_area_entry1_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 39, GEN_AREA_ENTRY1_RECORDS)?;
+
+    // MC ordinals that exercise distinct DAG branches:
+    // B1.8 (2), 1.0 (3), 1.1 (4), 1.6 (9), 1.7 (10), 1.12 (15),
+    // 1.13 (16), 1.14 (17), 1.18 (22), 1.20 (25). The pre-1.13
+    // branches all share the river+smooth tail with a Voronoi114
+    // capstone; 1.13+ adds the ocean variants. 1.14 toggles Bamboo
+    // on, 1.15+ switches to SHA-driven Voronoi.
+    let mc_versions: [i32; 10] = [2, 3, 4, 9, 10, 15, 16, 17, 22, 25];
+
+    let mut rng_state: u64 = 0x070_e1a_1e1_777;
+    for _ in 0..GEN_AREA_ENTRY1_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let mc = mc_versions[(rng_state as usize) % mc_versions.len()];
+        rng_state = lcg_step(rng_state);
+        let large_biomes = (rng_state & 1) as c_int;
+        rng_state = lcg_step(rng_state);
+        // Align to 4 (Voronoi-friendly) and keep dimensions modest so
+        // chains down to 1:4096 still resolve to non-trivial output.
+        let w = (((rng_state & 0xf) as u32) + 4) & !3;
+        let h = (((rng_state >> 8) & 0xf) as u32 + 4) & !3;
+        rng_state = lcg_step(rng_state);
+        let x = ((rng_state as i32) % 32) & !3;
+        rng_state = lcg_step(rng_state);
+        let z = ((rng_state as i32) % 32) & !3;
+
+        let cells = (w as usize) * (h as usize) + ((w as usize + 32) * (h as usize + 32)) * 2;
+        let mut out: Vec<i32> = vec![0; cells];
+        unsafe {
+            ffi::cubiomes_call_gen_area_at_entry1(
+                mc,
+                large_biomes,
+                world_seed,
+                out.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            );
+        }
+        let digest = digest_i32_slice(&out[..(w * h) as usize]);
+        let rec = GenAreaEntry1Record {
+            mc: mc as u32,
+            large_biomes: large_biomes as u32,
+            world_seed,
+            x,
+            z,
+            w,
+            h,
+            digest,
+            pad: 0,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
 }
 
 /// `genArea` parity record (kind = 38). Runs cubiomes' `genArea` on a
@@ -2843,6 +2930,16 @@ mod ffi {
             large_biomes: c_int,
             world_seed: u64,
             layer_id_ord: c_int,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_gen_area_at_entry1(
+            mc: c_int,
+            large_biomes: c_int,
+            world_seed: u64,
             out: *mut c_int,
             x: c_int,
             z: c_int,
