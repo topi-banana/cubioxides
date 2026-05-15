@@ -140,16 +140,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_ord_matches_declaration_order() {
-        // Spot-checks that ord() returns the discriminants in the order we
-        // declared variants. If this fails, downstream `as u8` parity with
-        // cubiomes' enum is broken.
+    fn version_ord_matches_cubiomes_enum() {
+        // Discriminants must line up with cubiomes/biomes.h `enum MCVersion`
+        // exactly, so `as u8` round-trips through the FFI layer.
         assert_eq!(MCVersion::Undef.ord(), 0);
         assert_eq!(MCVersion::B1_7.ord(), 1);
         assert_eq!(MCVersion::B1_8.ord(), 2);
         assert_eq!(MCVersion::V1_0.ord(), 3);
-        assert!(MCVersion::V1_18.ord() > MCVersion::V1_17.ord());
-        assert!(MCVersion::V1_21.ord() >= MCVersion::V1_21_3.ord());
+        assert_eq!(MCVersion::V1_16_1.ord(), 19);
+        assert_eq!(MCVersion::V1_16.ord(), 20);
+        assert_eq!(MCVersion::V1_17.ord(), 21);
+        assert_eq!(MCVersion::V1_18.ord(), 22);
+        assert_eq!(MCVersion::V1_19_2.ord(), 23);
+        assert_eq!(MCVersion::V1_19.ord(), 24);
+        assert_eq!(MCVersion::V1_20.ord(), 25);
+        assert_eq!(MCVersion::V1_21_1.ord(), 26);
+        assert_eq!(MCVersion::V1_21_3.ord(), 27);
+        assert_eq!(MCVersion::V1_21.ord(), 28);
     }
 
     #[test]

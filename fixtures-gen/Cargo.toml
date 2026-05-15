@@ -1,0 +1,20 @@
+[package]
+name = "fixtures-gen"
+description = "Reference fixture generator: links cubiomes via FFI and dumps test inputs."
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "fixtures-gen"
+path = "src/main.rs"
+
+[build-dependencies]
+cc = { workspace = true }
+
+[lints]
+workspace = true
