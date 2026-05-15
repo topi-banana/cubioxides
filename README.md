@@ -11,8 +11,8 @@ reference C implementation when given the same seed and coordinates.
 ## Status
 
 Work in progress. See the milestone plan in
-[`.claude/plans/`](https://github.com/topi-oke/cubioxides) for current
-scope and progress.
+[`.claude/plans/`](https://github.com/topi-banana/cubioxides) for
+current scope and progress.
 
 ## Crates
 
