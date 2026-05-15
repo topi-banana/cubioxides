@@ -328,10 +328,15 @@ fn regenerate_noise() -> ExitCode {
         eprintln!("perlin fixture failed: {err}");
         return ExitCode::FAILURE;
     }
-    println!(
-        "Wrote {RECORD_COUNT} noise records into {}",
-        fixtures_dir.display()
-    );
+    if let Err(err) = write_octave_fixture(&fixtures_dir.join("octave.bin")) {
+        eprintln!("octave fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_double_perlin_fixture(&fixtures_dir.join("double_perlin.bin")) {
+        eprintln!("double_perlin fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    println!("Wrote noise fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
 
@@ -433,6 +438,158 @@ fn perlin_record(seed: u64, x: f64, y: f64, z: f64, yamp: f64, ymin: f64) -> Per
     }
 }
 
+/// Octave noise record (kind = 5). Uses fixed omin = -3, len = 4 for both
+/// the Java and Xoroshiro initialisers (amplitudes = [1, 1, 1, 1]).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct OctaveRecord {
+    pub seed: u64,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub java_sample_bits: u64,
+    pub xoroshiro_sample_bits: u64,
+}
+
+/// Double-Perlin record (kind = 6). Same setup as `OctaveRecord`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct DoublePerlinRecord {
+    pub seed: u64,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub java_sample_bits: u64,
+    pub xoroshiro_sample_bits: u64,
+}
+
+const OCT_OMIN: i32 = -3;
+const OCT_LEN: i32 = 4;
+const OCT_AMPS: [f64; 4] = [1.0, 1.0, 1.0, 1.0];
+
+fn write_octave_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 5, RECORD_COUNT)?;
+
+    let mut rng_state: u64 = 0x0bad_f00d_d00d;
+    for i in 0..RECORD_COUNT {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state ^ i;
+        rng_state = lcg_step(rng_state);
+        let x = u64_to_double_signed(rng_state) * 100.0;
+        rng_state = lcg_step(rng_state);
+        let y = u64_to_double_signed(rng_state) * 16.0;
+        rng_state = lcg_step(rng_state);
+        let z = u64_to_double_signed(rng_state) * 100.0;
+        let rec = octave_record(seed, x, y, z);
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn octave_record(seed: u64, x: f64, y: f64, z: f64) -> OctaveRecord {
+    let java_sample_bits = unsafe {
+        let mut octaves = std::mem::zeroed::<[ffi::CPerlinNoise; OCT_LEN as usize]>();
+        let mut oct = std::mem::zeroed::<ffi::COctaveNoise>();
+        let mut s = ffi::cubiomes_set_seed(seed);
+        ffi::octaveInit(
+            &raw mut oct,
+            &raw mut s,
+            octaves.as_mut_ptr(),
+            OCT_OMIN,
+            OCT_LEN,
+        );
+        ffi::sampleOctave(&raw const oct, x, y, z).to_bits()
+    };
+    let xoroshiro_sample_bits = unsafe {
+        let mut octaves = std::mem::zeroed::<[ffi::CPerlinNoise; OCT_LEN as usize]>();
+        let mut oct = std::mem::zeroed::<ffi::COctaveNoise>();
+        let mut xr = ffi::Xoroshiro { lo: 0, hi: 0 };
+        ffi::cubiomes_x_set_seed(&raw mut xr, seed);
+        ffi::xOctaveInit(
+            &raw mut oct,
+            &raw mut xr,
+            octaves.as_mut_ptr(),
+            OCT_AMPS.as_ptr(),
+            OCT_OMIN,
+            OCT_LEN,
+            -1,
+        );
+        ffi::sampleOctave(&raw const oct, x, y, z).to_bits()
+    };
+    OctaveRecord {
+        seed,
+        x,
+        y,
+        z,
+        java_sample_bits,
+        xoroshiro_sample_bits,
+    }
+}
+
+fn write_double_perlin_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 6, RECORD_COUNT)?;
+
+    let mut rng_state: u64 = 0x1357_9bdf_2468;
+    for i in 0..RECORD_COUNT {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state ^ i;
+        rng_state = lcg_step(rng_state);
+        let x = u64_to_double_signed(rng_state) * 100.0;
+        rng_state = lcg_step(rng_state);
+        let y = u64_to_double_signed(rng_state) * 16.0;
+        rng_state = lcg_step(rng_state);
+        let z = u64_to_double_signed(rng_state) * 100.0;
+        let rec = double_perlin_record(seed, x, y, z);
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn double_perlin_record(seed: u64, x: f64, y: f64, z: f64) -> DoublePerlinRecord {
+    let java_sample_bits = unsafe {
+        let mut octaves_a = std::mem::zeroed::<[ffi::CPerlinNoise; OCT_LEN as usize]>();
+        let mut octaves_b = std::mem::zeroed::<[ffi::CPerlinNoise; OCT_LEN as usize]>();
+        let mut dp = std::mem::zeroed::<ffi::CDoublePerlinNoise>();
+        let mut s = ffi::cubiomes_set_seed(seed);
+        ffi::doublePerlinInit(
+            &raw mut dp,
+            &raw mut s,
+            octaves_a.as_mut_ptr(),
+            octaves_b.as_mut_ptr(),
+            OCT_OMIN,
+            OCT_LEN,
+        );
+        ffi::sampleDoublePerlin(&raw const dp, x, y, z).to_bits()
+    };
+    let xoroshiro_sample_bits = unsafe {
+        // xDoublePerlinInit takes a single octaves buffer of size 2 * len.
+        let mut octaves = std::mem::zeroed::<[ffi::CPerlinNoise; (2 * OCT_LEN) as usize]>();
+        let mut dp = std::mem::zeroed::<ffi::CDoublePerlinNoise>();
+        let mut xr = ffi::Xoroshiro { lo: 0, hi: 0 };
+        ffi::cubiomes_x_set_seed(&raw mut xr, seed);
+        ffi::xDoublePerlinInit(
+            &raw mut dp,
+            &raw mut xr,
+            octaves.as_mut_ptr(),
+            OCT_AMPS.as_ptr(),
+            OCT_OMIN,
+            OCT_LEN,
+            -1,
+        );
+        ffi::sampleDoublePerlin(&raw const dp, x, y, z).to_bits()
+    };
+    DoublePerlinRecord {
+        seed,
+        x,
+        y,
+        z,
+        java_sample_bits,
+        xoroshiro_sample_bits,
+    }
+}
+
 fn mc_seed_record(seed: u64, salt: u64) -> McSeedRecord {
     let mut rec = McSeedRecord::zeroed();
     rec.seed = seed;
@@ -479,6 +636,23 @@ mod ffi {
         pub t2: f64,
     }
 
+    /// C-layout `OctaveNoise`.
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy)]
+    pub struct COctaveNoise {
+        pub octcnt: c_int,
+        pub octaves: *mut CPerlinNoise,
+    }
+
+    /// C-layout `DoublePerlinNoise`.
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy)]
+    pub struct CDoublePerlinNoise {
+        pub amplitude: f64,
+        pub oct_a: COctaveNoise,
+        pub oct_b: COctaveNoise,
+    }
+
     unsafe extern "C" {
         pub fn mc2str(mc: c_int) -> *const c_char;
 
@@ -523,5 +697,48 @@ mod ffi {
         ) -> f64;
         #[allow(non_snake_case)]
         pub fn sampleSimplex2D(noise: *const CPerlinNoise, x: f64, y: f64) -> f64;
+
+        #[allow(non_snake_case)]
+        pub fn octaveInit(
+            noise: *mut COctaveNoise,
+            seed: *mut u64,
+            octaves: *mut CPerlinNoise,
+            omin: c_int,
+            len: c_int,
+        );
+        #[allow(non_snake_case)]
+        pub fn xOctaveInit(
+            noise: *mut COctaveNoise,
+            xr: *mut Xoroshiro,
+            octaves: *mut CPerlinNoise,
+            amplitudes: *const f64,
+            omin: c_int,
+            len: c_int,
+            nmax: c_int,
+        ) -> c_int;
+        #[allow(non_snake_case)]
+        pub fn sampleOctave(noise: *const COctaveNoise, x: f64, y: f64, z: f64) -> f64;
+
+        #[allow(non_snake_case)]
+        pub fn doublePerlinInit(
+            noise: *mut CDoublePerlinNoise,
+            seed: *mut u64,
+            octaves_a: *mut CPerlinNoise,
+            octaves_b: *mut CPerlinNoise,
+            omin: c_int,
+            len: c_int,
+        );
+        #[allow(non_snake_case)]
+        pub fn xDoublePerlinInit(
+            noise: *mut CDoublePerlinNoise,
+            xr: *mut Xoroshiro,
+            octaves: *mut CPerlinNoise,
+            amplitudes: *const f64,
+            omin: c_int,
+            len: c_int,
+            nmax: c_int,
+        ) -> c_int;
+        #[allow(non_snake_case)]
+        pub fn sampleDoublePerlin(noise: *const CDoublePerlinNoise, x: f64, y: f64, z: f64) -> f64;
     }
 }

@@ -12,7 +12,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use bytemuck::{Pod, Zeroable};
-use cubioxides::noise::PerlinNoise;
+use cubioxides::noise::{DoublePerlinNoise, OctaveNoise, PerlinNoise};
 use cubioxides::rng::{JavaRng, Xoroshiro};
 
 const MAGIC: [u8; 4] = *b"CUBX";
@@ -81,6 +81,32 @@ fn load_fixture<R: Pod>(name: &str, expected_kind: u16) -> Vec<R> {
     records.to_vec()
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct OctaveRecord {
+    seed: u64,
+    x: f64,
+    y: f64,
+    z: f64,
+    java_sample_bits: u64,
+    xoroshiro_sample_bits: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct DoublePerlinRecord {
+    seed: u64,
+    x: f64,
+    y: f64,
+    z: f64,
+    java_sample_bits: u64,
+    xoroshiro_sample_bits: u64,
+}
+
+const OCT_OMIN: i32 = -3;
+const OCT_LEN: i32 = 4;
+const OCT_AMPS: [f64; 4] = [1.0, 1.0, 1.0, 1.0];
+
 #[test]
 fn perlin_matches_cubiomes() {
     let records: Vec<PerlinRecord> = load_fixture("perlin.bin", 4);
@@ -124,6 +150,66 @@ fn perlin_matches_cubiomes() {
             s.to_bits(),
             rec.xoroshiro_simplex_bits,
             "xoroshiro simplex at record {i} (seed = {})",
+            rec.seed
+        );
+    }
+}
+
+#[test]
+fn octave_matches_cubiomes() {
+    let records: Vec<OctaveRecord> = load_fixture("octave.bin", 5);
+    assert!(!records.is_empty());
+
+    for (i, rec) in records.iter().enumerate() {
+        // Java octaveInit + sampleOctave.
+        let mut rng = JavaRng::new(rec.seed);
+        let oct = OctaveNoise::from_java(&mut rng, OCT_OMIN, OCT_LEN);
+        let v = oct.sample(rec.x, rec.y, rec.z);
+        assert_eq!(
+            v.to_bits(),
+            rec.java_sample_bits,
+            "java octave sample at record {i} (seed = {})",
+            rec.seed
+        );
+
+        // Xoroshiro xOctaveInit + sampleOctave (amplitudes = [1; 4]).
+        let mut xr = Xoroshiro::new(rec.seed);
+        let oct = OctaveNoise::from_xoroshiro(&mut xr, &OCT_AMPS, OCT_OMIN, None);
+        let v = oct.sample(rec.x, rec.y, rec.z);
+        assert_eq!(
+            v.to_bits(),
+            rec.xoroshiro_sample_bits,
+            "xoroshiro octave sample at record {i} (seed = {})",
+            rec.seed
+        );
+    }
+}
+
+#[test]
+fn double_perlin_matches_cubiomes() {
+    let records: Vec<DoublePerlinRecord> = load_fixture("double_perlin.bin", 6);
+    assert!(!records.is_empty());
+
+    for (i, rec) in records.iter().enumerate() {
+        // Java doublePerlinInit + sampleDoublePerlin.
+        let mut rng = JavaRng::new(rec.seed);
+        let dp = DoublePerlinNoise::from_java(&mut rng, OCT_OMIN, OCT_LEN);
+        let v = dp.sample(rec.x, rec.y, rec.z);
+        assert_eq!(
+            v.to_bits(),
+            rec.java_sample_bits,
+            "java double_perlin sample at record {i} (seed = {})",
+            rec.seed
+        );
+
+        // Xoroshiro xDoublePerlinInit + sampleDoublePerlin.
+        let mut xr = Xoroshiro::new(rec.seed);
+        let dp = DoublePerlinNoise::from_xoroshiro(&mut xr, &OCT_AMPS, OCT_OMIN, None);
+        let v = dp.sample(rec.x, rec.y, rec.z);
+        assert_eq!(
+            v.to_bits(),
+            rec.xoroshiro_sample_bits,
+            "xoroshiro double_perlin sample at record {i} (seed = {})",
             rec.seed
         );
     }
