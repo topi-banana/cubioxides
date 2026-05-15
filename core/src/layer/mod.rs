@@ -17,6 +17,7 @@ pub use ops::island::map_island;
 pub use ops::land::{map_land, map_land_b18, map_land16};
 pub use ops::mushroom::map_mushroom;
 pub use ops::noise::map_noise;
+pub use ops::ocean_temp::map_ocean_temp;
 pub use ops::river::map_river;
 pub use ops::river_mix::map_river_mix;
 pub use ops::smooth::map_smooth;
