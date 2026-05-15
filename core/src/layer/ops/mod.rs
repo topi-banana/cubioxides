@@ -21,4 +21,5 @@ pub mod special;
 pub mod sunflower;
 pub mod swamp_river;
 pub mod temperature;
+pub mod voronoi;
 pub mod zoom;

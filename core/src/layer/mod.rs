@@ -27,4 +27,5 @@ pub use ops::special::map_special;
 pub use ops::sunflower::map_sunflower;
 pub use ops::swamp_river::map_swamp_river;
 pub use ops::temperature::{map_cool, map_heat};
+pub use ops::voronoi::map_voronoi114;
 pub use ops::zoom::{map_zoom, map_zoom_fuzzy};
