@@ -29,11 +29,14 @@ pub const fn mc_step_seed(s: u64, salt: u64) -> u64 {
 /// First PRNG integer in `[0, m)` derived from a chunk seed.
 ///
 /// Mirrors `mcFirstInt`: the seed is treated as `i64`, arithmetic-shifted
-/// right by 24, taken modulo `m`, and adjusted into the positive range.
+/// right by 24, taken modulo `m` *in 64-bit precision*, then truncated to
+/// `i32` and adjusted into the positive range. The order matters — taking
+/// `as i32` before `% m` would drop the upper 32 bits and yield a
+/// different remainder whenever `s >> 24` is outside `i32` range.
 #[inline]
 #[must_use]
 pub const fn mc_first_int(s: u64, m: i32) -> i32 {
-    let r = ((s as i64) >> 24) as i32 % m;
+    let r = (((s as i64) >> 24) % (m as i64)) as i32;
     if r < 0 { r + m } else { r }
 }
 
@@ -42,7 +45,7 @@ pub const fn mc_first_int(s: u64, m: i32) -> i32 {
 #[inline]
 #[must_use]
 pub const fn mc_first_is_zero(s: u64, m: i32) -> bool {
-    (((s as i64) >> 24) as i32 % m) == 0
+    (((s as i64) >> 24) % (m as i64)) == 0
 }
 
 /// Combine the per-layer start seed with chunk coordinates.

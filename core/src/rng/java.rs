@@ -98,12 +98,16 @@ impl JavaRng {
 
     /// Return the next pseudorandom `u64`.
     ///
-    /// Two 32-bit `next` calls are concatenated MSB-first.
+    /// Two 32-bit `next` calls are concatenated MSB-first. cubiomes' C code
+    /// casts each `int` to `uint64_t` (a *sign-extending* cast in C99 when
+    /// the source type is signed), so a negative result from either `next`
+    /// call propagates the sign bit through the result. Rust requires us
+    /// to spell that out by going through `i64`.
     #[inline]
     pub const fn next_long(&mut self) -> u64 {
-        let hi = self.next(32) as u32 as u64;
-        let lo = self.next(32) as u32 as u64;
-        (hi << 32).wrapping_add(lo)
+        let hi = self.next(32) as i64;
+        let lo = self.next(32) as i64;
+        ((hi << 32).wrapping_add(lo)) as u64
     }
 
     /// Return the next pseudorandom `f32` in `[0, 1)`.
@@ -231,13 +235,15 @@ mod tests {
     }
 
     #[test]
-    fn next_long_concatenates_two_next32_calls() {
+    fn next_long_concatenates_two_next32_calls_with_sign_extension() {
         let mut a = JavaRng::new(7);
         let mut b = JavaRng::new(7);
         let merged = a.next_long();
-        let hi = b.next(32) as u32 as u64;
-        let lo = b.next(32) as u32 as u64;
-        assert_eq!(merged, (hi << 32).wrapping_add(lo));
+        // C99 promotes each `int` to `uint64_t` with sign extension, so
+        // mirror that explicitly here.
+        let hi = b.next(32) as i64;
+        let lo = b.next(32) as i64;
+        assert_eq!(merged, ((hi << 32).wrapping_add(lo)) as u64);
     }
 
     #[test]
