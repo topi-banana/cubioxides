@@ -15,3 +15,7 @@
 //! `parallel` and `colors`) are gated on `not(target_arch = "wasm32")`.
 
 #![cfg_attr(not(test), warn(missing_docs))]
+
+pub mod mc_version;
+
+pub use mc_version::{Dimension, MCVersion};
