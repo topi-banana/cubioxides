@@ -47,8 +47,12 @@ impl Biome {
     pub const BEACH: Self = Self(16);
     /// `jungle` (biome id 21).
     pub const JUNGLE: Self = Self(21);
+    /// `jungle_hills` (biome id 22).
+    pub const JUNGLE_HILLS: Self = Self(22);
     /// `bamboo_jungle` (biome id 168).
     pub const BAMBOO_JUNGLE: Self = Self(168);
+    /// `sunflower_plains` (biome id 129; `plains + 128`).
+    pub const SUNFLOWER_PLAINS: Self = Self(129);
     /// `deep_ocean` (biome id 24).
     pub const DEEP_OCEAN: Self = Self(24);
     /// `stone_shore` (biome id 25).
