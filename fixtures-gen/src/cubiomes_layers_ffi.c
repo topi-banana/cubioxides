@@ -201,6 +201,75 @@ void cubiomes_call_map_heat(uint64_t world_seed, uint64_t continent_salt,
                 x, z, w, h);
 }
 
+/* 4-layer chain: mapContinent -> mapSnow -> mapBiome -> child. Each
+ * layer is given its own salt. `child_fn` operates on biome-id input. */
+static int call_chain4(mapfunc_t *child_fn, uint64_t world_seed, int mc,
+                       uint64_t continent_salt, uint64_t snow_salt,
+                       uint64_t biome_salt, uint64_t child_salt, int *out,
+                       int x, int z, int w, int h) {
+    Layer continent;
+    memset(&continent, 0, sizeof(continent));
+    continent.getMap = mapContinent;
+    continent.layerSalt = continent_salt;
+    continent.mc = mc;
+
+    Layer snow;
+    memset(&snow, 0, sizeof(snow));
+    snow.getMap = mapSnow;
+    snow.layerSalt = snow_salt;
+    snow.mc = mc;
+    snow.p = &continent;
+
+    Layer biome;
+    memset(&biome, 0, sizeof(biome));
+    biome.getMap = mapBiome;
+    biome.layerSalt = biome_salt;
+    biome.mc = mc;
+    biome.p = &snow;
+
+    Layer child;
+    memset(&child, 0, sizeof(child));
+    child.getMap = child_fn;
+    child.layerSalt = child_salt;
+    child.mc = mc;
+    child.p = &biome;
+
+    setLayerSeed(&child, world_seed);
+    return child_fn(&child, out, x, z, w, h);
+}
+
+void cubiomes_call_map_noise(uint64_t world_seed, int mc,
+                             uint64_t continent_salt, uint64_t snow_salt,
+                             uint64_t biome_salt, uint64_t child_salt, int *out,
+                             int x, int z, int w, int h) {
+    call_chain4(mapNoise, world_seed, mc, continent_salt, snow_salt, biome_salt,
+                child_salt, out, x, z, w, h);
+}
+
+void cubiomes_call_map_bamboo(uint64_t world_seed, int mc,
+                              uint64_t continent_salt, uint64_t snow_salt,
+                              uint64_t biome_salt, uint64_t child_salt,
+                              int *out, int x, int z, int w, int h) {
+    call_chain4(mapBamboo, world_seed, mc, continent_salt, snow_salt,
+                biome_salt, child_salt, out, x, z, w, h);
+}
+
+void cubiomes_call_map_swamp_river(uint64_t world_seed, int mc,
+                                   uint64_t continent_salt, uint64_t snow_salt,
+                                   uint64_t biome_salt, uint64_t child_salt,
+                                   int *out, int x, int z, int w, int h) {
+    call_chain4(mapSwampRiver, world_seed, mc, continent_salt, snow_salt,
+                biome_salt, child_salt, out, x, z, w, h);
+}
+
+void cubiomes_call_map_sunflower(uint64_t world_seed, int mc,
+                                 uint64_t continent_salt, uint64_t snow_salt,
+                                 uint64_t biome_salt, uint64_t child_salt,
+                                 int *out, int x, int z, int w, int h) {
+    call_chain4(mapSunflower, world_seed, mc, continent_salt, snow_salt,
+                biome_salt, child_salt, out, x, z, w, h);
+}
+
 void cubiomes_call_map_biome(uint64_t world_seed, int mc,
                              uint64_t continent_salt, uint64_t snow_salt,
                              uint64_t biome_salt, int *out, int x, int z, int w,

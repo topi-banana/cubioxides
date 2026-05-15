@@ -499,6 +499,18 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("biome fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    for kind in [
+        FourHopKind::Noise,
+        FourHopKind::Bamboo,
+        FourHopKind::SwampRiver,
+        FourHopKind::Sunflower,
+    ] {
+        let path = fixtures_dir.join(format!("{}.bin", kind.name()));
+        if let Err(err) = write_four_hop_fixture(&path, kind) {
+            eprintln!("{} fixture failed: {err}", kind.name());
+            return ExitCode::FAILURE;
+        }
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1216,6 +1228,158 @@ fn biome_record(
     }
 }
 
+/// 4-hop layer record (kinds 22..=25). Chain: continent -> snow ->
+/// biome -> target, all with `mc = MC_1_7`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct FourHopRecord {
+    pub world_seed: u64,
+    pub continent_salt: u64,
+    pub snow_salt: u64,
+    pub biome_salt: u64,
+    pub child_salt: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const FOUR_HOP_RECORDS: u64 = 4096;
+
+#[derive(Copy, Clone)]
+enum FourHopKind {
+    Noise,
+    Bamboo,
+    SwampRiver,
+    Sunflower,
+}
+
+impl FourHopKind {
+    const fn fixture_kind(self) -> u16 {
+        match self {
+            Self::Noise => 22,
+            Self::Bamboo => 23,
+            Self::SwampRiver => 24,
+            Self::Sunflower => 25,
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Noise => "noise",
+            Self::Bamboo => "bamboo",
+            Self::SwampRiver => "swamp_river",
+            Self::Sunflower => "sunflower_layer",
+        }
+    }
+
+    const fn rng_seed(self) -> u64 {
+        match self {
+            Self::Noise => 0x4001_5e4e_4e01,
+            Self::Bamboo => 0xba11_b00b_5350,
+            Self::SwampRiver => 0x5a73_4137_1733,
+            Self::Sunflower => 0x5111_4f10_1011,
+        }
+    }
+}
+
+fn write_four_hop_fixture(path: &Path, kind: FourHopKind) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, kind.fixture_kind(), FOUR_HOP_RECORDS)?;
+
+    let mut rng_state: u64 = kind.rng_seed();
+    for _ in 0..FOUR_HOP_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let continent_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let snow_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let biome_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let child_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let w = ((rng_state & 0xf) as u32) + 2;
+        let h = ((rng_state >> 8) & 0xf) as u32 + 2;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 64;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 64;
+        let rec = four_hop_record(
+            kind,
+            world_seed,
+            continent_salt,
+            snow_salt,
+            biome_salt,
+            child_salt,
+            x,
+            z,
+            w,
+            h,
+        );
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn four_hop_record(
+    kind: FourHopKind,
+    world_seed: u64,
+    continent_salt: u64,
+    snow_salt: u64,
+    biome_salt: u64,
+    child_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+) -> FourHopRecord {
+    // 4-hop chain needs (w+6, h+6) cells at most (continent reads
+    // (w+6) for snow which reads (w+4) for biome which reads (w, h)
+    // for the child).
+    let p_cells = ((w + 8) * (h + 8)) as usize;
+    let mut out: Vec<i32> = vec![0; p_cells];
+    unsafe {
+        let dispatch = match kind {
+            FourHopKind::Noise => ffi::cubiomes_call_map_noise,
+            FourHopKind::Bamboo => ffi::cubiomes_call_map_bamboo,
+            FourHopKind::SwampRiver => ffi::cubiomes_call_map_swamp_river,
+            FourHopKind::Sunflower => ffi::cubiomes_call_map_sunflower,
+        };
+        dispatch(
+            world_seed,
+            MC_1_7,
+            continent_salt,
+            snow_salt,
+            biome_salt,
+            child_salt,
+            out.as_mut_ptr(),
+            x,
+            z,
+            w as c_int,
+            h as c_int,
+        );
+    }
+    let cells = (w * h) as usize;
+    let digest = digest_i32_slice(&out[..cells]);
+    FourHopRecord {
+        world_seed,
+        continent_salt,
+        snow_salt,
+        biome_salt,
+        child_salt,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
+}
+
 /// Octave noise record (kind = 5). Uses fixed omin = -3, len = 4 for both
 /// the Java and Xoroshiro initialisers (amplitudes = [1, 1, 1, 1]).
 #[repr(C)]
@@ -1666,6 +1830,58 @@ mod ffi {
             continent_salt: u64,
             snow_salt: u64,
             biome_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_noise(
+            world_seed: u64,
+            mc: c_int,
+            continent_salt: u64,
+            snow_salt: u64,
+            biome_salt: u64,
+            child_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_bamboo(
+            world_seed: u64,
+            mc: c_int,
+            continent_salt: u64,
+            snow_salt: u64,
+            biome_salt: u64,
+            child_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_swamp_river(
+            world_seed: u64,
+            mc: c_int,
+            continent_salt: u64,
+            snow_salt: u64,
+            biome_salt: u64,
+            child_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_sunflower(
+            world_seed: u64,
+            mc: c_int,
+            continent_salt: u64,
+            snow_salt: u64,
+            biome_salt: u64,
+            child_salt: u64,
             out: *mut c_int,
             x: c_int,
             z: c_int,

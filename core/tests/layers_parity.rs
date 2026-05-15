@@ -14,9 +14,9 @@ use std::path::PathBuf;
 use bytemuck::{Pod, Zeroable};
 use cubioxides::biome::Biome;
 use cubioxides::layer::{
-    map_biome, map_continent, map_cool, map_deep_ocean, map_heat, map_island, map_land,
-    map_land_b18, map_land16, map_mushroom, map_snow, map_snow16, map_special, map_zoom,
-    map_zoom_fuzzy,
+    map_bamboo, map_biome, map_continent, map_cool, map_deep_ocean, map_heat, map_island, map_land,
+    map_land_b18, map_land16, map_mushroom, map_noise, map_snow, map_snow16, map_special,
+    map_sunflower, map_swamp_river, map_zoom, map_zoom_fuzzy,
 };
 use cubioxides::mc_version::MCVersion;
 use cubioxides::rng::{get_start_salt, get_start_seed};
@@ -110,6 +110,22 @@ struct BiomeFixtureRecord {
     continent_salt: u64,
     snow_salt: u64,
     biome_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct FourHopRecord {
+    world_seed: u64,
+    continent_salt: u64,
+    snow_salt: u64,
+    biome_salt: u64,
+    child_salt: u64,
     x: i32,
     z: i32,
     w: u32,
@@ -658,6 +674,139 @@ fn map_biome_matches_cubiomes() {
             digest ^= hash32(cell.id() as u32);
         }
         assert_eq!(digest, rec.digest, "map_biome mismatch at record {i}");
+    }
+}
+
+#[derive(Copy, Clone)]
+enum FourHopKind {
+    Noise,
+    Bamboo,
+    SwampRiver,
+    Sunflower,
+}
+
+fn run_four_hop_record(rec: &FourHopRecord, kind: FourHopKind) -> u32 {
+    let x = rec.x;
+    let z = rec.z;
+    let w = rec.w as usize;
+    let h = rec.h as usize;
+
+    // 4-hop chain: continent (w+4, h+4) -> snow (w+2, h+2) ->
+    // biome (w, h) -> child (w, h).
+    let cont_w = w + 4;
+    let cont_h = h + 4;
+    let cont_x = x - 2;
+    let cont_z = z - 2;
+    let cont_seed = get_start_seed(rec.world_seed, rec.continent_salt);
+    let mut cont_buf = vec![Biome::NONE; cont_w * cont_h];
+    map_continent(cont_seed, &mut cont_buf, cont_x, cont_z, cont_w, cont_h);
+
+    let snow_w = w + 2;
+    let snow_h = h + 2;
+    let snow_x = x - 1;
+    let snow_z = z - 1;
+    let snow_seed = get_start_seed(rec.world_seed, rec.snow_salt);
+    let mut snow_buf = vec![Biome::NONE; snow_w * snow_h];
+    map_snow(
+        snow_seed,
+        &cont_buf,
+        &mut snow_buf,
+        snow_x,
+        snow_z,
+        snow_w,
+        snow_h,
+    );
+
+    // Trim snow_buf's centre window for map_biome (it expects no padding).
+    let biome_seed = get_start_seed(rec.world_seed, rec.biome_salt);
+    let mut biome_parent = vec![Biome::NONE; w * h];
+    for jj in 0..h {
+        for ii in 0..w {
+            biome_parent[ii + jj * w] = snow_buf[(ii + 1) + (jj + 1) * snow_w];
+        }
+    }
+    let mut biome_buf = vec![Biome::NONE; w * h];
+    map_biome(
+        MCVersion::V1_7,
+        biome_seed,
+        &biome_parent,
+        &mut biome_buf,
+        x,
+        z,
+        w,
+        h,
+    );
+
+    let child_seed = get_start_seed(rec.world_seed, rec.child_salt);
+    let mut out = vec![Biome::NONE; w * h];
+    match kind {
+        FourHopKind::Noise => {
+            map_noise(
+                MCVersion::V1_7,
+                child_seed,
+                &biome_buf,
+                &mut out,
+                x,
+                z,
+                w,
+                h,
+            );
+        }
+        FourHopKind::Bamboo => {
+            map_bamboo(child_seed, &biome_buf, &mut out, x, z, w, h);
+        }
+        FourHopKind::SwampRiver => {
+            map_swamp_river(child_seed, &biome_buf, &mut out, x, z, w, h);
+        }
+        FourHopKind::Sunflower => {
+            map_sunflower(child_seed, &biome_buf, &mut out, x, z, w, h);
+        }
+    }
+
+    let mut digest: u32 = 0;
+    for cell in &out {
+        digest ^= hash32(cell.id() as u32);
+    }
+    digest
+}
+
+#[test]
+fn map_noise_matches_cubiomes() {
+    let records: Vec<FourHopRecord> = load_fixture("noise.bin", 22);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_four_hop_record(rec, FourHopKind::Noise);
+        assert_eq!(digest, rec.digest, "map_noise mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_bamboo_matches_cubiomes() {
+    let records: Vec<FourHopRecord> = load_fixture("bamboo.bin", 23);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_four_hop_record(rec, FourHopKind::Bamboo);
+        assert_eq!(digest, rec.digest, "map_bamboo mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_swamp_river_matches_cubiomes() {
+    let records: Vec<FourHopRecord> = load_fixture("swamp_river.bin", 24);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_four_hop_record(rec, FourHopKind::SwampRiver);
+        assert_eq!(digest, rec.digest, "map_swamp_river mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_sunflower_matches_cubiomes() {
+    let records: Vec<FourHopRecord> = load_fixture("sunflower_layer.bin", 25);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_four_hop_record(rec, FourHopKind::Sunflower);
+        assert_eq!(digest, rec.digest, "map_sunflower mismatch at record {i}");
     }
 }
 
