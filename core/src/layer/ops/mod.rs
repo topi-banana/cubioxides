@@ -5,6 +5,7 @@
 
 pub mod bamboo;
 pub mod biome;
+pub mod biome_edge;
 pub mod continent;
 pub mod deep_ocean;
 pub mod island;

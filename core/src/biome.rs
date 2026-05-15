@@ -51,8 +51,12 @@ impl Biome {
     pub const JUNGLE: Self = Self(21);
     /// `jungle_hills` (biome id 22).
     pub const JUNGLE_HILLS: Self = Self(22);
+    /// `jungle_edge` (biome id 23).
+    pub const JUNGLE_EDGE: Self = Self(23);
     /// `bamboo_jungle` (biome id 168).
     pub const BAMBOO_JUNGLE: Self = Self(168);
+    /// `wooded_mountains` (biome id 34).
+    pub const WOODED_MOUNTAINS: Self = Self(34);
     /// `sunflower_plains` (biome id 129; `plains + 128`).
     pub const SUNFLOWER_PLAINS: Self = Self(129);
     /// `deep_ocean` (biome id 24).
@@ -152,6 +156,74 @@ impl Biome {
             | 166 // modified_wooded_badlands_plateau
             | 167 // modified_badlands_plateau
         )
+    }
+
+    /// Map a biome ID to its "category" ID — a representative biome ID
+    /// for the family the input belongs to. Bit-exact port of cubiomes'
+    /// `getCategory` in biomes.c. Returns `-1` (none) for unrecognised
+    /// IDs.
+    #[inline]
+    #[must_use]
+    #[allow(clippy::too_many_lines)]
+    pub const fn get_category_id(mc: crate::mc_version::MCVersion, id: i32) -> i32 {
+        match id {
+            // beach / snowy_beach.
+            16 | 26 => 16,
+            // desert family.
+            2 | 17 | 130 => 2,
+            // mountains family.
+            3 | 20 | 34 | 131 | 162 => 3,
+            // forest family.
+            4 | 18 | 27 | 28 | 29 | 132 | 155 | 156 | 157 => 4,
+            // snowy tundra family.
+            12 | 13 | 140 => 12,
+            // jungle family.
+            21 | 22 | 23 | 149 | 151 | 168 | 169 => 21,
+            // mesa / badlands family (canonical category 37).
+            37 | 165 | 166 | 167 => 37,
+            // wooded_badlands_plateau / badlands_plateau — pre-1.16
+            // collapses to mesa, 1.16+ keeps the plateau distinction.
+            38 | 39 => {
+                if mc.is_at_least(crate::mc_version::MCVersion::V1_16) {
+                    39
+                } else {
+                    37
+                }
+            }
+            // mushroom_fields / mushroom_field_shore.
+            14 | 15 => 14,
+            // stone_shore is its own category.
+            25 => 25,
+            // every ocean variant collapses to plain `ocean`.
+            0 | 10 | 24 | 44 | 45 | 46 | 47 | 48 | 49 | 50 => 0,
+            // plains / sunflower_plains.
+            1 | 129 => 1,
+            // river / frozen_river.
+            7 | 11 => 7,
+            // savanna family.
+            35 | 36 | 163 | 164 => 35,
+            // swamp / swamp_hills.
+            6 | 134 => 6,
+            // taiga family.
+            5 | 19 | 30 | 31 | 32 | 33 | 133 | 158 | 160 | 161 => 5,
+            // nether_wastes family (1.16+).
+            8 | 170 | 171 | 172 | 173 => 8,
+            _ => -1,
+        }
+    }
+
+    /// `true` if `id1` and `id2` belong to the same biome family.
+    /// Bit-exact port of cubiomes' `areSimilar`.
+    #[inline]
+    #[must_use]
+    pub const fn are_similar_ids(mc: crate::mc_version::MCVersion, id1: i32, id2: i32) -> bool {
+        if id1 == id2 {
+            return true;
+        }
+        if !mc.is_at_least(crate::mc_version::MCVersion::V1_16) && (id1 == 38 || id1 == 39) {
+            return id2 == 38 || id2 == 39;
+        }
+        Self::get_category_id(mc, id1) == Self::get_category_id(mc, id2)
     }
 
     /// Underlying signed integer ID.
