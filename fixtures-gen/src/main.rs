@@ -462,8 +462,16 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("zoom fixture failed: {err}");
         return ExitCode::FAILURE;
     }
-    if let Err(err) = write_land_fixture(&fixtures_dir.join("land.bin")) {
+    if let Err(err) = write_land_fixture(&fixtures_dir.join("land.bin"), LandKind::Modern) {
         eprintln!("land fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_land_fixture(&fixtures_dir.join("land16.bin"), LandKind::Land16) {
+        eprintln!("land16 fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_land_fixture(&fixtures_dir.join("land_b18.bin"), LandKind::B18) {
+        eprintln!("land_b18 fixture failed: {err}");
         return ExitCode::FAILURE;
     }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
@@ -694,11 +702,36 @@ pub struct LandRecord {
 
 const LAND_RECORDS: u64 = 4096;
 
-fn write_land_fixture(path: &Path) -> std::io::Result<()> {
-    let mut file = BufWriter::new(File::create(path)?);
-    write_header(&mut file, 10, LAND_RECORDS)?;
+#[derive(Copy, Clone)]
+enum LandKind {
+    Modern,
+    Land16,
+    B18,
+}
 
-    let mut rng_state: u64 = 0x0001_eafb_00b5;
+impl LandKind {
+    const fn fixture_kind(self) -> u16 {
+        match self {
+            Self::Modern => 10,
+            Self::Land16 => 11,
+            Self::B18 => 12,
+        }
+    }
+
+    const fn seed_xor(self) -> u64 {
+        match self {
+            Self::Modern => 0,
+            Self::Land16 => 0xa5a5_a5a5_a5a5_a5a5,
+            Self::B18 => 0x3c3c_3c3c_3c3c_3c3c,
+        }
+    }
+}
+
+fn write_land_fixture(path: &Path, kind: LandKind) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, kind.fixture_kind(), LAND_RECORDS)?;
+
+    let mut rng_state: u64 = 0x0001_eafb_00b5 ^ kind.seed_xor();
     for _ in 0..LAND_RECORDS {
         rng_state = lcg_step(rng_state);
         let world_seed = rng_state;
@@ -713,13 +746,14 @@ fn write_land_fixture(path: &Path) -> std::io::Result<()> {
         let x = (rng_state as i32) % 64;
         rng_state = lcg_step(rng_state);
         let z = (rng_state as i32) % 64;
-        let rec = land_record(world_seed, parent_salt, land_salt, x, z, w, h);
+        let rec = land_record(kind, world_seed, parent_salt, land_salt, x, z, w, h);
         file.write_all(bytemuck::bytes_of(&rec))?;
     }
     file.flush()
 }
 
 fn land_record(
+    kind: LandKind,
     world_seed: u64,
     parent_salt: u64,
     land_salt: u64,
@@ -733,16 +767,38 @@ fn land_record(
     let p_cells = ((w + 2) * (h + 2)) as usize;
     let mut out: Vec<i32> = vec![0; p_cells];
     unsafe {
-        ffi::cubiomes_call_map_land(
-            world_seed,
-            parent_salt,
-            land_salt,
-            out.as_mut_ptr(),
-            x,
-            z,
-            w as c_int,
-            h as c_int,
-        );
+        match kind {
+            LandKind::Modern => ffi::cubiomes_call_map_land(
+                world_seed,
+                parent_salt,
+                land_salt,
+                out.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            ),
+            LandKind::Land16 => ffi::cubiomes_call_map_land16(
+                world_seed,
+                parent_salt,
+                land_salt,
+                out.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            ),
+            LandKind::B18 => ffi::cubiomes_call_map_land_b18(
+                world_seed,
+                parent_salt,
+                land_salt,
+                out.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            ),
+        }
     }
     let cells = (w * h) as usize;
     let digest = digest_i32_slice(&out[..cells]);
@@ -1092,6 +1148,26 @@ mod ffi {
             h: c_int,
         );
         pub fn cubiomes_call_map_land(
+            world_seed: u64,
+            parent_layer_salt: u64,
+            land_layer_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_land16(
+            world_seed: u64,
+            parent_layer_salt: u64,
+            land_layer_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_land_b18(
             world_seed: u64,
             parent_layer_salt: u64,
             land_layer_salt: u64,

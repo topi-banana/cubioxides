@@ -19,10 +19,13 @@
 #![allow(clippy::many_single_char_names)] // mirrors cubiomes/layers.c
 
 use crate::biome::Biome;
-use crate::rng::{get_chunk_seed, mc_first_is_zero, mc_step_seed};
+use crate::rng::{get_chunk_seed, mc_first_int, mc_first_is_zero, mc_step_seed};
 
 const OCEAN: i32 = Biome::OCEAN.id();
+const PLAINS: i32 = Biome::PLAINS.id();
 const FOREST: i32 = Biome::FOREST.id();
+const FROZEN_OCEAN: i32 = Biome::FROZEN_OCEAN.id();
+const SNOWY_TUNDRA: i32 = Biome::SNOWY_TUNDRA.id();
 
 /// `mapLand` — port of cubiomes' inline island-add / island-trim layer.
 ///
@@ -142,6 +145,185 @@ pub fn map_land(
             out[i + j * w] = Biome(v);
 
             // Slide the rolling buffer one column to the right.
+            v00 = vt0;
+            vt0 = v20;
+            v02 = vt2;
+            vt2 = v22;
+        }
+    }
+}
+
+/// `mapLand16` — pre-1.7 land variant that handles `snowy_tundra` /
+/// `frozen_ocean` specially and always rolls the ocean / land shrink
+/// check (no forest exception). Port of cubiomes/layers.c.
+#[allow(clippy::too_many_arguments)]
+pub fn map_land16(
+    start_salt: u64,
+    start_seed: u64,
+    parent: &[Biome],
+    out: &mut [Biome],
+    x: i32,
+    z: i32,
+    w: usize,
+    h: usize,
+) {
+    let p_w = w + 2;
+    let p_h = h + 2;
+    assert!(
+        parent.len() >= p_w * p_h,
+        "map_land16: parent slice too small"
+    );
+    assert!(out.len() >= w * h, "map_land16: output slice too small");
+
+    for j in 0..h {
+        let mut v00 = parent[j * p_w].id();
+        let mut vt0 = parent[1 + j * p_w].id();
+        let mut v02 = parent[(j + 2) * p_w].id();
+        let mut vt2 = parent[1 + (j + 2) * p_w].id();
+
+        for i in 0..w {
+            let v11 = parent[(i + 1) + (j + 1) * p_w].id();
+            let v20 = parent[(i + 2) + j * p_w].id();
+            let v22 = parent[(i + 2) + (j + 2) * p_w].id();
+            let mut v = v11;
+
+            let all_corner_ocean = v00 == OCEAN && v20 == OCEAN && v02 == OCEAN && v22 == OCEAN;
+            let any_corner_ocean = v00 == OCEAN || v20 == OCEAN || v02 == OCEAN || v22 == OCEAN;
+
+            if v11 != OCEAN || all_corner_ocean {
+                if v11 != OCEAN && any_corner_ocean {
+                    let cs = get_chunk_seed(start_seed, i as i32 + x, j as i32 + z);
+                    if mc_first_is_zero(cs, 5) {
+                        v = if v == SNOWY_TUNDRA {
+                            FROZEN_OCEAN
+                        } else {
+                            OCEAN
+                        };
+                    }
+                }
+            } else {
+                let mut cs = get_chunk_seed(start_seed, i as i32 + x, j as i32 + z);
+                let mut inc: i32 = 0;
+                v = 1;
+
+                if v00 != OCEAN {
+                    inc += 1;
+                    v = v00;
+                    cs = mc_step_seed(cs, start_salt);
+                }
+                if v20 != OCEAN {
+                    inc += 1;
+                    if inc == 1 || mc_first_is_zero(cs, 2) {
+                        v = v20;
+                    }
+                    cs = mc_step_seed(cs, start_salt);
+                }
+                if v02 != OCEAN {
+                    inc += 1;
+                    match inc {
+                        1 => v = v02,
+                        2 => {
+                            if mc_first_is_zero(cs, 2) {
+                                v = v02;
+                            }
+                        }
+                        _ => {
+                            if mc_first_is_zero(cs, 3) {
+                                v = v02;
+                            }
+                        }
+                    }
+                    cs = mc_step_seed(cs, start_salt);
+                }
+                if v22 != OCEAN {
+                    inc += 1;
+                    match inc {
+                        1 => v = v22,
+                        2 => {
+                            if mc_first_is_zero(cs, 2) {
+                                v = v22;
+                            }
+                        }
+                        3 => {
+                            if mc_first_is_zero(cs, 3) {
+                                v = v22;
+                            }
+                        }
+                        _ => {
+                            if mc_first_is_zero(cs, 4) {
+                                v = v22;
+                            }
+                        }
+                    }
+                    cs = mc_step_seed(cs, start_salt);
+                }
+
+                if !mc_first_is_zero(cs, 3) {
+                    v = if v == SNOWY_TUNDRA {
+                        FROZEN_OCEAN
+                    } else {
+                        OCEAN
+                    };
+                }
+            }
+
+            out[i + j * w] = Biome(v);
+
+            v00 = vt0;
+            vt0 = v20;
+            v02 = vt2;
+            vt2 = v22;
+        }
+    }
+}
+
+/// `mapLandB18` — Beta-1.8 land variant. Significantly simpler than the
+/// release-era versions: every cell looks at its diagonal neighbours and
+/// picks via `mc_first_int(cs, 3) / 2` (for ocean→land) or
+/// `1 - mc_first_int(cs, 5) / 4` (for plains→ocean). No start salt
+/// involved.
+#[allow(clippy::too_many_arguments)]
+pub fn map_land_b18(
+    start_seed: u64,
+    parent: &[Biome],
+    out: &mut [Biome],
+    x: i32,
+    z: i32,
+    w: usize,
+    h: usize,
+) {
+    let p_w = w + 2;
+    let p_h = h + 2;
+    assert!(
+        parent.len() >= p_w * p_h,
+        "map_land_b18: parent slice too small"
+    );
+    assert!(out.len() >= w * h, "map_land_b18: output slice too small");
+
+    for j in 0..h {
+        let mut v00 = parent[j * p_w].id();
+        let mut vt0 = parent[1 + j * p_w].id();
+        let mut v02 = parent[(j + 2) * p_w].id();
+        let mut vt2 = parent[1 + (j + 2) * p_w].id();
+
+        for i in 0..w {
+            let v11 = parent[(i + 1) + (j + 1) * p_w].id();
+            let v20 = parent[(i + 2) + j * p_w].id();
+            let v22 = parent[(i + 2) + (j + 2) * p_w].id();
+            let mut v = v11;
+
+            if v11 == OCEAN && (v00 != OCEAN || v02 != OCEAN || v20 != OCEAN || v22 != OCEAN) {
+                let cs = get_chunk_seed(start_seed, i as i32 + x, j as i32 + z);
+                v = mc_first_int(cs, 3) / 2;
+            } else if v11 == PLAINS
+                && (v00 != PLAINS || v02 != PLAINS || v20 != PLAINS || v22 != PLAINS)
+            {
+                let cs = get_chunk_seed(start_seed, i as i32 + x, j as i32 + z);
+                v = 1 - mc_first_int(cs, 5) / 4;
+            }
+
+            out[i + j * w] = Biome(v);
+
             v00 = vt0;
             vt0 = v20;
             v02 = vt2;

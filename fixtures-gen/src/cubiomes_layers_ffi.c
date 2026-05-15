@@ -54,9 +54,9 @@ void cubiomes_call_map_zoom(uint64_t world_seed, uint64_t parent_layer_salt,
                     out, x, z, w, h);
 }
 
-void cubiomes_call_map_land(uint64_t world_seed, uint64_t parent_layer_salt,
-                            uint64_t land_layer_salt, int *out, int x, int z,
-                            int w, int h) {
+static int call_land_chain(mapfunc_t *land_fn, uint64_t world_seed,
+                           uint64_t parent_layer_salt, uint64_t land_layer_salt,
+                           int *out, int x, int z, int w, int h) {
     Layer parent;
     memset(&parent, 0, sizeof(parent));
     parent.getMap = mapContinent;
@@ -64,10 +64,32 @@ void cubiomes_call_map_land(uint64_t world_seed, uint64_t parent_layer_salt,
 
     Layer land;
     memset(&land, 0, sizeof(land));
-    land.getMap = mapLand;
+    land.getMap = land_fn;
     land.layerSalt = land_layer_salt;
     land.p = &parent;
 
     setLayerSeed(&land, world_seed);
-    mapLand(&land, out, x, z, w, h);
+    return land_fn(&land, out, x, z, w, h);
+}
+
+void cubiomes_call_map_land(uint64_t world_seed, uint64_t parent_layer_salt,
+                            uint64_t land_layer_salt, int *out, int x, int z,
+                            int w, int h) {
+    call_land_chain(mapLand, world_seed, parent_layer_salt, land_layer_salt,
+                    out, x, z, w, h);
+}
+
+void cubiomes_call_map_land16(uint64_t world_seed, uint64_t parent_layer_salt,
+                              uint64_t land_layer_salt, int *out, int x, int z,
+                              int w, int h) {
+    call_land_chain(mapLand16, world_seed, parent_layer_salt, land_layer_salt,
+                    out, x, z, w, h);
+}
+
+void cubiomes_call_map_land_b18(uint64_t world_seed,
+                                uint64_t parent_layer_salt,
+                                uint64_t land_layer_salt, int *out, int x,
+                                int z, int w, int h) {
+    call_land_chain(mapLandB18, world_seed, parent_layer_salt, land_layer_salt,
+                    out, x, z, w, h);
 }

@@ -13,7 +13,9 @@ use std::path::PathBuf;
 
 use bytemuck::{Pod, Zeroable};
 use cubioxides::biome::Biome;
-use cubioxides::layer::{map_continent, map_land, map_zoom, map_zoom_fuzzy};
+use cubioxides::layer::{
+    map_continent, map_land, map_land_b18, map_land16, map_zoom, map_zoom_fuzzy,
+};
 use cubioxides::rng::{get_start_salt, get_start_seed};
 
 const MAGIC: [u8; 4] = *b"CUBX";
@@ -243,39 +245,40 @@ fn map_zoom_matches_cubiomes() {
     }
 }
 
-#[test]
-fn map_land_matches_cubiomes() {
-    let records: Vec<LandRecord> = load_fixture("land.bin", 10);
-    assert!(!records.is_empty());
+#[derive(Copy, Clone)]
+enum LandKind {
+    Modern,
+    Land16,
+    B18,
+}
 
-    for (i, rec) in records.iter().enumerate() {
-        let x = rec.x;
-        let z = rec.z;
-        let w = rec.w as usize;
-        let h = rec.h as usize;
+fn run_land_record(rec: &LandRecord, kind: LandKind) -> u32 {
+    let x = rec.x;
+    let z = rec.z;
+    let w = rec.w as usize;
+    let h = rec.h as usize;
 
-        // map_land's parent rectangle is (w + 2) × (h + 2) starting at
-        // (x - 1, z - 1). Build it with map_continent, mirroring
-        // cubiomes_call_map_land.
-        let parent_w = w + 2;
-        let parent_h = h + 2;
-        let parent_x = x - 1;
-        let parent_z = z - 1;
-        let parent_start_seed = get_start_seed(rec.world_seed, rec.parent_salt);
-        let mut parent_buf = vec![Biome::NONE; parent_w * parent_h];
-        map_continent(
-            parent_start_seed,
-            &mut parent_buf,
-            parent_x,
-            parent_z,
-            parent_w,
-            parent_h,
-        );
+    let parent_w = w + 2;
+    let parent_h = h + 2;
+    let parent_x = x - 1;
+    let parent_z = z - 1;
+    let parent_start_seed = get_start_seed(rec.world_seed, rec.parent_salt);
+    let mut parent_buf = vec![Biome::NONE; parent_w * parent_h];
+    map_continent(
+        parent_start_seed,
+        &mut parent_buf,
+        parent_x,
+        parent_z,
+        parent_w,
+        parent_h,
+    );
 
-        let land_start_salt = get_start_salt(rec.world_seed, rec.land_salt);
-        let land_start_seed = get_start_seed(rec.world_seed, rec.land_salt);
-        let mut out = vec![Biome::NONE; w * h];
-        map_land(
+    let land_start_salt = get_start_salt(rec.world_seed, rec.land_salt);
+    let land_start_seed = get_start_seed(rec.world_seed, rec.land_salt);
+    let mut out = vec![Biome::NONE; w * h];
+
+    match kind {
+        LandKind::Modern => map_land(
             land_start_salt,
             land_start_seed,
             &parent_buf,
@@ -284,15 +287,67 @@ fn map_land_matches_cubiomes() {
             z,
             w,
             h,
-        );
-
-        let mut digest: u32 = 0;
-        for cell in &out {
-            digest ^= hash32(cell.id() as u32);
+        ),
+        LandKind::Land16 => map_land16(
+            land_start_salt,
+            land_start_seed,
+            &parent_buf,
+            &mut out,
+            x,
+            z,
+            w,
+            h,
+        ),
+        LandKind::B18 => {
+            map_land_b18(land_start_seed, &parent_buf, &mut out, x, z, w, h);
         }
+    }
+
+    let mut digest: u32 = 0;
+    for cell in &out {
+        digest ^= hash32(cell.id() as u32);
+    }
+    digest
+}
+
+#[test]
+fn map_land_matches_cubiomes() {
+    let records: Vec<LandRecord> = load_fixture("land.bin", 10);
+    assert!(!records.is_empty());
+
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_land_record(rec, LandKind::Modern);
         assert_eq!(
             digest, rec.digest,
             "map_land digest mismatch at record {i} (world={:#x}, x={}, z={}, w={}, h={})",
+            rec.world_seed, rec.x, rec.z, rec.w, rec.h
+        );
+    }
+}
+
+#[test]
+fn map_land16_matches_cubiomes() {
+    let records: Vec<LandRecord> = load_fixture("land16.bin", 11);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_land_record(rec, LandKind::Land16);
+        assert_eq!(
+            digest, rec.digest,
+            "map_land16 digest mismatch at record {i} (world={:#x}, x={}, z={}, w={}, h={})",
+            rec.world_seed, rec.x, rec.z, rec.w, rec.h
+        );
+    }
+}
+
+#[test]
+fn map_land_b18_matches_cubiomes() {
+    let records: Vec<LandRecord> = load_fixture("land_b18.bin", 12);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_land_record(rec, LandKind::B18);
+        assert_eq!(
+            digest, rec.digest,
+            "map_land_b18 digest mismatch at record {i} (world={:#x}, x={}, z={}, w={}, h={})",
             rec.world_seed, rec.x, rec.z, rec.w, rec.h
         );
     }

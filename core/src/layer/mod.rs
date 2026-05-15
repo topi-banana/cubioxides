@@ -10,5 +10,5 @@
 pub mod ops;
 
 pub use ops::continent::map_continent;
-pub use ops::land::map_land;
+pub use ops::land::{map_land, map_land_b18, map_land16};
 pub use ops::zoom::{map_zoom, map_zoom_fuzzy};

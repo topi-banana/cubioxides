@@ -25,6 +25,10 @@ impl Biome {
     pub const PLAINS: Self = Self(1);
     /// `forest` (biome id 4 in `cubiomes/biomes.h`).
     pub const FOREST: Self = Self(4);
+    /// `frozen_ocean` (biome id 10).
+    pub const FROZEN_OCEAN: Self = Self(10);
+    /// `snowy_tundra` (biome id 12).
+    pub const SNOWY_TUNDRA: Self = Self(12);
 
     /// Underlying signed integer ID.
     #[inline]
