@@ -515,6 +515,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("ocean_temp fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_voronoi114_fixture(&fixtures_dir.join("voronoi114.bin")) {
+        eprintln!("voronoi114 fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1384,6 +1388,89 @@ fn four_hop_record(
     }
 }
 
+/// `mapVoronoi114` record (kind = 27). Two-layer chain: simple
+/// `mapContinent` parent at 1:4 scale, then `mapVoronoi114` at 1:1.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct Voronoi114Record {
+    pub world_seed: u64,
+    pub parent_salt: u64,
+    pub voronoi_salt: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const VORONOI114_RECORDS: u64 = 2048;
+
+fn write_voronoi114_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 27, VORONOI114_RECORDS)?;
+
+    let mut rng_state: u64 = 0x0fea_4011_1100;
+    for _ in 0..VORONOI114_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let parent_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let voronoi_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        // Voronoi at 1:1 needs 1:4 parent + a few sub-cell slack.
+        let w = ((rng_state & 0xf) as u32) + 4;
+        let h = ((rng_state >> 8) & 0xf) as u32 + 4;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 64;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 64;
+        let rec = voronoi114_record(world_seed, parent_salt, voronoi_salt, x, z, w, h);
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn voronoi114_record(
+    world_seed: u64,
+    parent_salt: u64,
+    voronoi_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+) -> Voronoi114Record {
+    // cubiomes' mapVoronoi114 reuses `out` as scratch for the 1:4
+    // parent followed by the 1:1 buffer; allocate generously.
+    let cells = ((w + 16) * (h + 16)) as usize;
+    let mut out: Vec<i32> = vec![0; cells];
+    unsafe {
+        ffi::cubiomes_call_map_voronoi114(
+            world_seed,
+            parent_salt,
+            voronoi_salt,
+            out.as_mut_ptr(),
+            x,
+            z,
+            w as c_int,
+            h as c_int,
+        );
+    }
+    let digest = digest_i32_slice(&out[..(w * h) as usize]);
+    Voronoi114Record {
+        world_seed,
+        parent_salt,
+        voronoi_salt,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
+}
+
 /// `mapOceanTemp` record (kind = 26). Input is just a world seed +
 /// sample rectangle; the layer derives a `PerlinNoise` from the seed
 /// internally.
@@ -1893,6 +1980,16 @@ mod ffi {
         );
         pub fn cubiomes_call_map_ocean_temp(
             world_seed: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_voronoi114(
+            world_seed: u64,
+            parent_salt: u64,
+            voronoi_salt: u64,
             out: *mut c_int,
             x: c_int,
             z: c_int,

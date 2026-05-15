@@ -20,6 +20,7 @@ splat = "splat"
 # Short variable names shared with cubiomes' C source.
 pn = "pn"
 xr = "xr"
+ot = "ot"
 
 [files]
 extend-exclude = ["fixtures/**", "target/**", "Cargo.lock"]

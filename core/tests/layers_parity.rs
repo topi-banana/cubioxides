@@ -16,7 +16,7 @@ use cubioxides::biome::Biome;
 use cubioxides::layer::{
     map_bamboo, map_biome, map_continent, map_cool, map_deep_ocean, map_heat, map_island, map_land,
     map_land_b18, map_land16, map_mushroom, map_noise, map_ocean_temp, map_snow, map_snow16,
-    map_special, map_sunflower, map_swamp_river, map_zoom, map_zoom_fuzzy,
+    map_special, map_sunflower, map_swamp_river, map_voronoi114, map_zoom, map_zoom_fuzzy,
 };
 use cubioxides::mc_version::MCVersion;
 use cubioxides::noise::PerlinNoise;
@@ -822,6 +822,79 @@ struct OceanTempRecord {
     h: u32,
     digest: u32,
     pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct Voronoi114FixtureRecord {
+    world_seed: u64,
+    parent_salt: u64,
+    voronoi_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
+#[test]
+fn map_voronoi114_matches_cubiomes() {
+    let records: Vec<Voronoi114FixtureRecord> = load_fixture("voronoi114.bin", 27);
+    assert!(!records.is_empty());
+
+    for (i, rec) in records.iter().enumerate() {
+        let x = rec.x;
+        let z = rec.z;
+        let w = rec.w as usize;
+        let h = rec.h as usize;
+
+        // Parent rect matches cubiomes' `x -= 2; px = x >> 2; ...` math.
+        let vx = x - 2;
+        let vz = z - 2;
+        let parent_x = vx >> 2;
+        let parent_z = vz >> 2;
+        let parent_w = (((vx + w as i32) >> 2) - parent_x + 2) as usize;
+        let parent_h = (((vz + h as i32) >> 2) - parent_z + 2) as usize;
+
+        let parent_start_seed = get_start_seed(rec.world_seed, rec.parent_salt);
+        let mut parent_buf = vec![Biome::NONE; parent_w * parent_h];
+        map_continent(
+            parent_start_seed,
+            &mut parent_buf,
+            parent_x,
+            parent_z,
+            parent_w,
+            parent_h,
+        );
+
+        let voronoi_start_salt = get_start_salt(rec.world_seed, rec.voronoi_salt);
+        let voronoi_start_seed = get_start_seed(rec.world_seed, rec.voronoi_salt);
+        let mut out = vec![Biome::NONE; w * h];
+        map_voronoi114(
+            voronoi_start_salt,
+            voronoi_start_seed,
+            &parent_buf,
+            parent_x,
+            parent_z,
+            parent_w,
+            parent_h,
+            &mut out,
+            x,
+            z,
+            w,
+            h,
+        );
+
+        let mut digest: u32 = 0;
+        for cell in &out {
+            digest ^= hash32(cell.id() as u32);
+        }
+        assert_eq!(
+            digest, rec.digest,
+            "map_voronoi114 digest mismatch at record {i}"
+        );
+    }
 }
 
 #[test]
