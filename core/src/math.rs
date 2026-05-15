@@ -93,6 +93,52 @@ pub fn clamped_lerp(t: f64, from: f64, to: f64) -> f64 {
     }
 }
 
+/// Perlin gradient lookup by 4-bit index.
+///
+/// Bit-exact port of cubiomes' `indexedLerp`. The 16-way switch matches
+/// the table-free dot-product variant used by the modern Perlin
+/// implementation. Only the low nibble of `idx` is used. Cases 12 / 13 /
+/// 14 / 15 deliberately mirror earlier ones; do not merge them.
+#[inline]
+#[must_use]
+#[allow(clippy::match_same_arms)] // keeps the 1:1 mapping with cubiomes/noise.c
+pub const fn indexed_lerp(idx: u8, a: f64, b: f64, c: f64) -> f64 {
+    match idx & 0xf {
+        0 => a + b,
+        1 => -a + b,
+        2 => a - b,
+        3 => -a - b,
+        4 => a + c,
+        5 => -a + c,
+        6 => a - c,
+        7 => -a - c,
+        8 => b + c,
+        9 => -b + c,
+        10 => b - c,
+        11 => -b - c,
+        12 => a + b,
+        13 => -b + c,
+        14 => -a + b,
+        // 15 is the only remaining case after the mask above.
+        _ => -b - c,
+    }
+}
+
+/// Simplex noise gradient contribution.
+///
+/// Mirrors cubiomes' `simplexGrad`: returns zero outside the squashed
+/// radius `sqrt(d)` and otherwise the `(d - r^2)^4`-scaled gradient.
+#[inline]
+#[must_use]
+pub fn simplex_grad(idx: u8, x: f64, y: f64, z: f64, d: f64) -> f64 {
+    let con = d - x * x - y * y - z * z;
+    if con < 0.0 {
+        return 0.0;
+    }
+    let con = con * con;
+    con * con * indexed_lerp(idx, x, y, z)
+}
+
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
@@ -161,5 +207,44 @@ mod tests {
     fn rotr32_rotates_by_bits() {
         assert_eq!(rotr32(0x1234_5678, 8), 0x7812_3456);
         assert_eq!(rotr32(1, 1), 0x8000_0000);
+    }
+
+    #[test]
+    fn indexed_lerp_masks_to_low_nibble() {
+        // Differs only on the unmasked bits; the low nibble decides.
+        let a = indexed_lerp(0b0001, 1.0, 2.0, 3.0);
+        let b = indexed_lerp(0b1111_0001, 1.0, 2.0, 3.0);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn indexed_lerp_covers_every_case() {
+        // Each of the 16 indices yields a distinct linear combination of
+        // a, b, c (with a = 1, b = 10, c = 100 the sums are unique).
+        let mut seen = std::collections::HashSet::new();
+        for idx in 0..16u8 {
+            let v = indexed_lerp(idx, 1.0, 10.0, 100.0);
+            seen.insert(v.to_bits());
+        }
+        // Cases 0 / 12 yield `a + b`, 1 / 14 yield `-a + b`, 9 / 13 yield
+        // `-b + c`, and 11 / 15 yield `-b - c`, so we expect 12 distinct
+        // values rather than 16.
+        assert_eq!(seen.len(), 12);
+    }
+
+    #[test]
+    fn simplex_grad_is_zero_outside_radius() {
+        // d = 0.5 means radius^2 = 0.5; any (x, y, z) outside that should
+        // yield zero contribution.
+        assert_eq!(simplex_grad(0, 1.0, 1.0, 1.0, 0.5), 0.0);
+        assert_eq!(simplex_grad(0, 5.0, 0.0, 0.0, 0.5), 0.0);
+    }
+
+    #[test]
+    fn simplex_grad_nonzero_inside_radius() {
+        // Inside the radius the contribution is non-zero unless the gradient
+        // dotted with (x, y, z) happens to vanish.
+        let v = simplex_grad(0, 0.1, 0.2, 0.0, 0.5);
+        assert!(v != 0.0);
     }
 }
