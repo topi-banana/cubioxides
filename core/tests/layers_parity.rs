@@ -15,9 +15,10 @@ use bytemuck::{Pod, Zeroable};
 use cubioxides::biome::Biome;
 use cubioxides::layer::{
     map_bamboo, map_biome, map_continent, map_cool, map_deep_ocean, map_heat, map_hills,
-    map_island, map_land, map_land_b18, map_land16, map_mushroom, map_noise, map_ocean_temp,
-    map_river, map_river_mix, map_shore, map_smooth, map_snow, map_snow16, map_special,
-    map_sunflower, map_swamp_river, map_voronoi114, map_zoom, map_zoom_fuzzy,
+    map_island, map_land, map_land_b18, map_land16, map_mushroom, map_noise, map_ocean_mix,
+    map_ocean_temp, map_river, map_river_mix, map_shore, map_smooth, map_snow, map_snow16,
+    map_special, map_sunflower, map_swamp_river, map_voronoi114, map_zoom, map_zoom_fuzzy,
+    ocean_land_bbox,
 };
 use cubioxides::mc_version::MCVersion;
 use cubioxides::noise::PerlinNoise;
@@ -1150,6 +1151,55 @@ fn map_ocean_temp_matches_cubiomes() {
         assert_eq!(
             digest, rec.digest,
             "map_ocean_temp digest mismatch at record {i}"
+        );
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct OceanMixRecord {
+    world_seed: u64,
+    biome_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
+#[test]
+fn map_ocean_mix_matches_cubiomes() {
+    let records: Vec<OceanMixRecord> = load_fixture("ocean_mix.bin", 33);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let w = rec.w as usize;
+        let h = rec.h as usize;
+
+        let mut rng = JavaRng::new(rec.world_seed);
+        let noise = PerlinNoise::from_java(&mut rng);
+        let mut ocean = vec![Biome::NONE; w * h];
+        map_ocean_temp(&noise, &mut ocean, rec.x, rec.z, w, h);
+
+        let (lx0, lx1, lz0, lz1) = ocean_land_bbox(&ocean, w, h);
+        let lw = (lx1 - lx0) as usize;
+        let lh = (lz1 - lz0) as usize;
+        let biome_seed = get_start_seed(rec.world_seed, rec.biome_salt);
+        let mut land = vec![Biome::NONE; lw * lh];
+        map_continent(biome_seed, &mut land, rec.x + lx0, rec.z + lz0, lw, lh);
+
+        let mut out = vec![Biome::NONE; w * h];
+        map_ocean_mix(&ocean, &land, &mut out, w, h, lx0, lz0, lw, lh);
+
+        let mut digest: u32 = 0;
+        for cell in &out {
+            digest ^= hash32(cell.id() as u32);
+        }
+        assert_eq!(
+            digest, rec.digest,
+            "map_ocean_mix digest mismatch at record {i} \
+             (world={:#x}, biome_salt={:#x}, x={}, z={}, w={}, h={})",
+            rec.world_seed, rec.biome_salt, rec.x, rec.z, rec.w, rec.h
         );
     }
 }

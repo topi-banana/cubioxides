@@ -538,6 +538,10 @@ fn regenerate_layers() -> ExitCode {
             return ExitCode::FAILURE;
         }
     }
+    if let Err(err) = write_ocean_mix_fixture(&fixtures_dir.join("ocean_mix.bin")) {
+        eprintln!("ocean_mix fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1564,6 +1568,83 @@ fn post_biome_record(
     }
 }
 
+/// `mapOceanMix` record (kind = 33). The biome parent is a
+/// `mapContinent` chain; the ocean parent is `mapOceanTemp` driven by
+/// `PerlinNoise` initialized from `world_seed`. MC = 1.18.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct OceanMixRecord {
+    pub world_seed: u64,
+    pub biome_salt: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const OCEAN_MIX_RECORDS: u64 = 2048;
+
+fn write_ocean_mix_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 33, OCEAN_MIX_RECORDS)?;
+
+    let mut rng_state: u64 = 0x0cea_4011_1334;
+    for _ in 0..OCEAN_MIX_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let biome_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let w = ((rng_state & 0xf) as u32) + 4;
+        let h = ((rng_state >> 8) & 0xf) as u32 + 4;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 64;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 64;
+        let rec = ocean_mix_record(world_seed, biome_salt, x, z, w, h);
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn ocean_mix_record(
+    world_seed: u64,
+    biome_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+) -> OceanMixRecord {
+    // cubiomes reuses `out` as scratch: ocean chain occupies w*h cells,
+    // biome chain (at x-8, z-8, size (w+17)*(h+17)) is written after.
+    let cells = (w * h) as usize + ((w + 17) * (h + 17)) as usize;
+    let mut out: Vec<i32> = vec![0; cells];
+    unsafe {
+        ffi::cubiomes_call_map_ocean_mix(
+            world_seed,
+            biome_salt,
+            out.as_mut_ptr(),
+            x,
+            z,
+            w as c_int,
+            h as c_int,
+        );
+    }
+    let digest = digest_i32_slice(&out[..(w * h) as usize]);
+    OceanMixRecord {
+        world_seed,
+        biome_salt,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
+}
+
 /// `mapHills` record (kind = 29). Two parent chains (each
 /// `mapContinent`) feed `mapHills`. MC = 1.18.
 #[repr(C)]
@@ -2336,6 +2417,15 @@ mod ffi {
         );
         pub fn cubiomes_call_map_ocean_temp(
             world_seed: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_ocean_mix(
+            world_seed: u64,
+            biome_salt: u64,
             out: *mut c_int,
             x: c_int,
             z: c_int,
