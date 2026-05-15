@@ -8,6 +8,7 @@
  */
 
 #include "layers.h"
+#include "noise.h"
 #include <string.h>
 
 void cubiomes_call_map_continent(uint64_t start_seed, int *out, int x, int z,
@@ -268,6 +269,19 @@ void cubiomes_call_map_sunflower(uint64_t world_seed, int mc,
                                  int *out, int x, int z, int w, int h) {
     call_chain4(mapSunflower, world_seed, mc, continent_salt, snow_salt,
                 biome_salt, child_salt, out, x, z, w, h);
+}
+
+void cubiomes_call_map_ocean_temp(uint64_t world_seed, int *out, int x, int z,
+                                  int w, int h) {
+    Layer ot;
+    memset(&ot, 0, sizeof(ot));
+    ot.getMap = mapOceanTemp;
+    PerlinNoise noise;
+    uint64_t s;
+    setSeed(&s, world_seed);
+    perlinInit(&noise, &s);
+    ot.noise = &noise;
+    mapOceanTemp(&ot, out, x, z, w, h);
 }
 
 void cubiomes_call_map_biome(uint64_t world_seed, int mc,

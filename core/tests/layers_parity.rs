@@ -15,10 +15,12 @@ use bytemuck::{Pod, Zeroable};
 use cubioxides::biome::Biome;
 use cubioxides::layer::{
     map_bamboo, map_biome, map_continent, map_cool, map_deep_ocean, map_heat, map_island, map_land,
-    map_land_b18, map_land16, map_mushroom, map_noise, map_snow, map_snow16, map_special,
-    map_sunflower, map_swamp_river, map_zoom, map_zoom_fuzzy,
+    map_land_b18, map_land16, map_mushroom, map_noise, map_ocean_temp, map_snow, map_snow16,
+    map_special, map_sunflower, map_swamp_river, map_zoom, map_zoom_fuzzy,
 };
 use cubioxides::mc_version::MCVersion;
+use cubioxides::noise::PerlinNoise;
+use cubioxides::rng::JavaRng;
 use cubioxides::rng::{get_start_salt, get_start_seed};
 
 const MAGIC: [u8; 4] = *b"CUBX";
@@ -807,6 +809,43 @@ fn map_sunflower_matches_cubiomes() {
     for (i, rec) in records.iter().enumerate() {
         let digest = run_four_hop_record(rec, FourHopKind::Sunflower);
         assert_eq!(digest, rec.digest, "map_sunflower mismatch at record {i}");
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct OceanTempRecord {
+    world_seed: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
+#[test]
+fn map_ocean_temp_matches_cubiomes() {
+    let records: Vec<OceanTempRecord> = load_fixture("ocean_temp.bin", 26);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let w = rec.w as usize;
+        let h = rec.h as usize;
+        // cubiomes' wrapper builds the PerlinNoise via
+        // `setSeed(&s, world_seed); perlinInit(&noise, &s);`. Mirror
+        // it on the Rust side.
+        let mut rng = JavaRng::new(rec.world_seed);
+        let noise = PerlinNoise::from_java(&mut rng);
+        let mut out = vec![Biome::NONE; w * h];
+        map_ocean_temp(&noise, &mut out, rec.x, rec.z, w, h);
+        let mut digest: u32 = 0;
+        for cell in &out {
+            digest ^= hash32(cell.id() as u32);
+        }
+        assert_eq!(
+            digest, rec.digest,
+            "map_ocean_temp digest mismatch at record {i}"
+        );
     }
 }
 
