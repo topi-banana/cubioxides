@@ -19,10 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout cubioxides
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Checkout cubiomes (sibling directory)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: Cubitect/cubiomes
           path: ../cubiomes
