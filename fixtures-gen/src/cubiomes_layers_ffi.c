@@ -271,6 +271,29 @@ void cubiomes_call_map_sunflower(uint64_t world_seed, int mc,
                 biome_salt, child_salt, out, x, z, w, h);
 }
 
+void cubiomes_call_map_voronoi(uint64_t world_seed, uint64_t biome_salt,
+                               int *out, int x, int z, int w, int h) {
+    Layer biome;
+    memset(&biome, 0, sizeof(biome));
+    biome.getMap = mapContinent;
+    biome.layerSalt = biome_salt;
+
+    Layer voronoi;
+    memset(&voronoi, 0, sizeof(voronoi));
+    voronoi.getMap = mapVoronoi;
+    voronoi.p = &biome;
+    voronoi.layerSalt = (uint64_t)~0; /* LAYER_INIT_SHA marker */
+
+    setLayerSeed(&voronoi, world_seed);
+    mapVoronoi(&voronoi, out, x, z, w, h);
+}
+
+void cubiomes_call_voronoi_access_3d(uint64_t world_seed, int x, int y, int z,
+                                     int *x4, int *y4, int *z4) {
+    uint64_t sha = getVoronoiSHA(world_seed);
+    voronoiAccess3D(sha, x, y, z, x4, y4, z4);
+}
+
 void cubiomes_call_map_ocean_mix(uint64_t world_seed, uint64_t biome_salt,
                                  int *out, int x, int z, int w, int h) {
     Layer biome;

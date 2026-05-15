@@ -17,13 +17,14 @@ use cubioxides::layer::{
     map_bamboo, map_biome, map_continent, map_cool, map_deep_ocean, map_heat, map_hills,
     map_island, map_land, map_land_b18, map_land16, map_mushroom, map_noise, map_ocean_mix,
     map_ocean_temp, map_river, map_river_mix, map_shore, map_smooth, map_snow, map_snow16,
-    map_special, map_sunflower, map_swamp_river, map_voronoi114, map_zoom, map_zoom_fuzzy,
-    ocean_land_bbox,
+    map_special, map_sunflower, map_swamp_river, map_voronoi, map_voronoi114, map_zoom,
+    map_zoom_fuzzy, ocean_land_bbox, voronoi_access_3d,
 };
 use cubioxides::mc_version::MCVersion;
 use cubioxides::noise::PerlinNoise;
 use cubioxides::rng::JavaRng;
 use cubioxides::rng::{get_start_salt, get_start_seed};
+use cubioxides::sha::voronoi_sha;
 
 const MAGIC: [u8; 4] = *b"CUBX";
 const FORMAT_VERSION: u16 = 1;
@@ -1200,6 +1201,98 @@ fn map_ocean_mix_matches_cubiomes() {
             "map_ocean_mix digest mismatch at record {i} \
              (world={:#x}, biome_salt={:#x}, x={}, z={}, w={}, h={})",
             rec.world_seed, rec.biome_salt, rec.x, rec.z, rec.w, rec.h
+        );
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct VoronoiRecord {
+    world_seed: u64,
+    biome_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct VoronoiAccessRecord {
+    world_seed: u64,
+    x: i32,
+    y: i32,
+    z: i32,
+    x4: i32,
+    y4: i32,
+    z4: i32,
+    pad: u64,
+}
+
+#[test]
+fn map_voronoi_matches_cubiomes() {
+    let records: Vec<VoronoiRecord> = load_fixture("voronoi.bin", 35);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let w = rec.w as usize;
+        let h = rec.h as usize;
+        // mapVoronoi: x -= 2; z -= 2; px = x >> 2; pz = z >> 2;
+        // pw = ((x + w) >> 2) - px + 2; ph = ((z + h) >> 2) - pz + 2.
+        let sx = rec.x - 2;
+        let sz = rec.z - 2;
+        let parent_x = sx >> 2;
+        let parent_z = sz >> 2;
+        let parent_w = (((sx + w as i32) >> 2) - parent_x + 2) as usize;
+        let parent_h = (((sz + h as i32) >> 2) - parent_z + 2) as usize;
+
+        let biome_seed = get_start_seed(rec.world_seed, rec.biome_salt);
+        let mut parent = vec![Biome::NONE; parent_w * parent_h];
+        map_continent(
+            biome_seed,
+            &mut parent,
+            parent_x,
+            parent_z,
+            parent_w,
+            parent_h,
+        );
+
+        let sha = voronoi_sha(rec.world_seed);
+        let mut out = vec![Biome::NONE; w * h];
+        map_voronoi(
+            sha, &parent, parent_x, parent_z, parent_w, parent_h, &mut out, rec.x, rec.z, w, h,
+        );
+
+        let mut digest: u32 = 0;
+        for cell in &out {
+            digest ^= hash32(cell.id() as u32);
+        }
+        assert_eq!(
+            digest, rec.digest,
+            "map_voronoi digest mismatch at record {i} \
+             (world={:#x}, biome_salt={:#x}, x={}, z={}, w={}, h={})",
+            rec.world_seed, rec.biome_salt, rec.x, rec.z, rec.w, rec.h
+        );
+    }
+}
+
+#[test]
+fn voronoi_access_3d_matches_cubiomes() {
+    let records: Vec<VoronoiAccessRecord> = load_fixture("voronoi_access.bin", 36);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let sha = voronoi_sha(rec.world_seed);
+        let (x4, y4, z4) = voronoi_access_3d(sha, rec.x, rec.y, rec.z);
+        assert_eq!(
+            (x4, y4, z4),
+            (rec.x4, rec.y4, rec.z4),
+            "voronoi_access_3d mismatch at record {i} \
+             (world={:#x}, x={}, y={}, z={})",
+            rec.world_seed,
+            rec.x,
+            rec.y,
+            rec.z
         );
     }
 }

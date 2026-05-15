@@ -547,6 +547,14 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("voronoi_sha fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_voronoi_fixture(&fixtures_dir.join("voronoi.bin")) {
+        eprintln!("voronoi fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_voronoi_access_fixture(&fixtures_dir.join("voronoi_access.bin")) {
+        eprintln!("voronoi_access fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1573,6 +1581,149 @@ fn post_biome_record(
     }
 }
 
+/// `mapVoronoi` (1.0-1.14) record (kind = 35). Layer chain is
+/// `mapContinent` (with `biome_salt`) feeding `mapVoronoi` (SHA-driven
+/// via `LAYER_INIT_SHA = ~0`). MC = 1.14 effectively (1.0-1.14 share
+/// the same Voronoi function).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct VoronoiRecord {
+    pub world_seed: u64,
+    pub biome_salt: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const VORONOI_RECORDS: u64 = 1024;
+
+fn write_voronoi_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 35, VORONOI_RECORDS)?;
+
+    let mut rng_state: u64 = 0xdeaf_b00b_77f1;
+    for _ in 0..VORONOI_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let biome_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        // cubiomes' `mapVoronoi` only writes cells in 4x4 parent
+        // blocks whose `j4`/`i4` offsets land inside `[0, h)` /
+        // `[0, w)`. Aligning `(x, z, w, h)` to 4 guarantees every
+        // output cell is covered. We allow 0 as a "no-op" zero too.
+        let w = (((rng_state & 0xf) as u32) + 4) & !3;
+        let h = (((rng_state >> 8) & 0xf) as u32 + 4) & !3;
+        rng_state = lcg_step(rng_state);
+        let x = ((rng_state as i32) % 32) & !3;
+        rng_state = lcg_step(rng_state);
+        let z = ((rng_state as i32) % 32) & !3;
+        let rec = voronoi_record(world_seed, biome_salt, x, z, w, h);
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn voronoi_record(
+    world_seed: u64,
+    biome_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+) -> VoronoiRecord {
+    // cubiomes uses `out + w*h` as scratch for the parent grid, which
+    // is `pw * ph` int32 cells. Worst case pw ~ (w >> 2) + 3, similarly
+    // for ph; pad generously.
+    let cells = (w as usize * h as usize) + ((w as usize + 16) * (h as usize + 16));
+    let mut out: Vec<i32> = vec![0; cells];
+    unsafe {
+        ffi::cubiomes_call_map_voronoi(
+            world_seed,
+            biome_salt,
+            out.as_mut_ptr(),
+            x,
+            z,
+            w as c_int,
+            h as c_int,
+        );
+    }
+    let digest = digest_i32_slice(&out[..(w * h) as usize]);
+    VoronoiRecord {
+        world_seed,
+        biome_salt,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
+}
+
+/// `voronoiAccess3D` record (kind = 36). For each `(world_seed, x, y,
+/// z)` records the cubiomes `(x4, y4, z4)` output.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct VoronoiAccessRecord {
+    pub world_seed: u64,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub x4: i32,
+    pub y4: i32,
+    pub z4: i32,
+    pub pad: u64,
+}
+
+const VORONOI_ACCESS_RECORDS: u64 = 4096;
+
+fn write_voronoi_access_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 36, VORONOI_ACCESS_RECORDS)?;
+
+    let mut rng_state: u64 = 0x0_acce5_5dead;
+    for _ in 0..VORONOI_ACCESS_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 1024;
+        rng_state = lcg_step(rng_state);
+        let y = (rng_state as i32) % 256;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 1024;
+        let mut x4: c_int = 0;
+        let mut y4: c_int = 0;
+        let mut z4: c_int = 0;
+        unsafe {
+            ffi::cubiomes_call_voronoi_access_3d(
+                world_seed,
+                x,
+                y,
+                z,
+                std::ptr::from_mut(&mut x4),
+                std::ptr::from_mut(&mut y4),
+                std::ptr::from_mut(&mut z4),
+            );
+        }
+        let rec = VoronoiAccessRecord {
+            world_seed,
+            x,
+            y,
+            z,
+            x4,
+            y4,
+            z4,
+            pad: 0u64,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
 /// `getVoronoiSHA` record (kind = 34). Pairs a 64-bit world seed with
 /// the truncated SHA-256 digest cubiomes returns from `getVoronoiSHA`.
 #[repr(C)]
@@ -2481,6 +2632,24 @@ mod ffi {
             z: c_int,
             w: c_int,
             h: c_int,
+        );
+        pub fn cubiomes_call_map_voronoi(
+            world_seed: u64,
+            biome_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_voronoi_access_3d(
+            world_seed: u64,
+            x: c_int,
+            y: c_int,
+            z: c_int,
+            x4: *mut c_int,
+            y4: *mut c_int,
+            z4: *mut c_int,
         );
         pub fn getVoronoiSHA(seed: u64) -> u64;
         pub fn cubiomes_call_map_river(
