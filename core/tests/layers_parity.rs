@@ -86,6 +86,21 @@ struct SingleHopRecord {
     pad: u32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct TempRecord {
+    world_seed: u64,
+    continent_salt: u64,
+    snow_salt: u64,
+    child_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
 fn fixture_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -484,6 +499,84 @@ fn map_deep_ocean_matches_cubiomes() {
     for (i, rec) in records.iter().enumerate() {
         let digest = run_single_hop_record(rec, SingleHopKind::DeepOcean);
         assert_eq!(digest, rec.digest, "map_deep_ocean mismatch at record {i}");
+    }
+}
+
+#[derive(Copy, Clone)]
+enum TempKind {
+    Cool,
+    Heat,
+}
+
+fn run_temp_record(rec: &TempRecord, kind: TempKind) -> u32 {
+    let x = rec.x;
+    let z = rec.z;
+    let w = rec.w as usize;
+    let h = rec.h as usize;
+
+    // Cool / heat read (w+2, h+2) at (x-1, z-1). Snow in turn reads
+    // (w+4, h+4) at (x-2, z-2) from the continent layer.
+    let cont_w = w + 4;
+    let cont_h = h + 4;
+    let cont_x = x - 2;
+    let cont_z = z - 2;
+    let cont_start_seed = get_start_seed(rec.world_seed, rec.continent_salt);
+    let mut cont_buf = vec![Biome::NONE; cont_w * cont_h];
+    map_continent(
+        cont_start_seed,
+        &mut cont_buf,
+        cont_x,
+        cont_z,
+        cont_w,
+        cont_h,
+    );
+
+    let snow_w = w + 2;
+    let snow_h = h + 2;
+    let snow_x = x - 1;
+    let snow_z = z - 1;
+    let snow_start_seed = get_start_seed(rec.world_seed, rec.snow_salt);
+    let mut snow_buf = vec![Biome::NONE; snow_w * snow_h];
+    map_snow(
+        snow_start_seed,
+        &cont_buf,
+        &mut snow_buf,
+        snow_x,
+        snow_z,
+        snow_w,
+        snow_h,
+    );
+
+    let mut out = vec![Biome::NONE; w * h];
+    match kind {
+        TempKind::Cool => map_cool(&snow_buf, &mut out, w, h),
+        TempKind::Heat => map_heat(&snow_buf, &mut out, w, h),
+    }
+
+    let mut digest: u32 = 0;
+    for cell in &out {
+        digest ^= hash32(cell.id() as u32);
+    }
+    digest
+}
+
+#[test]
+fn map_cool_matches_cubiomes() {
+    let records: Vec<TempRecord> = load_fixture("cool.bin", 19);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_temp_record(rec, TempKind::Cool);
+        assert_eq!(digest, rec.digest, "map_cool mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_heat_matches_cubiomes() {
+    let records: Vec<TempRecord> = load_fixture("heat.bin", 20);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_temp_record(rec, TempKind::Heat);
+        assert_eq!(digest, rec.digest, "map_heat mismatch at record {i}");
     }
 }
 

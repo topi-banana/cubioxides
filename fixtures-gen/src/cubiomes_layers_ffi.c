@@ -158,3 +158,45 @@ void cubiomes_call_map_deep_ocean(uint64_t world_seed, uint64_t parent_salt,
     call_simple_chain(mapDeepOcean, world_seed, parent_salt, child_salt, out, x,
                       z, w, h);
 }
+
+/* 3-layer chain: mapContinent -> mapSnow -> child. The cool / heat
+ * layers expect a temperature-category parent, which is what mapSnow
+ * produces. */
+static int call_chain3(mapfunc_t *child_fn, uint64_t world_seed,
+                       uint64_t continent_salt, uint64_t snow_salt,
+                       uint64_t child_salt, int *out, int x, int z, int w,
+                       int h) {
+    Layer continent;
+    memset(&continent, 0, sizeof(continent));
+    continent.getMap = mapContinent;
+    continent.layerSalt = continent_salt;
+
+    Layer snow;
+    memset(&snow, 0, sizeof(snow));
+    snow.getMap = mapSnow;
+    snow.layerSalt = snow_salt;
+    snow.p = &continent;
+
+    Layer child;
+    memset(&child, 0, sizeof(child));
+    child.getMap = child_fn;
+    child.layerSalt = child_salt;
+    child.p = &snow;
+
+    setLayerSeed(&child, world_seed);
+    return child_fn(&child, out, x, z, w, h);
+}
+
+void cubiomes_call_map_cool(uint64_t world_seed, uint64_t continent_salt,
+                            uint64_t snow_salt, uint64_t cool_salt, int *out,
+                            int x, int z, int w, int h) {
+    call_chain3(mapCool, world_seed, continent_salt, snow_salt, cool_salt, out,
+                x, z, w, h);
+}
+
+void cubiomes_call_map_heat(uint64_t world_seed, uint64_t continent_salt,
+                            uint64_t snow_salt, uint64_t heat_salt, int *out,
+                            int x, int z, int w, int h) {
+    call_chain3(mapHeat, world_seed, continent_salt, snow_salt, heat_salt, out,
+                x, z, w, h);
+}
