@@ -99,6 +99,59 @@ impl Biome {
         matches!(id, 0 | 10 | 44 | 45 | 46)
     }
 
+    /// Returns `true` if `id` is one of the five deep-ocean variants
+    /// (`deep_ocean`, `deep_warm_ocean`, `deep_lukewarm_ocean`,
+    /// `deep_cold_ocean`, `deep_frozen_ocean`). Mirrors cubiomes'
+    /// `isDeepOcean`.
+    #[inline]
+    #[must_use]
+    pub const fn is_deep_ocean_id(id: i32) -> bool {
+        matches!(id, 24 | 47 | 48 | 49 | 50)
+    }
+
+    /// Returns `true` if `id` is any ocean variant — shallow or deep.
+    /// Mirrors cubiomes' `isOceanic`.
+    #[inline]
+    #[must_use]
+    pub const fn is_oceanic_id(id: i32) -> bool {
+        matches!(id, 0 | 10 | 24 | 44 | 45 | 46 | 47 | 48 | 49 | 50)
+    }
+
+    /// Returns `true` if `id` is one of the nine "snowy" biomes.
+    /// Mirrors cubiomes' `isSnowy`.
+    #[inline]
+    #[must_use]
+    pub const fn is_snowy_id(id: i32) -> bool {
+        matches!(
+            id,
+            10  // frozen_ocean
+            | 11  // frozen_river
+            | 12  // snowy_tundra
+            | 13  // snowy_mountains
+            | 26  // snowy_beach
+            | 30  // snowy_taiga
+            | 31  // snowy_taiga_hills
+            | 140 // ice_spikes
+            | 158 // snowy_taiga_mountains
+        )
+    }
+
+    /// Returns `true` if `id` is one of the six "mesa" / badlands
+    /// biome variants. Mirrors cubiomes' `isMesa`.
+    #[inline]
+    #[must_use]
+    pub const fn is_mesa_id(id: i32) -> bool {
+        matches!(
+            id,
+            37  // badlands
+            | 38  // wooded_badlands_plateau
+            | 39  // badlands_plateau
+            | 165 // eroded_badlands
+            | 166 // modified_wooded_badlands_plateau
+            | 167 // modified_badlands_plateau
+        )
+    }
+
     /// Underlying signed integer ID.
     #[inline]
     #[must_use]
