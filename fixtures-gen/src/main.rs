@@ -595,6 +595,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("generator_biome fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_gen_biomes_fixture(&fixtures_dir.join("gen_biomes_range.bin")) {
+        eprintln!("gen_biomes_range fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1619,6 +1623,161 @@ fn post_biome_record(
         digest,
         pad: 0,
     }
+}
+
+/// `Generator::gen_biomes` Range parity record (kind = 47). Captures
+/// cubiomes' end-to-end `setupGenerator + applySeed + genBiomes`
+/// flow over a small `(sx * sy * sz)` cuboid. Output stored as an
+/// XOR-folded digest of the biome id grid.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct GenBiomesRangeRecord {
+    pub mc: u32,
+    pub flags: u32,
+    pub dim: i32,
+    pub scale: i32,
+    pub seed: u64,
+    pub x: i32,
+    pub z: i32,
+    pub sx: u32,
+    pub sz: u32,
+    pub y: i32,
+    pub sy: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const GEN_BIOMES_RANGE_RECORDS: u64 = 256;
+
+#[allow(clippy::many_single_char_names, clippy::too_many_lines)]
+fn write_gen_biomes_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 47, GEN_BIOMES_RANGE_RECORDS)?;
+
+    let mut rng_state: u64 = 0x0000_a14e_4d04_4044;
+    for _ in 0..GEN_BIOMES_RANGE_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let mc_pool: [i32; 8] = [1, 3, 10, 15, 19, 22, 25, 28];
+        let mc = mc_pool[(rng_state as usize) % mc_pool.len()];
+        rng_state = lcg_step(rng_state);
+        let dim_choice = rng_state % 3;
+        let dim: i32 = match dim_choice {
+            1 if mc >= 19 => -1,
+            2 if mc >= 12 => 1,
+            _ => 0,
+        };
+        rng_state = lcg_step(rng_state);
+        // Restrict scales to the supported set:
+        let scale = if dim == 0 && (10..=21).contains(&mc) {
+            // Layered Overworld: 4, 16, 64, 256 (skip scale=1 which
+            // would require the Voronoi 1:1 grid extension).
+            let s: [i32; 4] = [4, 16, 64, 256];
+            s[(rng_state as usize) % s.len()]
+        } else if dim == 0 && mc >= 22 {
+            // Modern: scale=4 only for now (>=4 supported).
+            4
+        } else if dim == 0 {
+            // Beta — only return Overworld scale=4 records with
+            // mc>=2 (B1_8+) since Beta gen_biomes isn't ported yet.
+            // We skip Beta by picking another mc — simplest: clamp
+            // to mc=15 (1.12, layered).
+            4
+        } else if dim == -1 {
+            // Nether: 4, 16
+            if rng_state.trailing_zeros() == 0 {
+                16
+            } else {
+                4
+            }
+        } else {
+            // End: 4 or 16
+            if rng_state.trailing_zeros() == 0 {
+                16
+            } else {
+                4
+            }
+        };
+
+        // Beta has no gen_biomes implementation in our port yet —
+        // skip those records by re-rolling mc to a layered version.
+        let mc = if mc == 1 || mc == 3 {
+            // 1.0 with dim=Overworld is layered, so it's fine —
+            // only mc=1 (B1.7) needs replacement.
+            if mc == 1 { 10 } else { mc }
+        } else {
+            mc
+        };
+
+        rng_state = lcg_step(rng_state);
+        let flags: u32 = u32::from(mc >= 6 && rng_state.trailing_zeros() >= 2);
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 256;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 256;
+        rng_state = lcg_step(rng_state);
+        // Keep grids small so the parity tests stay fast.
+        let sx = ((rng_state & 0x7) as u32) + 1; // 1..=8
+        let sz = ((rng_state >> 8) & 0x7) as u32 + 1;
+        rng_state = lcg_step(rng_state);
+        let y = (rng_state as i32) % 256;
+        // sy: only Nether uses the sy axis meaningfully; for OW and
+        // End it's a 2D layer expanded vertically. Keep sy small.
+        let sy: u32 = if dim == -1 {
+            ((rng_state >> 16) & 0x3) as u32 + 1 // 1..=4
+        } else {
+            1
+        };
+
+        let cells = (sx * sy * sz) as usize;
+        // Allocate cubiomes' worst-case cache via allocCache-style
+        // padding. For our parity test we only need to read the
+        // first `cells` ints; oversize to be safe.
+        let pad_cells = cells * 4 + 256;
+        let mut out: Vec<i32> = vec![0; pad_cells];
+        let err = unsafe {
+            ffi::cubiomes_call_gen_biomes(
+                mc,
+                flags,
+                dim,
+                seed,
+                scale,
+                x,
+                z,
+                sx as c_int,
+                sz as c_int,
+                y,
+                sy as c_int,
+                out.as_mut_ptr(),
+            )
+        };
+        let digest = if err == 0 {
+            digest_i32_slice(&out[..cells])
+        } else {
+            // Record an error sentinel — the parity test will catch
+            // the mismatch.
+            0xffff_ffff
+        };
+
+        let rec = GenBiomesRangeRecord {
+            mc: mc as u32,
+            flags,
+            dim,
+            scale,
+            seed,
+            x,
+            z,
+            sx,
+            sz,
+            y,
+            sy,
+            digest,
+            pad: 0,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
 }
 
 /// `Generator::biome_at` parity record (kind = 46). Captures
@@ -3492,6 +3651,20 @@ mod ffi {
             x: c_int,
             y: c_int,
             z: c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_gen_biomes(
+            mc: c_int,
+            flags: u32,
+            dim: c_int,
+            seed: u64,
+            scale: c_int,
+            x: c_int,
+            z: c_int,
+            sx: c_int,
+            sz: c_int,
+            y: c_int,
+            sy: c_int,
+            out: *mut c_int,
         ) -> c_int;
         pub fn cubiomes_call_gen_area_at(
             mc: c_int,

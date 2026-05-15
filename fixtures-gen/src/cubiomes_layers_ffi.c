@@ -71,6 +71,30 @@ int cubiomes_call_get_biome_at(int mc, uint32_t flags, int dim, uint64_t seed,
     return getBiomeAt(&g, scale, x, y, z);
 }
 
+#include <stdlib.h>
+/* Run cubiomes' setupGenerator + applySeed + allocCache + genBiomes
+ * and copy the first sx*sy*sz biome ids into `out`. Uses
+ * `allocCache` because cubiomes' `genBiomes` reads scratch beyond
+ * sx*sy*sz for some layer / Voronoi paths. Returns cubiomes' error
+ * code (0 on success). */
+int cubiomes_call_gen_biomes(int mc, uint32_t flags, int dim, uint64_t seed,
+                             int scale, int x, int z, int sx, int sz, int y,
+                             int sy, int *out) {
+    Generator g;
+    setupGenerator(&g, mc, flags);
+    applySeed(&g, dim, seed);
+    Range r = {scale, x, z, sx, sz, y, sy};
+    int *cache = allocCache(&g, r);
+    if (!cache) return -1;
+    int err = genBiomes(&g, cache, r);
+    if (err == 0) {
+        int sy_norm = sy == 0 ? 1 : sy;
+        memcpy(out, cache, sizeof(int) * (size_t)sx * sz * sy_norm);
+    }
+    free(cache);
+    return err;
+}
+
 int cubiomes_call_sample_biome_noise_beta(uint64_t seed, int x, int z,
                                           double *t_out, double *h_out) {
     BiomeNoiseBeta bnb;

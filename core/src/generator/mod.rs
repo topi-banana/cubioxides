@@ -14,11 +14,45 @@
 //! in a follow-up.
 
 use crate::biome::Biome;
-use crate::biomenoise::{BiomeNoise, BiomeNoiseBeta, EndNoise, NetherNoise};
+use crate::biomenoise::{BiomeNoise, BiomeNoiseBeta, EndNoise, NetherNoise, SAMPLE_NO_SHIFT};
 use crate::layer::ops::voronoi::voronoi_access_3d;
 use crate::layer::{LayerId, LayerStack, gen_area, set_layer_seed, setup_layer_stack};
 use crate::mc_version::{Dimension, MCVersion};
 use crate::sha::voronoi_sha;
+
+/// 3D rectangular region cubiomes uses as the input to `genBiomes`.
+/// Mirrors `struct Range` in `cubiomes/biomenoise.h`. A horizontal
+/// scale of 1 indicates 1:1 (block) coordinates; any other scale is
+/// in biome cells (so 4 = 1:4, 16 = 1:16, etc.). `sy == 0` is
+/// normalised to `sy == 1` (a single horizontal slice).
+#[derive(Debug, Clone, Copy)]
+pub struct Range {
+    /// Horizontal scale factor.
+    pub scale: i32,
+    /// North-west corner X (in scale units).
+    pub x: i32,
+    /// North-west corner Z (in scale units).
+    pub z: i32,
+    /// Width along +X.
+    pub sx: u32,
+    /// Depth along +Z.
+    pub sz: u32,
+    /// Vertical base Y (1:1 if `scale == 1`, otherwise 1:4).
+    pub y: i32,
+    /// Vertical span (zero is treated as one).
+    pub sy: u32,
+}
+
+impl Range {
+    /// Number of cells the range covers (`sx * sz * sy`, with `sy =
+    /// max(1, sy)`).
+    #[inline]
+    #[must_use]
+    pub fn cell_count(&self) -> usize {
+        let sy = if self.sy == 0 { 1 } else { self.sy };
+        self.sx as usize * self.sz as usize * sy as usize
+    }
+}
 
 /// Cubiomes' `LARGE_BIOMES` flag (1.3+).
 pub const LARGE_BIOMES: u32 = 0x1;
@@ -249,6 +283,159 @@ impl Generator {
             other => panic!("unsupported scale {other} for End"),
         }
         Biome(out[0])
+    }
+
+    /// Cubiomes' `genBiomes(g, cache, r)` — fill `cache` with biome
+    /// ids over the requested 3D range.
+    ///
+    /// Currently supported combinations:
+    ///
+    /// - Overworld + Layered (Beta 1.8 – 1.17): all scales (1, 4,
+    ///   16, 64, 256) at the corresponding entry layer.
+    /// - Overworld + Modern (1.18+): scales ≥ 4 only (the 1.18+
+    ///   Voronoi 1:1 path lands in a follow-up).
+    /// - Nether (MC ≥ 1.16.1): scales ≥ 4.
+    /// - End (MC ≥ 1.9): scales 4 and 16.
+    /// - Pre-1.16.1 Nether and pre-1.9 End fill with the
+    ///   `nether_wastes` / `the_end` fallback.
+    ///
+    /// Panics on unsupported scale combinations — the parity matrix
+    /// only exercises the supported set.
+    pub fn gen_biomes(&self, cache: &mut [Biome], r: Range) {
+        let r = Range {
+            sy: r.sy.max(1),
+            ..r
+        };
+        assert!(
+            cache.len() >= r.cell_count(),
+            "Generator::gen_biomes: cache too small"
+        );
+
+        let dim = self
+            .dim
+            .expect("Generator::gen_biomes: apply_seed must be called first");
+
+        match dim {
+            Dimension::Overworld => self.gen_biomes_overworld(cache, r),
+            Dimension::Nether => self.gen_biomes_nether(cache, r),
+            Dimension::End => self.gen_biomes_end(cache, r),
+        }
+    }
+
+    fn gen_biomes_overworld(&self, cache: &mut [Biome], r: Range) {
+        match self.overworld_kind {
+            OverworldKind::Layered => {
+                let stack = self.layer_stack.as_ref().expect("layered stack");
+                let entry = layered_entry_for_scale(stack, r.scale).unwrap_or_else(|| {
+                    panic!("unsupported scale {} for layered Overworld", r.scale)
+                });
+                let area = r.sx as usize * r.sz as usize;
+                gen_area(
+                    stack,
+                    entry,
+                    &mut cache[..area],
+                    r.x,
+                    r.z,
+                    r.sx as usize,
+                    r.sz as usize,
+                );
+                // 2D layer output expanded across the vertical axis.
+                for k in 1..r.sy as usize {
+                    cache.copy_within(0..area, k * area);
+                }
+            }
+            OverworldKind::Modern => {
+                let bn = self.biome_noise.as_ref().expect("BiomeNoise seeded");
+                assert!(
+                    r.scale >= 4,
+                    "Generator::gen_biomes: Modern requires scale >= 4 (got {})",
+                    r.scale
+                );
+                gen_biome_noise_3d(bn, cache, r, r.scale > 4);
+            }
+            OverworldKind::Beta => {
+                panic!("Beta gen_biomes (with SurfaceNoiseBeta) is not yet implemented");
+            }
+        }
+    }
+
+    fn gen_biomes_nether(&self, cache: &mut [Biome], r: Range) {
+        if !self.mc.is_at_least(MCVersion::V1_16_1) {
+            for c in cache.iter_mut().take(r.cell_count()) {
+                *c = Biome::NETHER_WASTES;
+            }
+            return;
+        }
+        let nn = self.nether.as_ref().expect("Nether noise seeded");
+        assert!(
+            r.scale >= 4,
+            "Generator::gen_biomes: Nether requires scale >= 4 (got {})",
+            r.scale
+        );
+        let total = r.cell_count();
+        let mut buf = vec![0_i32; total];
+        nn.map_nether_3d(
+            &mut buf,
+            r.x,
+            r.y,
+            r.z,
+            r.sx as usize,
+            r.sy as usize,
+            r.sz as usize,
+            r.scale,
+            1.0,
+        );
+        for (dst, src) in cache.iter_mut().zip(buf.iter()) {
+            *dst = Biome(*src);
+        }
+    }
+
+    fn gen_biomes_end(&self, cache: &mut [Biome], r: Range) {
+        if !self.mc.is_at_least(MCVersion::V1_9) {
+            for c in cache.iter_mut().take(r.cell_count()) {
+                *c = Biome::THE_END;
+            }
+            return;
+        }
+        let en = self.end.as_ref().expect("End noise seeded");
+        let area = r.sx as usize * r.sz as usize;
+        let mut buf = vec![0_i32; area];
+        match r.scale {
+            4 => en.map_end(&mut buf, r.x, r.z, r.sx as usize, r.sz as usize),
+            16 => en.map_end_biome(&mut buf, r.x, r.z, r.sx as usize, r.sz as usize),
+            other => {
+                panic!("Generator::gen_biomes: End scale={other} not yet implemented (only 4, 16)")
+            }
+        }
+        for k in 0..r.sy as usize {
+            for (i, &v) in buf.iter().enumerate() {
+                cache[k * area + i] = Biome(v);
+            }
+        }
+    }
+}
+
+/// Cubiomes' `genBiomeNoise3D` — per-cell `sampleBiomeNoise` over
+/// the range, with `(x, z)` lifted to block coordinates by
+/// `(r.x + i) * (scale / 4) + scale/8`. `opt` enables the
+/// `SAMPLE_NO_SHIFT` fast-path for large scales (cubiomes' own
+/// optimisation — its caller passes `scale > 4`).
+fn gen_biome_noise_3d(bn: &BiomeNoise, cache: &mut [Biome], r: Range, opt: bool) {
+    let scale = if r.scale > 4 { r.scale / 4 } else { 1 };
+    let mid = scale / 2;
+    let flags = if opt { SAMPLE_NO_SHIFT } else { 0 };
+    let sx = r.sx as usize;
+    let sz = r.sz as usize;
+    for k in 0..r.sy as usize {
+        let yk = r.y + k as i32;
+        for j in 0..sz {
+            let zj = (r.z + j as i32) * scale + mid;
+            for i in 0..sx {
+                let xi = (r.x + i as i32) * scale + mid;
+                let (id, _) = bn.sample(xi, yk, zj, flags);
+                cache[k * sx * sz + j * sx + i] = Biome(id);
+            }
+        }
     }
 }
 
