@@ -1,0 +1,10 @@
+/* bindgen wrapper that pulls in every cubiomes public header. */
+#include "util.h"
+#include "biomes.h"
+#include "rng.h"
+#include "noise.h"
+#include "layers.h"
+#include "biomenoise.h"
+#include "generator.h"
+#include "finders.h"
+#include "quadbase.h"

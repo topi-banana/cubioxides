@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["core", "fixtures-gen"]
+members = ["core", "ffi-tests", "fixtures-gen"]
 default-members = ["core"]
 
 [workspace.package]

@@ -1,0 +1,23 @@
+[package]
+name = "ffi-tests"
+description = "Differential tests: bindgen + cc against the cubiomes C library."
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[build-dependencies]
+bindgen = { workspace = true }
+cc = { workspace = true }
+
+[dev-dependencies]
+cubioxides-core = { path = "../core" }
+
+[lints]
+workspace = true
