@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), warn(missing_docs))]
 
+pub mod math;
 pub mod mc_version;
 
 pub use mc_version::{Dimension, MCVersion};
