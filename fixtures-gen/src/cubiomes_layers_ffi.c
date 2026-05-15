@@ -53,3 +53,21 @@ void cubiomes_call_map_zoom(uint64_t world_seed, uint64_t parent_layer_salt,
     call_zoom_chain(mapZoom, world_seed, parent_layer_salt, zoom_layer_salt,
                     out, x, z, w, h);
 }
+
+void cubiomes_call_map_land(uint64_t world_seed, uint64_t parent_layer_salt,
+                            uint64_t land_layer_salt, int *out, int x, int z,
+                            int w, int h) {
+    Layer parent;
+    memset(&parent, 0, sizeof(parent));
+    parent.getMap = mapContinent;
+    parent.layerSalt = parent_layer_salt;
+
+    Layer land;
+    memset(&land, 0, sizeof(land));
+    land.getMap = mapLand;
+    land.layerSalt = land_layer_salt;
+    land.p = &parent;
+
+    setLayerSeed(&land, world_seed);
+    mapLand(&land, out, x, z, w, h);
+}

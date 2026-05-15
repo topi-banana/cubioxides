@@ -4,4 +4,5 @@
 //! cubiomes layer-map functions from `layers.c`.
 
 pub mod continent;
+pub mod land;
 pub mod zoom;

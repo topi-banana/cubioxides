@@ -462,6 +462,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("zoom fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_land_fixture(&fixtures_dir.join("land.bin")) {
+        eprintln!("land fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -664,6 +668,88 @@ fn zoom_record(
         world_seed,
         parent_salt,
         zoom_salt,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
+}
+
+/// `map_land` record (kind = 10). Same shape as `ZoomRecord`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct LandRecord {
+    pub world_seed: u64,
+    pub parent_salt: u64,
+    pub land_salt: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const LAND_RECORDS: u64 = 4096;
+
+fn write_land_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 10, LAND_RECORDS)?;
+
+    let mut rng_state: u64 = 0x0001_eafb_00b5;
+    for _ in 0..LAND_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let parent_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let land_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let w = ((rng_state & 0x1f) as u32) + 2;
+        let h = ((rng_state >> 8) & 0x1f) as u32 + 2;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 64;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 64;
+        let rec = land_record(world_seed, parent_salt, land_salt, x, z, w, h);
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn land_record(
+    world_seed: u64,
+    parent_salt: u64,
+    land_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+) -> LandRecord {
+    // map_land's out buffer must hold the parent's (w + 2) x (h + 2) cells
+    // before the final w * h window overwrites the first w * h cells.
+    let p_cells = ((w + 2) * (h + 2)) as usize;
+    let mut out: Vec<i32> = vec![0; p_cells];
+    unsafe {
+        ffi::cubiomes_call_map_land(
+            world_seed,
+            parent_salt,
+            land_salt,
+            out.as_mut_ptr(),
+            x,
+            z,
+            w as c_int,
+            h as c_int,
+        );
+    }
+    let cells = (w * h) as usize;
+    let digest = digest_i32_slice(&out[..cells]);
+    LandRecord {
+        world_seed,
+        parent_salt,
+        land_salt,
         x,
         z,
         w,
@@ -999,6 +1085,16 @@ mod ffi {
             world_seed: u64,
             parent_layer_salt: u64,
             zoom_layer_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_land(
+            world_seed: u64,
+            parent_layer_salt: u64,
+            land_layer_salt: u64,
             out: *mut c_int,
             x: c_int,
             z: c_int,

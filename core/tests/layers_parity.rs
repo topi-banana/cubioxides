@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use bytemuck::{Pod, Zeroable};
 use cubioxides::biome::Biome;
-use cubioxides::layer::{map_continent, map_zoom, map_zoom_fuzzy};
+use cubioxides::layer::{map_continent, map_land, map_zoom, map_zoom_fuzzy};
 use cubioxides::rng::{get_start_salt, get_start_seed};
 
 const MAGIC: [u8; 4] = *b"CUBX";
@@ -47,6 +47,20 @@ struct ZoomRecord {
     world_seed: u64,
     parent_salt: u64,
     zoom_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct LandRecord {
+    world_seed: u64,
+    parent_salt: u64,
+    land_salt: u64,
     x: i32,
     z: i32,
     w: u32,
@@ -224,6 +238,61 @@ fn map_zoom_matches_cubiomes() {
         assert_eq!(
             digest, rec.digest,
             "map_zoom digest mismatch at record {i} (world={:#x}, x={}, z={}, w={}, h={})",
+            rec.world_seed, rec.x, rec.z, rec.w, rec.h
+        );
+    }
+}
+
+#[test]
+fn map_land_matches_cubiomes() {
+    let records: Vec<LandRecord> = load_fixture("land.bin", 10);
+    assert!(!records.is_empty());
+
+    for (i, rec) in records.iter().enumerate() {
+        let x = rec.x;
+        let z = rec.z;
+        let w = rec.w as usize;
+        let h = rec.h as usize;
+
+        // map_land's parent rectangle is (w + 2) × (h + 2) starting at
+        // (x - 1, z - 1). Build it with map_continent, mirroring
+        // cubiomes_call_map_land.
+        let parent_w = w + 2;
+        let parent_h = h + 2;
+        let parent_x = x - 1;
+        let parent_z = z - 1;
+        let parent_start_seed = get_start_seed(rec.world_seed, rec.parent_salt);
+        let mut parent_buf = vec![Biome::NONE; parent_w * parent_h];
+        map_continent(
+            parent_start_seed,
+            &mut parent_buf,
+            parent_x,
+            parent_z,
+            parent_w,
+            parent_h,
+        );
+
+        let land_start_salt = get_start_salt(rec.world_seed, rec.land_salt);
+        let land_start_seed = get_start_seed(rec.world_seed, rec.land_salt);
+        let mut out = vec![Biome::NONE; w * h];
+        map_land(
+            land_start_salt,
+            land_start_seed,
+            &parent_buf,
+            &mut out,
+            x,
+            z,
+            w,
+            h,
+        );
+
+        let mut digest: u32 = 0;
+        for cell in &out {
+            digest ^= hash32(cell.id() as u32);
+        }
+        assert_eq!(
+            digest, rec.digest,
+            "map_land digest mismatch at record {i} (world={:#x}, x={}, z={}, w={}, h={})",
             rec.world_seed, rec.x, rec.z, rec.w, rec.h
         );
     }
