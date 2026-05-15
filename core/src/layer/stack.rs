@@ -162,9 +162,11 @@ pub struct LayerNode {
     pub zoom: i8,
     /// Maximum border required from the parent layer.
     pub edge: i8,
-    /// Block scale of one output cell. Filled in by [`setup_scale`].
+    /// Block scale of one output cell. Filled in by `setup_scale`
+    /// during [`setup_layer_stack`].
     pub scale: i32,
-    /// Pre-init layer salt (raw value from [`setup_layer`]).
+    /// Pre-init layer salt (raw value assigned by
+    /// [`setup_layer_stack`]).
     pub layer_salt: u64,
     /// Per-world layer salt (filled in by [`set_layer_seed`]).
     pub start_salt: u64,
