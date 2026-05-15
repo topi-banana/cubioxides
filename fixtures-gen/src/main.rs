@@ -32,7 +32,15 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         "verify" => verify_ffi(),
-        "regenerate-all" | "rng" => regenerate_rng(),
+        "rng" => regenerate_rng(),
+        "noise" => regenerate_noise(),
+        "regenerate-all" => {
+            let r = regenerate_rng();
+            if r != ExitCode::SUCCESS {
+                return r;
+            }
+            regenerate_noise()
+        }
         unknown => {
             eprintln!("unknown subcommand: {unknown}");
             print_help();
@@ -47,7 +55,8 @@ fn print_help() {
     eprintln!("Subcommands:");
     eprintln!("  verify           FFI smoke-test against cubiomes (must print \"1.18\")");
     eprintln!("  rng              Generate RNG fixtures (java / xoroshiro / mc_seed)");
-    eprintln!("  regenerate-all   Currently equivalent to `rng`; expands later");
+    eprintln!("  noise            Generate noise fixtures (perlin)");
+    eprintln!("  regenerate-all   Regenerate every fixture under fixtures/");
     eprintln!("  help             Show this help");
 }
 
@@ -309,6 +318,121 @@ fn write_mc_seed_fixture(path: &Path) -> std::io::Result<()> {
     file.flush()
 }
 
+fn regenerate_noise() -> ExitCode {
+    let fixtures_dir = workspace_root().join("fixtures").join("noise");
+    if let Err(err) = fs::create_dir_all(&fixtures_dir) {
+        eprintln!("failed to create {}: {err}", fixtures_dir.display());
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_perlin_fixture(&fixtures_dir.join("perlin.bin")) {
+        eprintln!("perlin fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "Wrote {RECORD_COUNT} noise records into {}",
+        fixtures_dir.display()
+    );
+    ExitCode::SUCCESS
+}
+
+/// Perlin noise record (kind = 4). One seed, one (x, y, z, yamp, ymin) sample
+/// point, four derived `f64` outputs stored as bit patterns.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct PerlinRecord {
+    pub seed: u64,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub yamp: f64,
+    pub ymin: f64,
+    pub java_sample_bits: u64,
+    pub xoroshiro_sample_bits: u64,
+    pub java_simplex_bits: u64,
+    pub xoroshiro_simplex_bits: u64,
+}
+
+fn write_perlin_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 4, RECORD_COUNT)?;
+
+    let mut rng_state: u64 = 0xc01d_cafe_1337;
+    for i in 0..RECORD_COUNT {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state ^ i;
+        // Spread inputs across a few orders of magnitude so the floor()
+        // logic in samplePerlin sees both positive and negative whole-cell
+        // boundaries.
+        rng_state = lcg_step(rng_state);
+        let x = u64_to_double_signed(rng_state) * 1000.0;
+        rng_state = lcg_step(rng_state);
+        let y = u64_to_double_signed(rng_state) * 16.0;
+        rng_state = lcg_step(rng_state);
+        let z = u64_to_double_signed(rng_state) * 1000.0;
+        // Half the records exercise yamp != 0 (sampleOctaveAmp pathway).
+        let (yamp, ymin) = if i % 2 == 0 {
+            (0.0, 0.0)
+        } else {
+            rng_state = lcg_step(rng_state);
+            let yamp = (u64_to_double_signed(rng_state).abs() * 4.0).max(0.0001);
+            rng_state = lcg_step(rng_state);
+            let ymin = u64_to_double_signed(rng_state) * 4.0;
+            (yamp, ymin)
+        };
+
+        let rec = perlin_record(seed, x, y, z, yamp, ymin);
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn u64_to_double_signed(bits: u64) -> f64 {
+    // Maps u64 to [-1.0, 1.0) uniformly enough for fixture variety.
+    let half = (bits >> 11) as f64 / (1u64 << 53) as f64;
+    half * 2.0 - 1.0
+}
+
+fn perlin_record(seed: u64, x: f64, y: f64, z: f64, yamp: f64, ymin: f64) -> PerlinRecord {
+    let java_sample_bits = unsafe {
+        let mut s = ffi::cubiomes_set_seed(seed);
+        let mut pn = std::mem::zeroed::<ffi::CPerlinNoise>();
+        ffi::perlinInit(&raw mut pn, &raw mut s);
+        ffi::samplePerlin(&raw const pn, x, y, z, yamp, ymin).to_bits()
+    };
+    let xoroshiro_sample_bits = unsafe {
+        let mut xr = ffi::Xoroshiro { lo: 0, hi: 0 };
+        ffi::cubiomes_x_set_seed(&raw mut xr, seed);
+        let mut pn = std::mem::zeroed::<ffi::CPerlinNoise>();
+        ffi::xPerlinInit(&raw mut pn, &raw mut xr);
+        ffi::samplePerlin(&raw const pn, x, y, z, yamp, ymin).to_bits()
+    };
+    let java_simplex_bits = unsafe {
+        let mut s = ffi::cubiomes_set_seed(seed);
+        let mut pn = std::mem::zeroed::<ffi::CPerlinNoise>();
+        ffi::perlinInit(&raw mut pn, &raw mut s);
+        ffi::sampleSimplex2D(&raw const pn, x, z).to_bits()
+    };
+    let xoroshiro_simplex_bits = unsafe {
+        let mut xr = ffi::Xoroshiro { lo: 0, hi: 0 };
+        ffi::cubiomes_x_set_seed(&raw mut xr, seed);
+        let mut pn = std::mem::zeroed::<ffi::CPerlinNoise>();
+        ffi::xPerlinInit(&raw mut pn, &raw mut xr);
+        ffi::sampleSimplex2D(&raw const pn, x, z).to_bits()
+    };
+    PerlinRecord {
+        seed,
+        x,
+        y,
+        z,
+        yamp,
+        ymin,
+        java_sample_bits,
+        xoroshiro_sample_bits,
+        java_simplex_bits,
+        xoroshiro_simplex_bits,
+    }
+}
+
 fn mc_seed_record(seed: u64, salt: u64) -> McSeedRecord {
     let mut rec = McSeedRecord::zeroed();
     rec.seed = seed;
@@ -340,6 +464,21 @@ mod ffi {
         pub hi: u64,
     }
 
+    /// C-layout `PerlinNoise` from `cubiomes/noise.h`.
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy)]
+    pub struct CPerlinNoise {
+        pub d: [u8; 257],
+        pub h2: u8,
+        pub a: f64,
+        pub b: f64,
+        pub c: f64,
+        pub amplitude: f64,
+        pub lacunarity: f64,
+        pub d2: f64,
+        pub t2: f64,
+    }
+
     unsafe extern "C" {
         pub fn mc2str(mc: c_int) -> *const c_char;
 
@@ -367,5 +506,22 @@ mod ffi {
         pub fn cubiomes_get_start_salt(ws: u64, ls: u64) -> u64;
         pub fn cubiomes_get_start_seed(ws: u64, ls: u64) -> u64;
         pub fn cubiomes_mul_inv(x: u64, m: u64) -> u64;
+
+        // Noise (defined directly in cubiomes/noise.c, no wrapper needed).
+        #[allow(non_snake_case)]
+        pub fn perlinInit(noise: *mut CPerlinNoise, seed: *mut u64);
+        #[allow(non_snake_case)]
+        pub fn xPerlinInit(noise: *mut CPerlinNoise, xr: *mut Xoroshiro);
+        #[allow(non_snake_case)]
+        pub fn samplePerlin(
+            noise: *const CPerlinNoise,
+            x: f64,
+            y: f64,
+            z: f64,
+            yamp: f64,
+            ymin: f64,
+        ) -> f64;
+        #[allow(non_snake_case)]
+        pub fn sampleSimplex2D(noise: *const CPerlinNoise, x: f64, y: f64) -> f64;
     }
 }

@@ -17,6 +17,9 @@ nether = "nether"
 voronoi = "voronoi"
 xoroshiro = "xoroshiro"
 splat = "splat"
+# Short variable names shared with cubiomes' C source.
+pn = "pn"
+xr = "xr"
 
 [files]
 extend-exclude = ["fixtures/**", "target/**", "Cargo.lock"]
