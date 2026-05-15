@@ -16,8 +16,8 @@ use cubioxides::biome::Biome;
 use cubioxides::layer::{
     map_bamboo, map_biome, map_continent, map_cool, map_deep_ocean, map_heat, map_hills,
     map_island, map_land, map_land_b18, map_land16, map_mushroom, map_noise, map_ocean_temp,
-    map_shore, map_snow, map_snow16, map_special, map_sunflower, map_swamp_river, map_voronoi114,
-    map_zoom, map_zoom_fuzzy,
+    map_river, map_river_mix, map_shore, map_smooth, map_snow, map_snow16, map_special,
+    map_sunflower, map_swamp_river, map_voronoi114, map_zoom, map_zoom_fuzzy,
 };
 use cubioxides::mc_version::MCVersion;
 use cubioxides::noise::PerlinNoise;
@@ -866,6 +866,103 @@ struct HillsFixtureRecord {
     h: u32,
     digest: u32,
     pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct PostBiomeRecord {
+    world_seed: u64,
+    primary_salt: u64,
+    secondary_salt: u64,
+    target_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
+#[test]
+fn map_river_matches_cubiomes() {
+    let records: Vec<PostBiomeRecord> = load_fixture("river.bin", 30);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let w = rec.w as usize;
+        let h = rec.h as usize;
+        let parent_w = w + 2;
+        let parent_h = h + 2;
+        let parent_seed = get_start_seed(rec.world_seed, rec.primary_salt);
+        let mut parent_buf = vec![Biome::NONE; parent_w * parent_h];
+        map_continent(
+            parent_seed,
+            &mut parent_buf,
+            rec.x - 1,
+            rec.z - 1,
+            parent_w,
+            parent_h,
+        );
+        let mut out = vec![Biome::NONE; w * h];
+        map_river(MCVersion::V1_18, &parent_buf, &mut out, w, h);
+        let mut digest: u32 = 0;
+        for cell in &out {
+            digest ^= hash32(cell.id() as u32);
+        }
+        assert_eq!(digest, rec.digest, "map_river mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_smooth_matches_cubiomes() {
+    let records: Vec<PostBiomeRecord> = load_fixture("smooth.bin", 31);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let w = rec.w as usize;
+        let h = rec.h as usize;
+        let parent_w = w + 2;
+        let parent_h = h + 2;
+        let parent_seed = get_start_seed(rec.world_seed, rec.primary_salt);
+        let mut parent_buf = vec![Biome::NONE; parent_w * parent_h];
+        map_continent(
+            parent_seed,
+            &mut parent_buf,
+            rec.x - 1,
+            rec.z - 1,
+            parent_w,
+            parent_h,
+        );
+        let smooth_start_seed = get_start_seed(rec.world_seed, rec.target_salt);
+        let mut out = vec![Biome::NONE; w * h];
+        map_smooth(smooth_start_seed, &parent_buf, &mut out, rec.x, rec.z, w, h);
+        let mut digest: u32 = 0;
+        for cell in &out {
+            digest ^= hash32(cell.id() as u32);
+        }
+        assert_eq!(digest, rec.digest, "map_smooth mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_river_mix_matches_cubiomes() {
+    let records: Vec<PostBiomeRecord> = load_fixture("river_mix.bin", 32);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let w = rec.w as usize;
+        let h = rec.h as usize;
+        let biome_seed = get_start_seed(rec.world_seed, rec.primary_salt);
+        let river_seed = get_start_seed(rec.world_seed, rec.secondary_salt);
+        let mut biome_buf = vec![Biome::NONE; w * h];
+        let mut river_buf = vec![Biome::NONE; w * h];
+        map_continent(biome_seed, &mut biome_buf, rec.x, rec.z, w, h);
+        map_continent(river_seed, &mut river_buf, rec.x, rec.z, w, h);
+        let mut out = vec![Biome::NONE; w * h];
+        map_river_mix(MCVersion::V1_18, &biome_buf, &river_buf, &mut out, w, h);
+        let mut digest: u32 = 0;
+        for cell in &out {
+            digest ^= hash32(cell.id() as u32);
+        }
+        assert_eq!(digest, rec.digest, "map_river_mix mismatch at record {i}");
+    }
 }
 
 #[test]

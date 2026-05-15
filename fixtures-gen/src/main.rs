@@ -527,6 +527,17 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("hills fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    for kind in [
+        PostBiomeKind::River,
+        PostBiomeKind::Smooth,
+        PostBiomeKind::RiverMix,
+    ] {
+        let path = fixtures_dir.join(format!("{}.bin", kind.name()));
+        if let Err(err) = write_post_biome_fixture(&path, kind) {
+            eprintln!("{} fixture failed: {err}", kind.name());
+            return ExitCode::FAILURE;
+        }
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1396,6 +1407,163 @@ fn four_hop_record(
     }
 }
 
+/// Generic record for layers reading 1 or 2 `mapContinent` parents:
+/// `mapRiver` (kind = 30), `mapSmooth` (kind = 31), `mapRiverMix`
+/// (kind = 32). For river / smooth the `secondary_salt` field is
+/// unused (set to zero in the writer).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct PostBiomeRecord {
+    pub world_seed: u64,
+    pub primary_salt: u64,
+    pub secondary_salt: u64,
+    pub target_salt: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const POST_BIOME_RECORDS: u64 = 4096;
+
+#[derive(Copy, Clone)]
+enum PostBiomeKind {
+    River,
+    Smooth,
+    RiverMix,
+}
+
+impl PostBiomeKind {
+    const fn fixture_kind(self) -> u16 {
+        match self {
+            Self::River => 30,
+            Self::Smooth => 31,
+            Self::RiverMix => 32,
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::River => "river",
+            Self::Smooth => "smooth",
+            Self::RiverMix => "river_mix",
+        }
+    }
+
+    const fn rng_seed(self) -> u64 {
+        match self {
+            Self::River => 0x1131_e1ec_0001,
+            Self::Smooth => 0x5300_0073_4001,
+            Self::RiverMix => 0x113c_e1ec_4117,
+        }
+    }
+}
+
+fn write_post_biome_fixture(path: &Path, kind: PostBiomeKind) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, kind.fixture_kind(), POST_BIOME_RECORDS)?;
+
+    let mut rng_state: u64 = kind.rng_seed();
+    for _ in 0..POST_BIOME_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let primary_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let secondary_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let target_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let w = ((rng_state & 0x1f) as u32) + 2;
+        let h = ((rng_state >> 8) & 0x1f) as u32 + 2;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 64;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 64;
+        let rec = post_biome_record(
+            kind,
+            world_seed,
+            primary_salt,
+            secondary_salt,
+            target_salt,
+            x,
+            z,
+            w,
+            h,
+        );
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn post_biome_record(
+    kind: PostBiomeKind,
+    world_seed: u64,
+    primary_salt: u64,
+    secondary_salt: u64,
+    target_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+) -> PostBiomeRecord {
+    let p_cells = ((w + 2) * (h + 2)) as usize;
+    let mut out: Vec<i32> = vec![0; p_cells * 3];
+    unsafe {
+        match kind {
+            PostBiomeKind::River => ffi::cubiomes_call_map_river(
+                world_seed,
+                MC_1_18_C,
+                primary_salt,
+                target_salt,
+                out.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            ),
+            PostBiomeKind::Smooth => ffi::cubiomes_call_map_smooth(
+                world_seed,
+                MC_1_18_C,
+                primary_salt,
+                target_salt,
+                out.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            ),
+            PostBiomeKind::RiverMix => ffi::cubiomes_call_map_river_mix(
+                world_seed,
+                MC_1_18_C,
+                primary_salt,
+                secondary_salt,
+                target_salt,
+                out.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            ),
+        }
+    }
+    let digest = digest_i32_slice(&out[..(w * h) as usize]);
+    PostBiomeRecord {
+        world_seed,
+        primary_salt,
+        secondary_salt,
+        target_salt,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
+}
+
 /// `mapHills` record (kind = 29). Two parent chains (each
 /// `mapContinent`) feed `mapHills`. MC = 1.18.
 #[repr(C)]
@@ -2168,6 +2336,40 @@ mod ffi {
         );
         pub fn cubiomes_call_map_ocean_temp(
             world_seed: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_river(
+            world_seed: u64,
+            mc: c_int,
+            parent_salt: u64,
+            river_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_smooth(
+            world_seed: u64,
+            mc: c_int,
+            parent_salt: u64,
+            smooth_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_river_mix(
+            world_seed: u64,
+            mc: c_int,
+            biome_salt: u64,
+            river_salt: u64,
+            mix_salt: u64,
             out: *mut c_int,
             x: c_int,
             z: c_int,

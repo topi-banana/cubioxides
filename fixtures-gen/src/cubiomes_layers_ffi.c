@@ -271,6 +271,74 @@ void cubiomes_call_map_sunflower(uint64_t world_seed, int mc,
                 biome_salt, child_salt, out, x, z, w, h);
 }
 
+void cubiomes_call_map_river(uint64_t world_seed, int mc, uint64_t parent_salt,
+                             uint64_t river_salt, int *out, int x, int z, int w,
+                             int h) {
+    Layer parent;
+    memset(&parent, 0, sizeof(parent));
+    parent.getMap = mapContinent;
+    parent.layerSalt = parent_salt;
+    parent.mc = mc;
+
+    Layer river;
+    memset(&river, 0, sizeof(river));
+    river.getMap = mapRiver;
+    river.layerSalt = river_salt;
+    river.mc = mc;
+    river.p = &parent;
+
+    setLayerSeed(&river, world_seed);
+    mapRiver(&river, out, x, z, w, h);
+}
+
+void cubiomes_call_map_smooth(uint64_t world_seed, int mc,
+                              uint64_t parent_salt, uint64_t smooth_salt,
+                              int *out, int x, int z, int w, int h) {
+    Layer parent;
+    memset(&parent, 0, sizeof(parent));
+    parent.getMap = mapContinent;
+    parent.layerSalt = parent_salt;
+    parent.mc = mc;
+
+    Layer smooth;
+    memset(&smooth, 0, sizeof(smooth));
+    smooth.getMap = mapSmooth;
+    smooth.layerSalt = smooth_salt;
+    smooth.mc = mc;
+    smooth.p = &parent;
+
+    setLayerSeed(&smooth, world_seed);
+    mapSmooth(&smooth, out, x, z, w, h);
+}
+
+void cubiomes_call_map_river_mix(uint64_t world_seed, int mc,
+                                 uint64_t biome_salt, uint64_t river_salt,
+                                 uint64_t mix_salt, int *out, int x, int z,
+                                 int w, int h) {
+    Layer biome;
+    memset(&biome, 0, sizeof(biome));
+    biome.getMap = mapContinent;
+    biome.layerSalt = biome_salt;
+    biome.mc = mc;
+
+    Layer river;
+    memset(&river, 0, sizeof(river));
+    river.getMap = mapContinent;
+    river.layerSalt = river_salt;
+    river.mc = mc;
+
+    Layer mix;
+    memset(&mix, 0, sizeof(mix));
+    mix.getMap = mapRiverMix;
+    mix.layerSalt = mix_salt;
+    mix.mc = mc;
+    mix.p = &biome;
+    mix.p2 = &river;
+
+    setLayerSeed(&mix, world_seed);
+    mapRiverMix(&mix, out, x, z, w, h);
+}
+
 void cubiomes_call_map_hills(uint64_t world_seed, int mc,
                              uint64_t biome_parent_salt,
                              uint64_t river_parent_salt, uint64_t hills_salt,
