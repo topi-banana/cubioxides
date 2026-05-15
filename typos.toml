@@ -1,0 +1,22 @@
+[default]
+extend-ignore-re = [
+  # Hex literals such as 0xCAFE.
+  "\\b0x[0-9a-fA-F]+\\b",
+]
+
+[default.extend-words]
+# Minecraft / cubiomes vocabulary
+biomenoise = "biomenoise"
+cubiomes = "cubiomes"
+cubioxides = "cubioxides"
+worldgen = "worldgen"
+overworld = "overworld"
+mesa = "mesa"
+mineshaft = "mineshaft"
+nether = "nether"
+voronoi = "voronoi"
+xoroshiro = "xoroshiro"
+splat = "splat"
+
+[files]
+extend-exclude = ["fixtures/**", "target/**", "Cargo.lock"]

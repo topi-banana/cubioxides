@@ -12,15 +12,15 @@ repository = "https://github.com/topi-oke/cubioxides"
 authors = ["topi <topi87.oke@gmail.com>"]
 
 [workspace.dependencies]
-bitflags = "2.6"
-thiserror = "2.0"
-bytemuck = { version = "1.21", features = ["derive"] }
-proptest = "1.5"
-rstest = "0.23"
-pretty_assertions = "1.4"
-rayon = "1.10"
 bindgen = "0.71"
+bitflags = "2.6"
+bytemuck = { version = "1.21", features = ["derive"] }
 cc = "1.2"
+pretty_assertions = "1.4"
+proptest = "1.5"
+rayon = "1.10"
+rstest = "0.23"
+thiserror = "2.0"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

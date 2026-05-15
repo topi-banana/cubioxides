@@ -13,6 +13,12 @@ keywords = ["minecraft", "cubiomes", "worldgen", "biome"]
 [lib]
 name = "cubioxides"
 
+# bitflags / thiserror are placeholder deps for the upcoming M1+ work
+# (GeneratorFlags, GenError). cargo machete cannot see future usage, so
+# we list them here until the first consumer lands.
+[package.metadata.cargo-machete]
+ignored = ["bitflags", "thiserror"]
+
 [features]
 default = []
 # Enable rayon-based parallelism for seed search. Auto-disabled on wasm32.
@@ -29,9 +35,9 @@ rayon = { workspace = true, optional = true }
 
 [dev-dependencies]
 bytemuck = { workspace = true }
+pretty_assertions = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
-pretty_assertions = { workspace = true }
 
 [lints]
 workspace = true
