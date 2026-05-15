@@ -1,0 +1,43 @@
+name: Fixtures Verify
+
+# Weekly check that the binary fixtures committed under fixtures/ still
+# match what cubiomes upstream produces. Catches silent drift caused by
+# upstream changes to constants or biome tables.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  verify:
+    name: regenerate and diff fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cubioxides
+        uses: actions/checkout@v4
+
+      - name: Checkout cubiomes (sibling directory)
+        uses: actions/checkout@v4
+        with:
+          repository: Cubitect/cubiomes
+          path: ../cubiomes
+          fetch-depth: 1
+
+      - name: Install GCC
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc make
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: fixtures-verify
+
+      - name: Run fixtures-gen verify
+        run: cargo run -p fixtures-gen --release -- verify
