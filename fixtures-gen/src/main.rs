@@ -346,6 +346,10 @@ fn regenerate_noise() -> ExitCode {
         eprintln!("surface_noise fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_nether_fixture(&fixtures_dir.join("nether.bin")) {
+        eprintln!("nether fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote noise fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2596,6 +2600,76 @@ fn write_surface_noise_fixture(path: &Path) -> std::io::Result<()> {
     file.flush()
 }
 
+/// `NetherNoise` parity record (kind = 41). Pairs each input with
+/// both a single-cell `getNetherBiome` result (biome + `ndel` bit
+/// pattern) and the digest of a small `mapNether2D` grid keyed at
+/// `(x, z)`. The single-cell result exercises the `f32` distance
+/// arithmetic precisely; the grid digest catches `fillRad3D` /
+/// confidence-radius regressions.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct NetherRecord {
+    pub seed: u64,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub single_biome: i32,
+    pub single_ndel_bits: u32,
+    pub grid_digest: u32,
+    pub pad: [u32; 2],
+}
+
+const NETHER_RECORDS: u64 = 512;
+
+#[allow(clippy::many_single_char_names)]
+fn write_nether_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 41, NETHER_RECORDS)?;
+
+    let mut rng_state: u64 = 0x9e7_4e7_770_001;
+    for _ in 0..NETHER_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 4096;
+        rng_state = lcg_step(rng_state);
+        let y = (rng_state as i32) % 128;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 4096;
+        rng_state = lcg_step(rng_state);
+        let w = ((rng_state & 0xf) as u32) + 4;
+        let h = ((rng_state >> 8) & 0xf) as u32 + 4;
+
+        let mut ndel: f32 = 0.0;
+        let single_biome = unsafe {
+            ffi::cubiomes_call_get_nether_biome(seed, x, y, z, std::ptr::from_mut(&mut ndel))
+        };
+
+        let mut out: Vec<i32> = vec![0; (w as usize) * (h as usize)];
+        unsafe {
+            ffi::cubiomes_call_map_nether_2d(seed, out.as_mut_ptr(), x, z, w as c_int, h as c_int);
+        }
+        let grid_digest = digest_i32_slice(&out);
+
+        let rec = NetherRecord {
+            seed,
+            x,
+            y,
+            z,
+            w,
+            h,
+            single_biome,
+            single_ndel_bits: ndel.to_bits(),
+            grid_digest,
+            pad: [0; 2],
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
 fn write_double_perlin_fixture(path: &Path) -> std::io::Result<()> {
     let mut file = BufWriter::new(File::create(path)?);
     write_header(&mut file, 6, RECORD_COUNT)?;
@@ -3009,6 +3083,21 @@ mod ffi {
             nmin: f64,
             nmax: f64,
         ) -> f64;
+        pub fn cubiomes_call_map_nether_2d(
+            seed: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_get_nether_biome(
+            seed: u64,
+            x: c_int,
+            y: c_int,
+            z: c_int,
+            ndel: *mut f32,
+        ) -> c_int;
         pub fn cubiomes_call_gen_area_at(
             mc: c_int,
             large_biomes: c_int,

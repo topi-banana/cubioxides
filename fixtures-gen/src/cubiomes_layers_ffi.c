@@ -27,6 +27,20 @@ double cubiomes_call_sample_surface_noise_between(int dim, uint64_t seed, int x,
     return sampleSurfaceNoiseBetween(&sn, x, y, z, nmin, nmax);
 }
 
+void cubiomes_call_map_nether_2d(uint64_t seed, int *out, int x, int z, int w,
+                                 int h) {
+    NetherNoise nn;
+    setNetherSeed(&nn, seed);
+    mapNether2D(&nn, out, x, z, w, h);
+}
+
+int cubiomes_call_get_nether_biome(uint64_t seed, int x, int y, int z,
+                                   float *ndel) {
+    NetherNoise nn;
+    setNetherSeed(&nn, seed);
+    return getNetherBiome(&nn, x, y, z, ndel);
+}
+
 void cubiomes_call_map_continent(uint64_t start_seed, int *out, int x, int z,
                                  int w, int h) {
     Layer l;

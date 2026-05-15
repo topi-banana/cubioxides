@@ -97,6 +97,18 @@ impl Biome {
     pub const DEEP_COLD_OCEAN: Self = Self(49);
     /// `deep_frozen_ocean` (biome id 50).
     pub const DEEP_FROZEN_OCEAN: Self = Self(50);
+    /// `nether_wastes` / `hell` (biome id 8).
+    pub const NETHER_WASTES: Self = Self(8);
+    /// `the_end` / `sky` (biome id 9).
+    pub const THE_END: Self = Self(9);
+    /// `soul_sand_valley` (biome id 170; 1.16+).
+    pub const SOUL_SAND_VALLEY: Self = Self(170);
+    /// `crimson_forest` (biome id 171; 1.16+).
+    pub const CRIMSON_FOREST: Self = Self(171);
+    /// `warped_forest` (biome id 172; 1.16+).
+    pub const WARPED_FOREST: Self = Self(172);
+    /// `basalt_deltas` (biome id 173; 1.16+).
+    pub const BASALT_DELTAS: Self = Self(173);
 
     /// Returns `true` if `id` is one of the five shallow-ocean variants
     /// (`ocean`, `frozen_ocean`, `cold_ocean`, `lukewarm_ocean`,

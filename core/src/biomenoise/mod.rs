@@ -6,6 +6,8 @@
 //! 1.18+ `BiomeNoise` (climate sampling + spline stack + `BiomeTree`
 //! decision), and `BiomeNoiseBeta` follow in subsequent commits.
 
+pub mod nether;
 pub mod surface;
 
+pub use nether::NetherNoise;
 pub use surface::{SurfaceNoise, maintain_precision};
