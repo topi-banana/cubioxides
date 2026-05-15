@@ -12,7 +12,7 @@ repository = "https://github.com/topi-banana/cubioxides"
 authors = ["topi <topi87.oke@gmail.com>"]
 
 [workspace.dependencies]
-bindgen = "0.71"
+bindgen = "0.72"
 bitflags = "2.6"
 bytemuck = { version = "1.21", features = ["derive"] }
 cc = "1.2"
