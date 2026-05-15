@@ -7,9 +7,11 @@
 //! (`Layer`, `LayerStack`, the DAG dispatch) land in later M3
 //! sub-stages as more `mapfunc_t`s come online.
 
+pub mod dispatch;
 pub mod ops;
 pub mod stack;
 
+pub use dispatch::gen_area;
 pub use stack::{
     L_NUM, LAYER_INIT_SHA, LayerId, LayerNode, LayerOp, LayerStack, set_layer_seed,
     setup_layer_stack,

@@ -559,6 +559,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("layer_stack fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_gen_area_fixture(&fixtures_dir.join("gen_area.bin")) {
+        eprintln!("gen_area fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1582,6 +1586,111 @@ fn post_biome_record(
         h,
         digest,
         pad: 0,
+    }
+}
+
+/// `genArea` parity record (kind = 38). Runs cubiomes' `genArea` on a
+/// freshly built `LayerStack` for an arbitrary (`mc`, `world_seed`,
+/// `layer_id`) tuple and stores the digest. Padded so `Pod` is happy.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct GenAreaRecord {
+    pub mc: u32,
+    pub large_biomes: u32,
+    pub world_seed: u64,
+    pub layer_id: u32,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+}
+
+const GEN_AREA_RECORDS: u64 = 512;
+
+fn write_gen_area_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 38, GEN_AREA_RECORDS)?;
+
+    // Layer IDs picked to exercise each LayerOp dispatch arm at least
+    // once in the 1.18 DAG: Continent (0), ZoomFuzzy (3), Land (4),
+    // Snow (10), Cool (12), Special (14), Mushroom (19), DeepOcean
+    // (20), Biome (21), Bamboo (22), BiomeEdge (25), Noise (26),
+    // Hills (29), Sunflower (30), Shore (34), Smooth (38), River (45),
+    // RiverMix (47), OceanMix (55), Voronoi1 (56).
+    let layer_ids: [i32; 20] = [
+        0, 3, 4, 10, 12, 14, 19, 20, 21, 22, 25, 26, 29, 30, 34, 38, 45, 47, 55, 56,
+    ];
+
+    let mut rng_state: u64 = 0x6_ea7_ea7_777;
+    for _ in 0..GEN_AREA_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let mc: i32 = 22; // 1.18 — broadest coverage; other MCs land in follow-ups.
+        let large_biomes = 0;
+        rng_state = lcg_step(rng_state);
+        let layer_id = layer_ids[(rng_state as usize) % layer_ids.len()];
+        let (x, z, w, h) = sample_dims_for_layer(layer_id, &mut rng_state);
+
+        // Allocate generously — cubiomes' genArea reads its own
+        // scratch beyond w*h for some layers.
+        let cells = (w as usize) * (h as usize) + ((w as usize + 32) * (h as usize + 32)) * 2;
+        let mut out: Vec<i32> = vec![0; cells];
+        unsafe {
+            ffi::cubiomes_call_gen_area_at(
+                mc,
+                large_biomes,
+                world_seed,
+                layer_id,
+                out.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            );
+        }
+        let digest = digest_i32_slice(&out[..(w * h) as usize]);
+        let rec = GenAreaRecord {
+            mc: mc as u32,
+            large_biomes: large_biomes as u32,
+            world_seed,
+            layer_id: layer_id as u32,
+            x,
+            z,
+            w,
+            h,
+            digest,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn sample_dims_for_layer(layer_id: i32, rng_state: &mut u64) -> (i32, i32, u32, u32) {
+    // For Voronoi (1:1 output reading a 1:4 parent), cubiomes leaves
+    // cells outside the 4-block-aligned grid as stale parent
+    // scratch. Align x/z/w/h to multiples of 4 so every output cell
+    // is actually written — otherwise the digest would compare
+    // garbage.
+    if layer_id == 56 {
+        *rng_state = lcg_step(*rng_state);
+        let w = (((*rng_state & 0xf) as u32) + 4) & !3;
+        let h = (((*rng_state >> 8) & 0xf) as u32 + 4) & !3;
+        *rng_state = lcg_step(*rng_state);
+        let x = ((*rng_state as i32) % 32) & !3;
+        *rng_state = lcg_step(*rng_state);
+        let z = ((*rng_state as i32) % 32) & !3;
+        (x, z, w, h)
+    } else {
+        *rng_state = lcg_step(*rng_state);
+        let w = ((*rng_state & 0xf) as u32) + 4;
+        let h = ((*rng_state >> 8) & 0xf) as u32 + 4;
+        *rng_state = lcg_step(*rng_state);
+        let x = (*rng_state as i32) % 64;
+        *rng_state = lcg_step(*rng_state);
+        let z = (*rng_state as i32) % 64;
+        (x, z, w, h)
     }
 }
 
@@ -2729,6 +2838,17 @@ mod ffi {
             world_seed: u64,
             out: *mut u64,
         );
+        pub fn cubiomes_call_gen_area_at(
+            mc: c_int,
+            large_biomes: c_int,
+            world_seed: u64,
+            layer_id_ord: c_int,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        ) -> c_int;
         pub fn cubiomes_call_map_river(
             world_seed: u64,
             mc: c_int,
