@@ -43,6 +43,8 @@ impl Biome {
     pub const SNOWY_TUNDRA: Self = Self(12);
     /// `mushroom_fields` (biome id 14).
     pub const MUSHROOM_FIELDS: Self = Self(14);
+    /// `mushroom_field_shore` (biome id 15).
+    pub const MUSHROOM_FIELD_SHORE: Self = Self(15);
     /// `beach` (biome id 16).
     pub const BEACH: Self = Self(16);
     /// `jungle` (biome id 21).

@@ -12,6 +12,7 @@ pub mod land;
 pub mod mushroom;
 pub mod noise;
 pub mod river;
+pub mod river_mix;
 pub mod smooth;
 pub mod snow;
 pub mod special;
