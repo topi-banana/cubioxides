@@ -14,6 +14,7 @@ pub use ops::biome::map_biome;
 pub use ops::biome_edge::map_biome_edge;
 pub use ops::continent::map_continent;
 pub use ops::deep_ocean::map_deep_ocean;
+pub use ops::hills::map_hills;
 pub use ops::island::map_island;
 pub use ops::land::{map_land, map_land_b18, map_land16};
 pub use ops::mushroom::map_mushroom;

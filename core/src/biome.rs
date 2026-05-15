@@ -214,6 +214,59 @@ impl Biome {
         }
     }
 
+    /// Return the "mutated" variant of `id`. Bit-exact port of
+    /// cubiomes' `getMutated`. Returns `-1` (none) when no mutation
+    /// exists. The `birch_forest` / `birch_forest_hills` cases depend
+    /// on MC version (1.9 / 1.10 swap the mapping to emulate
+    /// MC-98995).
+    #[inline]
+    #[must_use]
+    #[allow(clippy::too_many_lines)]
+    pub const fn get_mutated_id(mc: crate::mc_version::MCVersion, id: i32) -> i32 {
+        match id {
+            1 => 129,  // plains -> sunflower_plains
+            2 => 130,  // desert -> desert_lakes
+            3 => 131,  // mountains -> gravelly_mountains
+            4 => 132,  // forest -> flower_forest
+            5 => 133,  // taiga -> taiga_mountains
+            6 => 134,  // swamp -> swamp_hills
+            12 => 140, // snowy_tundra -> ice_spikes
+            21 => 149, // jungle -> modified_jungle
+            23 => 151, // jungle_edge -> modified_jungle_edge
+            27 => {
+                // birch_forest -> tall_birch_hills (1.9-1.10) or tall_birch_forest
+                if mc.is_at_least(crate::mc_version::MCVersion::V1_9)
+                    && !mc.is_at_least(crate::mc_version::MCVersion::V1_11)
+                {
+                    156
+                } else {
+                    155
+                }
+            }
+            28 => {
+                // birch_forest_hills -> none (1.9-1.10) or tall_birch_hills
+                if mc.is_at_least(crate::mc_version::MCVersion::V1_9)
+                    && !mc.is_at_least(crate::mc_version::MCVersion::V1_11)
+                {
+                    -1
+                } else {
+                    156
+                }
+            }
+            29 => 157, // dark_forest -> dark_forest_hills
+            30 => 158, // snowy_taiga -> snowy_taiga_mountains
+            32 => 160, // giant_tree_taiga -> giant_spruce_taiga
+            33 => 161, // giant_tree_taiga_hills -> giant_spruce_taiga_hills
+            34 => 162, // wooded_mountains -> modified_gravelly_mountains
+            35 => 163, // savanna -> shattered_savanna
+            36 => 164, // savanna_plateau -> shattered_savanna_plateau
+            37 => 165, // badlands -> eroded_badlands
+            38 => 166, // wooded_badlands_plateau -> modified_wooded_badlands_plateau
+            39 => 167, // badlands_plateau -> modified_badlands_plateau
+            _ => -1,
+        }
+    }
+
     /// `true` if `id1` and `id2` belong to the same biome family.
     /// Bit-exact port of cubiomes' `areSimilar`.
     #[inline]

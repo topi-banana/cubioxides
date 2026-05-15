@@ -8,6 +8,7 @@ pub mod biome;
 pub mod biome_edge;
 pub mod continent;
 pub mod deep_ocean;
+pub mod hills;
 pub mod island;
 pub mod land;
 pub mod mushroom;
