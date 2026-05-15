@@ -13,6 +13,9 @@ publish = false
 name = "fixtures-gen"
 path = "src/main.rs"
 
+[dependencies]
+bytemuck = { workspace = true }
+
 [build-dependencies]
 cc = { workspace = true }
 
