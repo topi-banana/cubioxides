@@ -5,6 +5,8 @@
 //! bit-exact with the C reference; clients downstream can downcast to
 //! `f32` as needed.
 
+pub mod octave;
 pub mod perlin;
 
+pub use octave::OctaveNoise;
 pub use perlin::PerlinNoise;
