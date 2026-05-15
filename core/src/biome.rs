@@ -117,6 +117,12 @@ impl Biome {
     pub const END_HIGHLANDS: Self = Self(42);
     /// `end_barrens` (biome id 43; 1.13+).
     pub const END_BARRENS: Self = Self(43);
+    /// `seasonal_forest` (biome id 51; Alpha 1.2 – Beta 1.7 only).
+    pub const SEASONAL_FOREST: Self = Self(51);
+    /// `rainforest` (biome id 52; Alpha 1.2 – Beta 1.7 only).
+    pub const RAINFOREST: Self = Self(52);
+    /// `shrubland` (biome id 53; Alpha 1.2 – Beta 1.7 only).
+    pub const SHRUBLAND: Self = Self(53);
 
     /// Returns `true` if `id` is one of the five shallow-ocean variants
     /// (`ocean`, `frozen_ocean`, `cold_ocean`, `lukewarm_ocean`,

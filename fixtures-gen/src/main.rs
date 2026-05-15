@@ -362,6 +362,10 @@ fn regenerate_noise() -> ExitCode {
         eprintln!("biome_noise fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_biome_noise_beta_fixture(&fixtures_dir.join("biome_noise_beta.bin")) {
+        eprintln!("biome_noise_beta fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote noise fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2682,6 +2686,59 @@ fn write_nether_fixture(path: &Path) -> std::io::Result<()> {
     file.flush()
 }
 
+/// `BiomeNoiseBeta::sample` parity record (kind = 45).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct BiomeNoiseBetaRecord {
+    pub seed: u64,
+    pub t_bits: u64,
+    pub h_bits: u64,
+    pub x: i32,
+    pub z: i32,
+    pub biome_id: i32,
+    pub pad: u32,
+}
+
+const BIOME_NOISE_BETA_RECORDS: u64 = 1024;
+
+fn write_biome_noise_beta_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 45, BIOME_NOISE_BETA_RECORDS)?;
+
+    let mut rng_state: u64 = 0x0000_b17a_9999_5555;
+    for _ in 0..BIOME_NOISE_BETA_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 4096;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 4096;
+
+        let mut t: f64 = 0.0;
+        let mut h: f64 = 0.0;
+        let biome_id = unsafe {
+            ffi::cubiomes_call_sample_biome_noise_beta(
+                seed,
+                x,
+                z,
+                std::ptr::from_mut(&mut t),
+                std::ptr::from_mut(&mut h),
+            )
+        };
+        let rec = BiomeNoiseBetaRecord {
+            seed,
+            x,
+            z,
+            biome_id,
+            t_bits: t.to_bits(),
+            h_bits: h.to_bits(),
+            pad: 0,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
 /// `sampleBiomeNoise` parity record (kind = 44). For each input
 /// `(mc, seed, large, x, y, z)` carries the chosen biome id and the
 /// six-axis `np[6]` tuple cubiomes computes.
@@ -3325,6 +3382,13 @@ mod ffi {
             z: c_int,
             sample_flags: c_int,
             np_out: *mut i64,
+        ) -> c_int;
+        pub fn cubiomes_call_sample_biome_noise_beta(
+            seed: u64,
+            x: c_int,
+            z: c_int,
+            t_out: *mut f64,
+            h_out: *mut f64,
         ) -> c_int;
         pub fn cubiomes_call_gen_area_at(
             mc: c_int,

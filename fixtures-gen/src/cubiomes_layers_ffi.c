@@ -62,6 +62,18 @@ int cubiomes_call_climate_to_biome(int mc, const uint64_t np[6]) {
 /* Initialise + seed a BiomeNoise in one call, sample at (x, y, z),
  * and write the (biome_id, np[6]) tuple back via the output
  * pointers. */
+int cubiomes_call_sample_biome_noise_beta(uint64_t seed, int x, int z,
+                                          double *t_out, double *h_out) {
+    BiomeNoiseBeta bnb;
+    memset(&bnb, 0, sizeof(bnb));
+    setBetaBiomeSeed(&bnb, seed);
+    double nv[2];
+    int id = sampleBiomeNoiseBeta(&bnb, NULL, nv, x, z);
+    *t_out = nv[0];
+    *h_out = nv[1];
+    return id;
+}
+
 int cubiomes_call_sample_biome_noise(int mc, uint64_t seed, int large_biomes,
                                      int x, int y, int z, int sample_flags,
                                      int64_t *np_out) {
