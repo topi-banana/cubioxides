@@ -342,6 +342,10 @@ fn regenerate_noise() -> ExitCode {
         eprintln!("double_perlin fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_surface_noise_fixture(&fixtures_dir.join("surface_noise.bin")) {
+        eprintln!("surface_noise fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote noise fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2528,6 +2532,70 @@ fn octave_record(seed: u64, x: f64, y: f64, z: f64) -> OctaveRecord {
     }
 }
 
+/// `SurfaceNoise` record (kind = 40). Two outputs per record: the
+/// plain `sampleSurfaceNoise` and the early-exit
+/// `sampleSurfaceNoiseBetween`. `dim` ∈ {0 = Overworld, 1 = End}.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct SurfaceNoiseRecord {
+    pub dim: i32,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub seed: u64,
+    pub noise_min: f64,
+    pub noise_max: f64,
+    pub sample_bits: u64,
+    pub between_bits: u64,
+}
+
+const SURFACE_NOISE_RECORDS: u64 = 1024;
+
+fn write_surface_noise_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 40, SURFACE_NOISE_RECORDS)?;
+
+    let mut rng_state: u64 = 0x5_face_0001_3001;
+    for _ in 0..SURFACE_NOISE_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        // 75% Overworld, 25% End — Overworld exercises oct_surf /
+        // oct_depth init; End exercises the shorter octave path.
+        let dim: i32 = i32::from(rng_state.trailing_zeros() >= 2);
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 4096;
+        rng_state = lcg_step(rng_state);
+        let y = (rng_state as i32) % 256;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 4096;
+        rng_state = lcg_step(rng_state);
+        let noise_min = u64_to_double_signed(rng_state) * 8.0;
+        rng_state = lcg_step(rng_state);
+        let noise_max = noise_min + u64_to_double_signed(rng_state).abs() * 8.0 + 0.5;
+
+        let sample = unsafe { ffi::cubiomes_call_sample_surface_noise(dim, seed, x, y, z) };
+        let between = unsafe {
+            ffi::cubiomes_call_sample_surface_noise_between(
+                dim, seed, x, y, z, noise_min, noise_max,
+            )
+        };
+        let rec = SurfaceNoiseRecord {
+            dim,
+            x,
+            y,
+            z,
+            seed,
+            noise_min,
+            noise_max,
+            sample_bits: sample.to_bits(),
+            between_bits: between.to_bits(),
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
 fn write_double_perlin_fixture(path: &Path) -> std::io::Result<()> {
     let mut file = BufWriter::new(File::create(path)?);
     write_header(&mut file, 6, RECORD_COUNT)?;
@@ -2925,6 +2993,22 @@ mod ffi {
             world_seed: u64,
             out: *mut u64,
         );
+        pub fn cubiomes_call_sample_surface_noise(
+            dim: c_int,
+            seed: u64,
+            x: c_int,
+            y: c_int,
+            z: c_int,
+        ) -> f64;
+        pub fn cubiomes_call_sample_surface_noise_between(
+            dim: c_int,
+            seed: u64,
+            x: c_int,
+            y: c_int,
+            z: c_int,
+            nmin: f64,
+            nmax: f64,
+        ) -> f64;
         pub fn cubiomes_call_gen_area_at(
             mc: c_int,
             large_biomes: c_int,

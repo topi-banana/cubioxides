@@ -7,9 +7,25 @@
  * fields the corresponding map function reads, and forwards to cubiomes.
  */
 
+#include "biomenoise.h"
 #include "layers.h"
 #include "noise.h"
 #include <string.h>
+
+double cubiomes_call_sample_surface_noise(int dim, uint64_t seed, int x, int y,
+                                          int z) {
+    SurfaceNoise sn;
+    initSurfaceNoise(&sn, dim, seed);
+    return sampleSurfaceNoise(&sn, x, y, z);
+}
+
+double cubiomes_call_sample_surface_noise_between(int dim, uint64_t seed, int x,
+                                                  int y, int z, double nmin,
+                                                  double nmax) {
+    SurfaceNoise sn;
+    initSurfaceNoise(&sn, dim, seed);
+    return sampleSurfaceNoiseBetween(&sn, x, y, z, nmin, nmax);
+}
 
 void cubiomes_call_map_continent(uint64_t start_seed, int *out, int x, int z,
                                  int w, int h) {

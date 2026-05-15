@@ -18,6 +18,7 @@
 #![cfg_attr(not(test), warn(missing_docs))]
 
 pub mod biome;
+pub mod biomenoise;
 pub mod layer;
 pub mod math;
 pub mod mc_version;
