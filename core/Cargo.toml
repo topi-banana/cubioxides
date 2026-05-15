@@ -1,0 +1,37 @@
+[package]
+name = "cubioxides-core"
+description = "Rust port of cubiomes — Minecraft world generation library"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+categories = ["game-development", "no-std"]
+keywords = ["minecraft", "cubiomes", "worldgen", "biome"]
+
+[lib]
+name = "cubioxides"
+
+[features]
+default = []
+# Enable rayon-based parallelism for seed search. Auto-disabled on wasm32.
+parallel = ["dep:rayon"]
+# Enable PPM image output for biome rendering. Auto-disabled on wasm32.
+colors = []
+
+[dependencies]
+bitflags = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true, optional = true }
+
+[dev-dependencies]
+bytemuck = { workspace = true }
+proptest = { workspace = true }
+rstest = { workspace = true }
+pretty_assertions = { workspace = true }
+
+[lints]
+workspace = true
