@@ -17,11 +17,14 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), warn(missing_docs))]
 
+pub mod biome;
+pub mod layer;
 pub mod math;
 pub mod mc_version;
 pub mod noise;
 pub mod rng;
 
+pub use biome::Biome;
 pub use mc_version::{Dimension, MCVersion};
 pub use noise::{DoublePerlinNoise, OctaveNoise, PerlinNoise};
 pub use rng::{JavaRng, Xoroshiro};
