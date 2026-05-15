@@ -19,7 +19,9 @@
 
 pub mod math;
 pub mod mc_version;
+pub mod noise;
 pub mod rng;
 
 pub use mc_version::{Dimension, MCVersion};
+pub use noise::PerlinNoise;
 pub use rng::{JavaRng, Xoroshiro};
