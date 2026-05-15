@@ -41,6 +41,20 @@ int cubiomes_call_get_nether_biome(uint64_t seed, int x, int y, int z,
     return getNetherBiome(&nn, x, y, z, ndel);
 }
 
+void cubiomes_call_map_end_biome(int mc, uint64_t seed, int *out, int x, int z,
+                                 int w, int h) {
+    EndNoise en;
+    setEndSeed(&en, mc, seed);
+    mapEndBiome(&en, out, x, z, w, h);
+}
+
+void cubiomes_call_map_end(int mc, uint64_t seed, int *out, int x, int z, int w,
+                           int h) {
+    EndNoise en;
+    setEndSeed(&en, mc, seed);
+    mapEnd(&en, out, x, z, w, h);
+}
+
 void cubiomes_call_map_continent(uint64_t start_seed, int *out, int x, int z,
                                  int w, int h) {
     Layer l;

@@ -109,6 +109,14 @@ impl Biome {
     pub const WARPED_FOREST: Self = Self(172);
     /// `basalt_deltas` (biome id 173; 1.16+).
     pub const BASALT_DELTAS: Self = Self(173);
+    /// `small_end_islands` (biome id 40; 1.13+).
+    pub const SMALL_END_ISLANDS: Self = Self(40);
+    /// `end_midlands` (biome id 41; 1.13+).
+    pub const END_MIDLANDS: Self = Self(41);
+    /// `end_highlands` (biome id 42; 1.13+).
+    pub const END_HIGHLANDS: Self = Self(42);
+    /// `end_barrens` (biome id 43; 1.13+).
+    pub const END_BARRENS: Self = Self(43);
 
     /// Returns `true` if `id` is one of the five shallow-ocean variants
     /// (`ocean`, `frozen_ocean`, `cold_ocean`, `lukewarm_ocean`,

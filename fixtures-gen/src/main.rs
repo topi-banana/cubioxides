@@ -350,6 +350,10 @@ fn regenerate_noise() -> ExitCode {
         eprintln!("nether fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_end_fixture(&fixtures_dir.join("end.bin")) {
+        eprintln!("end fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote noise fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2670,6 +2674,89 @@ fn write_nether_fixture(path: &Path) -> std::io::Result<()> {
     file.flush()
 }
 
+/// `EndNoise` parity record (kind = 42). Per-record digests of
+/// `mapEndBiome` (1:16 scale, raw heightmap dispatch) and `mapEnd`
+/// (1:4 wrapper) over a small grid.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct EndRecord {
+    pub mc: u32,
+    pub w: u32,
+    pub h: u32,
+    pub pad0: u32,
+    pub seed: u64,
+    pub x: i32,
+    pub z: i32,
+    pub biome_digest: u32,
+    pub end_digest: u32,
+}
+
+const END_RECORDS: u64 = 256;
+
+#[allow(clippy::many_single_char_names)]
+fn write_end_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 42, END_RECORDS)?;
+
+    // MC ordinals chosen to exercise the pre/post 1.14 outer-ring
+    // fallback: 14 (1.13), 17 (1.14), 22 (1.18), 25 (1.20).
+    let mc_versions: [i32; 4] = [16, 17, 22, 25];
+
+    let mut rng_state: u64 = 0x0000_00e0_de0d_5000;
+    for _ in 0..END_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let mc = mc_versions[(rng_state as usize) % mc_versions.len()];
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 4096;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 4096;
+        rng_state = lcg_step(rng_state);
+        let w = ((rng_state & 0xf) as u32) + 4;
+        let h = ((rng_state >> 8) & 0xf) as u32 + 4;
+
+        let mut out_biome: Vec<i32> = vec![0; (w as usize) * (h as usize)];
+        let mut out_end: Vec<i32> = vec![0; (w as usize) * (h as usize)];
+        unsafe {
+            ffi::cubiomes_call_map_end_biome(
+                mc,
+                seed,
+                out_biome.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            );
+            ffi::cubiomes_call_map_end(
+                mc,
+                seed,
+                out_end.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            );
+        }
+        let biome_digest = digest_i32_slice(&out_biome);
+        let end_digest = digest_i32_slice(&out_end);
+
+        let rec = EndRecord {
+            mc: mc as u32,
+            w,
+            h,
+            pad0: 0,
+            seed,
+            x,
+            z,
+            biome_digest,
+            end_digest,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
 fn write_double_perlin_fixture(path: &Path) -> std::io::Result<()> {
     let mut file = BufWriter::new(File::create(path)?);
     write_header(&mut file, 6, RECORD_COUNT)?;
@@ -3098,6 +3185,24 @@ mod ffi {
             z: c_int,
             ndel: *mut f32,
         ) -> c_int;
+        pub fn cubiomes_call_map_end_biome(
+            mc: c_int,
+            seed: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_end(
+            mc: c_int,
+            seed: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
         pub fn cubiomes_call_gen_area_at(
             mc: c_int,
             large_biomes: c_int,
