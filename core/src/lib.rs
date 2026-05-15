@@ -19,5 +19,7 @@
 
 pub mod math;
 pub mod mc_version;
+pub mod rng;
 
 pub use mc_version::{Dimension, MCVersion};
+pub use rng::JavaRng;
