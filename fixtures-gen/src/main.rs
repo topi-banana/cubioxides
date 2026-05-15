@@ -591,6 +591,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("gen_area_entry1 fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_generator_biome_fixture(&fixtures_dir.join("generator_biome.bin")) {
+        eprintln!("generator_biome fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1615,6 +1619,95 @@ fn post_biome_record(
         digest,
         pad: 0,
     }
+}
+
+/// `Generator::biome_at` parity record (kind = 46). Captures
+/// cubiomes' end-to-end `setupGenerator(mc, flags) +
+/// applySeed(dim, seed) + getBiomeAt(scale, x, y, z)` flow.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct GeneratorBiomeRecord {
+    pub mc: u32,
+    pub flags: u32,
+    pub dim: i32,
+    pub scale: i32,
+    pub seed: u64,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub biome_id: i32,
+}
+
+const GENERATOR_BIOME_RECORDS: u64 = 1024;
+
+#[allow(clippy::many_single_char_names)]
+fn write_generator_biome_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 46, GENERATOR_BIOME_RECORDS)?;
+
+    // Random combinations of (mc, dim, scale) chosen at fixture-gen
+    // time. Skip impossible matches (Nether < 1.16.1, End < 1.9).
+    let mut rng_state: u64 = 0x0000_9e9e_a701_2025;
+    for _ in 0..GENERATOR_BIOME_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        // MC pool: a mix of Beta / 1.0 / 1.7 / 1.12 / 1.16 / 1.18 / 1.20 / 1.21.
+        let mc_pool: [i32; 8] = [1, 3, 10, 15, 19, 22, 25, 28];
+        let mc = mc_pool[(rng_state as usize) % mc_pool.len()];
+        rng_state = lcg_step(rng_state);
+        // Pick a compatible dim. cubiomes enum ordinals: B1_7=1,
+        // 1.0=3, …, 1.7=10, 1.9=12, 1.12=15, 1.16.1=19, 1.18=22,
+        // 1.20=25, 1.21 WD=28.
+        let dim_choice = rng_state % 3;
+        let dim: i32 = match dim_choice {
+            1 if mc >= 19 => -1, // Nether — requires 1.16.1+
+            2 if mc >= 12 => 1,  // End — requires 1.9+
+            _ => 0,              // Overworld (and fallthrough)
+        };
+        rng_state = lcg_step(rng_state);
+        // Pick a scale supported by the dim / mc combo:
+        let scale = if dim == 0 && (10..=21).contains(&mc) {
+            // Layered Overworld supports 1, 4, 16, 64, 256.
+            let s: [i32; 5] = [1, 4, 16, 64, 256];
+            s[(rng_state as usize) % s.len()]
+        } else if dim == 0 {
+            // Modern / Beta — scale 1 or 4 only (Beta has no Voronoi).
+            if mc >= 22 {
+                i32::from(rng_state.trailing_zeros() == 0) * 3 + 1
+            } else {
+                4
+            }
+        } else {
+            // Nether / End — scale 1 or 4.
+            i32::from(rng_state.trailing_zeros() == 0) * 3 + 1
+        };
+        rng_state = lcg_step(rng_state);
+        let flags: u32 = u32::from(mc >= 6 && rng_state.trailing_zeros() >= 2);
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 4096;
+        rng_state = lcg_step(rng_state);
+        let y = (rng_state as i32) % 256;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 4096;
+
+        let biome_id =
+            unsafe { ffi::cubiomes_call_get_biome_at(mc, flags, dim, seed, scale, x, y, z) };
+
+        let rec = GeneratorBiomeRecord {
+            mc: mc as u32,
+            flags,
+            dim,
+            scale,
+            seed,
+            x,
+            y,
+            z,
+            biome_id,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
 }
 
 /// `genArea` at `entry_1` (Voronoi) parity record (kind = 39). One
@@ -3389,6 +3482,16 @@ mod ffi {
             z: c_int,
             t_out: *mut f64,
             h_out: *mut f64,
+        ) -> c_int;
+        pub fn cubiomes_call_get_biome_at(
+            mc: c_int,
+            flags: u32,
+            dim: c_int,
+            seed: u64,
+            scale: c_int,
+            x: c_int,
+            y: c_int,
+            z: c_int,
         ) -> c_int;
         pub fn cubiomes_call_gen_area_at(
             mc: c_int,

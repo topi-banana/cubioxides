@@ -82,6 +82,18 @@ impl BiomeNoise {
         }
     }
 
+    /// Re-seed the climate octaves in place without rebuilding the
+    /// (`mc`-independent) spline stack. Mirrors cubiomes' standalone
+    /// `setBiomeSeed`.
+    pub fn re_seed(&mut self, seed: u64, large: bool) {
+        let mut pxr = Xoroshiro::new(seed);
+        let xlo = pxr.next_long();
+        let xhi = pxr.next_long();
+        for (i, slot) in self.climate.iter_mut().enumerate() {
+            *slot = init_climate_seed(xlo, xhi, large, i);
+        }
+    }
+
     /// Sample the biome at `(x, y, z)`. Returns the biome id and the
     /// underlying 6-tuple `np` (units of 1/10000, sign-preserving `i64`).
     /// `sample_flags` accepts [`SAMPLE_NO_SHIFT`], [`SAMPLE_NO_DEPTH`],

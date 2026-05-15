@@ -8,6 +8,7 @@
  */
 
 #include "biomenoise.h"
+#include "generator.h"
 #include "layers.h"
 #include "noise.h"
 #include <string.h>
@@ -62,6 +63,14 @@ int cubiomes_call_climate_to_biome(int mc, const uint64_t np[6]) {
 /* Initialise + seed a BiomeNoise in one call, sample at (x, y, z),
  * and write the (biome_id, np[6]) tuple back via the output
  * pointers. */
+int cubiomes_call_get_biome_at(int mc, uint32_t flags, int dim, uint64_t seed,
+                               int scale, int x, int y, int z) {
+    Generator g;
+    setupGenerator(&g, mc, flags);
+    applySeed(&g, dim, seed);
+    return getBiomeAt(&g, scale, x, y, z);
+}
+
 int cubiomes_call_sample_biome_noise_beta(uint64_t seed, int x, int z,
                                           double *t_out, double *h_out) {
     BiomeNoiseBeta bnb;
