@@ -555,6 +555,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("voronoi_access fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_layer_stack_fixture(&fixtures_dir.join("layer_stack.bin")) {
+        eprintln!("layer_stack fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1579,6 +1583,73 @@ fn post_biome_record(
         digest,
         pad: 0,
     }
+}
+
+/// `setupLayerStack` + `setLayerSeed` parity record (kind = 37).
+/// Header of `(mc, large_biomes, world_seed)` is followed inline by
+/// `L_NUM_C * 3` `u64`s — `(layer_salt, start_salt, start_seed)` for
+/// each layer slot in cubiomes' index order. `L_NUM_C = 61` as of the
+/// upstream snapshot.
+const L_NUM_C: usize = 61;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct LayerStackHeader {
+    pub mc: u32,
+    pub large_biomes: u32,
+    pub world_seed: u64,
+}
+
+const LAYER_STACK_RECORDS: u64 = 192;
+
+fn write_layer_stack_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 37, LAYER_STACK_RECORDS)?;
+
+    let mc_versions: [i32; 12] = [
+        2,  // B1_8
+        3,  // 1.0
+        4,  // 1.1
+        5,  // 1.2
+        6,  // 1.3
+        9,  // 1.6
+        10, // 1.7
+        15, // 1.12
+        16, // 1.13
+        17, // 1.14
+        22, // 1.18
+        25, // 1.20
+    ];
+
+    let mut rng_state: u64 = 0x1abc_75ac_4001;
+    for _ in 0..LAYER_STACK_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let mc_idx = (rng_state as usize) % mc_versions.len();
+        let mc = mc_versions[mc_idx];
+        rng_state = lcg_step(rng_state);
+        let large_biomes = (rng_state & 1) as u32;
+
+        let mut buf: Vec<u64> = vec![0; L_NUM_C * 3];
+        unsafe {
+            ffi::cubiomes_call_dump_layer_stack(
+                mc,
+                large_biomes as c_int,
+                world_seed,
+                buf.as_mut_ptr(),
+            );
+        }
+
+        let header = LayerStackHeader {
+            mc: mc as u32,
+            large_biomes,
+            world_seed,
+        };
+        file.write_all(bytemuck::bytes_of(&header))?;
+        file.write_all(bytemuck::cast_slice(&buf))?;
+    }
+    file.flush()
 }
 
 /// `mapVoronoi` (1.0-1.14) record (kind = 35). Layer chain is
@@ -2652,6 +2723,12 @@ mod ffi {
             z4: *mut c_int,
         );
         pub fn getVoronoiSHA(seed: u64) -> u64;
+        pub fn cubiomes_call_dump_layer_stack(
+            mc: c_int,
+            large_biomes: c_int,
+            world_seed: u64,
+            out: *mut u64,
+        );
         pub fn cubiomes_call_map_river(
             world_seed: u64,
             mc: c_int,

@@ -8,6 +8,12 @@
 //! sub-stages as more `mapfunc_t`s come online.
 
 pub mod ops;
+pub mod stack;
+
+pub use stack::{
+    L_NUM, LAYER_INIT_SHA, LayerId, LayerNode, LayerOp, LayerStack, set_layer_seed,
+    setup_layer_stack,
+};
 
 pub use ops::bamboo::map_bamboo;
 pub use ops::biome::map_biome;

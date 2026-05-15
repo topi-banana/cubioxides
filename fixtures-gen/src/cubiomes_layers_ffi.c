@@ -271,6 +271,22 @@ void cubiomes_call_map_sunflower(uint64_t world_seed, int mc,
                 biome_salt, child_salt, out, x, z, w, h);
 }
 
+/* Dump (layerSalt, startSalt, startSeed) of every node in a freshly
+ * setup LayerStack into `out` after a setLayerSeed(entry_1, seed).
+ * Layout: 3 * L_NUM uint64s in cubiomes index order. */
+#include "generator.h"
+void cubiomes_call_dump_layer_stack(int mc, int large_biomes,
+                                    uint64_t world_seed, uint64_t *out) {
+    LayerStack g;
+    setupLayerStack(&g, mc, large_biomes);
+    setLayerSeed(g.entry_1, world_seed);
+    for (int i = 0; i < L_NUM; i++) {
+        out[3 * i + 0] = g.layers[i].layerSalt;
+        out[3 * i + 1] = g.layers[i].startSalt;
+        out[3 * i + 2] = g.layers[i].startSeed;
+    }
+}
+
 void cubiomes_call_map_voronoi(uint64_t world_seed, uint64_t biome_salt,
                                int *out, int x, int z, int w, int h) {
     Layer biome;
