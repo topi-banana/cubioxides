@@ -15,6 +15,7 @@ pub mod noise;
 pub mod ocean_temp;
 pub mod river;
 pub mod river_mix;
+pub mod shore;
 pub mod smooth;
 pub mod snow;
 pub mod special;

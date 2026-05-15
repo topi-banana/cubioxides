@@ -55,6 +55,8 @@ impl Biome {
     pub const JUNGLE_EDGE: Self = Self(23);
     /// `bamboo_jungle` (biome id 168).
     pub const BAMBOO_JUNGLE: Self = Self(168);
+    /// `mountain_edge` / `extremeHillsEdge` (biome id 20).
+    pub const MOUNTAIN_EDGE: Self = Self(20);
     /// `wooded_mountains` (biome id 34).
     pub const WOODED_MOUNTAINS: Self = Self(34);
     /// `sunflower_plains` (biome id 129; `plains + 128`).

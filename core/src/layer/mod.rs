@@ -21,6 +21,7 @@ pub use ops::noise::map_noise;
 pub use ops::ocean_temp::map_ocean_temp;
 pub use ops::river::map_river;
 pub use ops::river_mix::map_river_mix;
+pub use ops::shore::map_shore;
 pub use ops::smooth::map_smooth;
 pub use ops::snow::{map_snow, map_snow16};
 pub use ops::special::map_special;
