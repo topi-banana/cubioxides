@@ -13,7 +13,8 @@ use std::path::PathBuf;
 
 use bytemuck::{Pod, Zeroable};
 use cubioxides::biome::Biome;
-use cubioxides::layer::map_continent;
+use cubioxides::layer::{map_continent, map_zoom, map_zoom_fuzzy};
+use cubioxides::rng::{get_start_salt, get_start_seed};
 
 const MAGIC: [u8; 4] = *b"CUBX";
 const FORMAT_VERSION: u16 = 1;
@@ -32,6 +33,20 @@ struct Header {
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct ContinentRecord {
     start_seed: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ZoomRecord {
+    world_seed: u64,
+    parent_salt: u64,
+    zoom_salt: u64,
     x: i32,
     z: i32,
     w: u32,
@@ -87,6 +102,77 @@ fn hash32(mut x: u32) -> u32 {
     x
 }
 
+fn run_zoom_record(rec: &ZoomRecord, kind: ZoomKind) -> u32 {
+    let x = rec.x;
+    let z = rec.z;
+    let w = rec.w as usize;
+    let h = rec.h as usize;
+
+    // Compute parent rectangle (same arithmetic as cubiomes / our zoom_impl).
+    let parent_x = x >> 1;
+    let parent_z = z >> 1;
+    let parent_w = (((x + w as i32) >> 1) - parent_x + 1) as usize;
+    let parent_h = (((z + h as i32) >> 1) - parent_z + 1) as usize;
+
+    let parent_start_seed = get_start_seed(rec.world_seed, rec.parent_salt);
+    let mut parent_buf = vec![Biome::NONE; parent_w * parent_h];
+    map_continent(
+        parent_start_seed,
+        &mut parent_buf,
+        parent_x,
+        parent_z,
+        parent_w,
+        parent_h,
+    );
+
+    let zoom_start_salt = get_start_salt(rec.world_seed, rec.zoom_salt);
+    let zoom_start_seed = get_start_seed(rec.world_seed, rec.zoom_salt);
+    let mut out = vec![Biome::NONE; w * h];
+
+    match kind {
+        ZoomKind::Fuzzy => map_zoom_fuzzy(
+            zoom_start_salt,
+            zoom_start_seed,
+            &parent_buf,
+            parent_x,
+            parent_z,
+            parent_w,
+            parent_h,
+            &mut out,
+            x,
+            z,
+            w,
+            h,
+        ),
+        ZoomKind::Majority => map_zoom(
+            zoom_start_salt,
+            zoom_start_seed,
+            &parent_buf,
+            parent_x,
+            parent_z,
+            parent_w,
+            parent_h,
+            &mut out,
+            x,
+            z,
+            w,
+            h,
+        ),
+    }
+
+    let mut digest: u32 = 0;
+    for cell in &out {
+        digest ^= hash32(cell.id() as u32);
+    }
+    digest
+}
+
+#[derive(Copy, Clone)]
+enum ZoomKind {
+    Fuzzy,
+    Majority,
+}
+
 #[test]
 fn map_continent_matches_cubiomes() {
     let records: Vec<ContinentRecord> = load_fixture("continent.bin", 7);
@@ -111,6 +197,34 @@ fn map_continent_matches_cubiomes() {
             digest, rec.digest,
             "map_continent digest mismatch at record {i} (seed={:#x}, x={}, z={}, w={}, h={})",
             rec.start_seed, rec.x, rec.z, rec.w, rec.h
+        );
+    }
+}
+
+#[test]
+fn map_zoom_fuzzy_matches_cubiomes() {
+    let records: Vec<ZoomRecord> = load_fixture("zoom_fuzzy.bin", 8);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_zoom_record(rec, ZoomKind::Fuzzy);
+        assert_eq!(
+            digest, rec.digest,
+            "map_zoom_fuzzy digest mismatch at record {i} (world={:#x}, x={}, z={}, w={}, h={})",
+            rec.world_seed, rec.x, rec.z, rec.w, rec.h
+        );
+    }
+}
+
+#[test]
+fn map_zoom_matches_cubiomes() {
+    let records: Vec<ZoomRecord> = load_fixture("zoom.bin", 9);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_zoom_record(rec, ZoomKind::Majority);
+        assert_eq!(
+            digest, rec.digest,
+            "map_zoom digest mismatch at record {i} (world={:#x}, x={}, z={}, w={}, h={})",
+            rec.world_seed, rec.x, rec.z, rec.w, rec.h
         );
     }
 }

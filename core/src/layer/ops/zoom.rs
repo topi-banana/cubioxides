@@ -125,35 +125,38 @@ fn zoom_impl(
     );
     assert!(out.len() >= w * h, "zoom: output slice too small");
 
-    // Upscaled scratch buffer: (parent_w * 2) × (parent_h * 2) cells.
+    // Match cubiomes' in-place layout: the parent slice and the upscaled
+    // scratch are concatenated into a single buffer, with `buf` starting
+    // at offset `parent_cells`. cubiomes' inner loops read `out[(j+1) *
+    // parent_w]` and `out[(i+1) + j*parent_w]` past the parent's last row
+    // / column; those reads land in `buf` and contribute to the final
+    // window when h or w is large enough to need them.
     let new_w = parent_w * 2;
     let new_h = parent_h * 2;
-    let mut buf = vec![Biome::NONE; new_w * new_h];
+    let parent_cells = parent_w * parent_h;
+    let combined_size = parent_cells + new_w * new_h;
+
+    let mut combined: Vec<Biome> = vec![Biome::NONE; combined_size];
+    combined[..parent_cells].copy_from_slice(&parent[..parent_cells]);
 
     let st = start_salt as u32;
     let ss = start_seed as u32;
 
-    // Iterate one cell short of the parent edge: the inner body needs to
-    // read (i+1, j+1) and the rightmost / bottom cells of `buf` are
-    // truncated by the final copy anyway.
-    let j_lim = parent_h.saturating_sub(1);
-    let i_lim = parent_w.saturating_sub(1);
+    for j in 0..parent_h {
+        let mut idx = j * 2 * new_w + parent_cells;
+        let mut v00 = combined[j * parent_w].id();
+        let mut v01 = combined[(j + 1) * parent_w].id();
 
-    for j in 0..j_lim {
-        let mut idx = (j * 2) * new_w;
-        let mut v00 = parent[j * parent_w].id();
-        let mut v01 = parent[(j + 1) * parent_w].id();
-
-        for i in 0..i_lim {
-            let v10 = parent[(i + 1) + j * parent_w].id();
-            let v11 = parent[(i + 1) + (j + 1) * parent_w].id();
+        for i in 0..parent_w {
+            let v10 = combined[(i + 1) + j * parent_w].id();
+            let v11 = combined[(i + 1) + (j + 1) * parent_w].id();
 
             if v00 == v01 && v00 == v10 && v00 == v11 {
                 let cell = Biome(v00);
-                buf[idx] = cell;
-                buf[idx + 1] = cell;
-                buf[idx + new_w] = cell;
-                buf[idx + new_w + 1] = cell;
+                combined[idx] = cell;
+                combined[idx + 1] = cell;
+                combined[idx + new_w] = cell;
+                combined[idx + new_w + 1] = cell;
                 idx += 2;
                 v00 = v10;
                 v01 = v11;
@@ -172,15 +175,15 @@ fn zoom_impl(
             cs = cs.wrapping_mul(cs.wrapping_mul(ZOOM_MUL).wrapping_add(ZOOM_ADD));
             cs = cs.wrapping_add(chunk_z as u32);
 
-            buf[idx] = Biome(v00);
-            buf[idx + new_w] = Biome(if ((cs >> 24) & 1) != 0 { v01 } else { v00 });
+            combined[idx] = Biome(v00);
+            combined[idx + new_w] = Biome(if ((cs >> 24) & 1) != 0 { v01 } else { v00 });
             idx += 1;
 
             cs = cs.wrapping_mul(cs.wrapping_mul(ZOOM_MUL).wrapping_add(ZOOM_ADD));
             cs = cs.wrapping_add(st);
-            buf[idx] = Biome(if ((cs >> 24) & 1) != 0 { v10 } else { v00 });
+            combined[idx] = Biome(if ((cs >> 24) & 1) != 0 { v10 } else { v00 });
 
-            buf[idx + new_w] = Biome(match mode {
+            combined[idx + new_w] = Biome(match mode {
                 Zoom::Fuzzy => {
                     cs = cs.wrapping_mul(cs.wrapping_mul(ZOOM_MUL).wrapping_add(ZOOM_ADD));
                     cs = cs.wrapping_add(st);
@@ -195,13 +198,14 @@ fn zoom_impl(
         }
     }
 
-    // Final window copy: out[j*w + i] = buf[(j + z_off) * new_w + i + x_off].
+    // Final window copy: out[j*w + i] = buf[(j + z_off) * new_w + i + x_off],
+    // where buf starts at offset `parent_cells` inside `combined`.
     let z_off = (z & 1) as usize;
     let x_off = (x & 1) as usize;
     for j in 0..h {
-        let src_start = (j + z_off) * new_w + x_off;
+        let src_start = parent_cells + (j + z_off) * new_w + x_off;
         let dst_start = j * w;
-        out[dst_start..dst_start + w].copy_from_slice(&buf[src_start..src_start + w]);
+        out[dst_start..dst_start + w].copy_from_slice(&combined[src_start..src_start + w]);
     }
 }
 

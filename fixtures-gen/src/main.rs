@@ -454,6 +454,14 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("continent fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_zoom_fixture(&fixtures_dir.join("zoom_fuzzy.bin"), ZoomKind::Fuzzy) {
+        eprintln!("zoom_fuzzy fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_zoom_fixture(&fixtures_dir.join("zoom.bin"), ZoomKind::Majority) {
+        eprintln!("zoom fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -546,6 +554,123 @@ fn hash32(mut x: u32) -> u32 {
     x = x.wrapping_mul(0xaf72_3597);
     x ^= x >> 15;
     x
+}
+
+/// Zoom layer record (kind = 8 for fuzzy, kind = 9 for majority).
+///
+/// Laid out so the struct size (48 bytes) is a multiple of its 8-byte
+/// alignment; `pad` is explicit terminal padding required by `Pod`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ZoomRecord {
+    pub world_seed: u64,
+    pub parent_salt: u64,
+    pub zoom_salt: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const ZOOM_RECORDS: u64 = 4096;
+
+#[derive(Copy, Clone)]
+enum ZoomKind {
+    Fuzzy,
+    Majority,
+}
+
+impl ZoomKind {
+    const fn fixture_kind(self) -> u16 {
+        match self {
+            Self::Fuzzy => 8,
+            Self::Majority => 9,
+        }
+    }
+}
+
+fn write_zoom_fixture(path: &Path, kind: ZoomKind) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, kind.fixture_kind(), ZOOM_RECORDS)?;
+
+    let mut rng_state: u64 = 0xfeed_face_beef;
+    for _ in 0..ZOOM_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let parent_salt = rng_state | 1; // non-zero so setLayerSeed takes the salt branch
+        rng_state = lcg_step(rng_state);
+        let zoom_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let w = ((rng_state & 0x1f) as u32) + 2; // 2..=33
+        let h = ((rng_state >> 8) & 0x1f) as u32 + 2;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 64;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 64;
+        let rec = zoom_record(kind, world_seed, parent_salt, zoom_salt, x, z, w, h);
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn zoom_record(
+    kind: ZoomKind,
+    world_seed: u64,
+    parent_salt: u64,
+    zoom_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+) -> ZoomRecord {
+    // cubiomes reuses the out buffer as scratch for the parent layer
+    // output (pW * pH cells) plus the upscaled grid (newW * newH = 4*pW*pH
+    // cells), so allocate the full 5 * pW * pH cells here. The window of
+    // interest is still out[0..w*h] after the call returns.
+    let p_w = (((x + w as i32) >> 1) - (x >> 1) + 1) as usize;
+    let p_h = (((z + h as i32) >> 1) - (z >> 1) + 1) as usize;
+    let buffer_size = 5 * p_w * p_h;
+    let mut out: Vec<i32> = vec![0; buffer_size];
+    unsafe {
+        match kind {
+            ZoomKind::Fuzzy => ffi::cubiomes_call_map_zoom_fuzzy(
+                world_seed,
+                parent_salt,
+                zoom_salt,
+                out.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            ),
+            ZoomKind::Majority => ffi::cubiomes_call_map_zoom(
+                world_seed,
+                parent_salt,
+                zoom_salt,
+                out.as_mut_ptr(),
+                x,
+                z,
+                w as c_int,
+                h as c_int,
+            ),
+        }
+    }
+    let cells = (w * h) as usize;
+    let digest = digest_i32_slice(&out[..cells]);
+    ZoomRecord {
+        world_seed,
+        parent_salt,
+        zoom_salt,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
 }
 
 /// Octave noise record (kind = 5). Uses fixed omin = -3, len = 4 for both
@@ -854,6 +979,26 @@ mod ffi {
         // Layer-map wrappers (see cubiomes_layers_ffi.c).
         pub fn cubiomes_call_map_continent(
             start_seed: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_zoom_fuzzy(
+            world_seed: u64,
+            parent_layer_salt: u64,
+            zoom_layer_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_zoom(
+            world_seed: u64,
+            parent_layer_salt: u64,
+            zoom_layer_salt: u64,
             out: *mut c_int,
             x: c_int,
             z: c_int,
