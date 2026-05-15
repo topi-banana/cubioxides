@@ -10,3 +10,4 @@
 pub mod ops;
 
 pub use ops::continent::map_continent;
+pub use ops::zoom::{map_zoom, map_zoom_fuzzy};
