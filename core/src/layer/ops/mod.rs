@@ -13,6 +13,7 @@ pub mod island;
 pub mod land;
 pub mod mushroom;
 pub mod noise;
+pub mod ocean_mix;
 pub mod ocean_temp;
 pub mod river;
 pub mod river_mix;
