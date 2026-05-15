@@ -358,6 +358,10 @@ fn regenerate_noise() -> ExitCode {
         eprintln!("climate fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_biome_noise_fixture(&fixtures_dir.join("biome_noise.bin")) {
+        eprintln!("biome_noise fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote noise fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2678,6 +2682,66 @@ fn write_nether_fixture(path: &Path) -> std::io::Result<()> {
     file.flush()
 }
 
+/// `sampleBiomeNoise` parity record (kind = 44). For each input
+/// `(mc, seed, large, x, y, z)` carries the chosen biome id and the
+/// six-axis `np[6]` tuple cubiomes computes.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct BiomeNoiseRecord {
+    pub mc: u32,
+    pub large: u32,
+    pub seed: u64,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub biome_id: i32,
+    pub np: [i64; 6],
+    pub pad: [u32; 2],
+}
+
+const BIOME_NOISE_RECORDS: u64 = 512;
+
+#[allow(clippy::many_single_char_names)]
+fn write_biome_noise_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 44, BIOME_NOISE_RECORDS)?;
+
+    let mc_versions: [i32; 5] = [22, 23, 24, 25, 28];
+    let mut rng_state: u64 = 0x0000_b10e_0011_5e1d;
+    for _ in 0..BIOME_NOISE_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let mc = mc_versions[(rng_state as usize) % mc_versions.len()];
+        rng_state = lcg_step(rng_state);
+        let large = i32::from(rng_state.trailing_zeros() >= 2);
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 4096;
+        rng_state = lcg_step(rng_state);
+        let y = (rng_state as i32) % 256;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 4096;
+
+        let mut np = [0i64; 6];
+        let biome_id = unsafe {
+            ffi::cubiomes_call_sample_biome_noise(mc, seed, large, x, y, z, 0, np.as_mut_ptr())
+        };
+        let rec = BiomeNoiseRecord {
+            mc: mc as u32,
+            large: large as u32,
+            seed,
+            x,
+            y,
+            z,
+            biome_id,
+            np,
+            pad: [0, 0],
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
 /// `climateToBiome` parity record (kind = 43). One 6-axis climate
 /// tuple per record, paired with cubiomes' returned biome id.
 #[repr(C)]
@@ -3252,6 +3316,16 @@ mod ffi {
             h: c_int,
         );
         pub fn cubiomes_call_climate_to_biome(mc: c_int, np: *const u64) -> c_int;
+        pub fn cubiomes_call_sample_biome_noise(
+            mc: c_int,
+            seed: u64,
+            large_biomes: c_int,
+            x: c_int,
+            y: c_int,
+            z: c_int,
+            sample_flags: c_int,
+            np_out: *mut i64,
+        ) -> c_int;
         pub fn cubiomes_call_gen_area_at(
             mc: c_int,
             large_biomes: c_int,
