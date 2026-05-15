@@ -19,7 +19,7 @@ cc = "1.2"
 pretty_assertions = "1.4"
 proptest = "1.5"
 rayon = "1.10"
-rstest = "0.23"
+rstest = "0.26"
 thiserror = "2.0"
 
 [workspace.lints.rust]
