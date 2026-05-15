@@ -474,6 +474,20 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("land_b18 fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    for kind in [
+        SingleHopKind::Island,
+        SingleHopKind::Snow16,
+        SingleHopKind::Snow,
+        SingleHopKind::Special,
+        SingleHopKind::Mushroom,
+        SingleHopKind::DeepOcean,
+    ] {
+        let path = fixtures_dir.join(format!("{}.bin", kind.name()));
+        if let Err(err) = write_single_hop_fixture(&path, kind) {
+            eprintln!("{} fixture failed: {err}", kind.name());
+            return ExitCode::FAILURE;
+        }
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -806,6 +820,144 @@ fn land_record(
         world_seed,
         parent_salt,
         land_salt,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
+}
+
+/// Generic single-hop layer record (kind 13..=18). Same shape as
+/// `LandRecord`; the parent is always `mapContinent`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct SingleHopRecord {
+    pub world_seed: u64,
+    pub parent_salt: u64,
+    pub child_salt: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const SINGLE_HOP_RECORDS: u64 = 4096;
+
+#[derive(Copy, Clone)]
+enum SingleHopKind {
+    Island,
+    Snow16,
+    Snow,
+    Special,
+    Mushroom,
+    DeepOcean,
+}
+
+impl SingleHopKind {
+    const fn fixture_kind(self) -> u16 {
+        match self {
+            Self::Island => 13,
+            Self::Snow16 => 14,
+            Self::Snow => 15,
+            Self::Special => 16,
+            Self::Mushroom => 17,
+            Self::DeepOcean => 18,
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Island => "island",
+            Self::Snow16 => "snow16",
+            Self::Snow => "snow",
+            Self::Special => "special",
+            Self::Mushroom => "mushroom",
+            Self::DeepOcean => "deep_ocean",
+        }
+    }
+
+    const fn rng_seed(self) -> u64 {
+        match self {
+            Self::Island => 0x100a_d100_0a01,
+            Self::Snow16 => 0x5061_71e5_1601,
+            Self::Snow => 0x5061_71e5_0001,
+            Self::Special => 0x5e1a_15e1_0001,
+            Self::Mushroom => 0xb00b_a1de_a015,
+            Self::DeepOcean => 0xdee5_b00b_a153,
+        }
+    }
+}
+
+fn write_single_hop_fixture(path: &Path, kind: SingleHopKind) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, kind.fixture_kind(), SINGLE_HOP_RECORDS)?;
+
+    let mut rng_state: u64 = kind.rng_seed();
+    for _ in 0..SINGLE_HOP_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let parent_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let child_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let w = ((rng_state & 0x1f) as u32) + 2;
+        let h = ((rng_state >> 8) & 0x1f) as u32 + 2;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 64;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 64;
+        let rec = single_hop_record(kind, world_seed, parent_salt, child_salt, x, z, w, h);
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn single_hop_record(
+    kind: SingleHopKind,
+    world_seed: u64,
+    parent_salt: u64,
+    child_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+) -> SingleHopRecord {
+    // mapSpecial reads a (w, h) parent (no padding); the others read
+    // (w + 2, h + 2). Use the larger size for all of them; cubiomes
+    // ignores the surplus cells.
+    let p_cells = ((w + 2) * (h + 2)) as usize;
+    let mut out: Vec<i32> = vec![0; p_cells];
+    unsafe {
+        let dispatch = match kind {
+            SingleHopKind::Island => ffi::cubiomes_call_map_island,
+            SingleHopKind::Snow16 => ffi::cubiomes_call_map_snow16,
+            SingleHopKind::Snow => ffi::cubiomes_call_map_snow,
+            SingleHopKind::Special => ffi::cubiomes_call_map_special,
+            SingleHopKind::Mushroom => ffi::cubiomes_call_map_mushroom,
+            SingleHopKind::DeepOcean => ffi::cubiomes_call_map_deep_ocean,
+        };
+        dispatch(
+            world_seed,
+            parent_salt,
+            child_salt,
+            out.as_mut_ptr(),
+            x,
+            z,
+            w as c_int,
+            h as c_int,
+        );
+    }
+    let cells = (w * h) as usize;
+    let digest = digest_i32_slice(&out[..cells]);
+    SingleHopRecord {
+        world_seed,
+        parent_salt,
+        child_salt,
         x,
         z,
         w,
@@ -1171,6 +1323,66 @@ mod ffi {
             world_seed: u64,
             parent_layer_salt: u64,
             land_layer_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_island(
+            world_seed: u64,
+            parent_salt: u64,
+            child_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_snow16(
+            world_seed: u64,
+            parent_salt: u64,
+            child_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_snow(
+            world_seed: u64,
+            parent_salt: u64,
+            child_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_special(
+            world_seed: u64,
+            parent_salt: u64,
+            child_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_mushroom(
+            world_seed: u64,
+            parent_salt: u64,
+            child_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_deep_ocean(
+            world_seed: u64,
+            parent_salt: u64,
+            child_salt: u64,
             out: *mut c_int,
             x: c_int,
             z: c_int,

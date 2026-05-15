@@ -29,6 +29,33 @@ impl Biome {
     pub const FROZEN_OCEAN: Self = Self(10);
     /// `snowy_tundra` (biome id 12).
     pub const SNOWY_TUNDRA: Self = Self(12);
+    /// `mushroom_fields` (biome id 14).
+    pub const MUSHROOM_FIELDS: Self = Self(14);
+    /// `deep_ocean` (biome id 24).
+    pub const DEEP_OCEAN: Self = Self(24);
+    /// `warm_ocean` (biome id 44).
+    pub const WARM_OCEAN: Self = Self(44);
+    /// `lukewarm_ocean` (biome id 45).
+    pub const LUKEWARM_OCEAN: Self = Self(45);
+    /// `cold_ocean` (biome id 46).
+    pub const COLD_OCEAN: Self = Self(46);
+    /// `deep_warm_ocean` (biome id 47).
+    pub const DEEP_WARM_OCEAN: Self = Self(47);
+    /// `deep_lukewarm_ocean` (biome id 48).
+    pub const DEEP_LUKEWARM_OCEAN: Self = Self(48);
+    /// `deep_cold_ocean` (biome id 49).
+    pub const DEEP_COLD_OCEAN: Self = Self(49);
+    /// `deep_frozen_ocean` (biome id 50).
+    pub const DEEP_FROZEN_OCEAN: Self = Self(50);
+
+    /// Returns `true` if `id` is one of the five shallow-ocean variants
+    /// (`ocean`, `frozen_ocean`, `cold_ocean`, `lukewarm_ocean`,
+    /// `warm_ocean`). Mirrors cubiomes' `isShallowOcean` helper.
+    #[inline]
+    #[must_use]
+    pub const fn is_shallow_ocean_id(id: i32) -> bool {
+        matches!(id, 0 | 10 | 44 | 45 | 46)
+    }
 
     /// Underlying signed integer ID.
     #[inline]

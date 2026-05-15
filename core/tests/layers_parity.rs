@@ -14,7 +14,8 @@ use std::path::PathBuf;
 use bytemuck::{Pod, Zeroable};
 use cubioxides::biome::Biome;
 use cubioxides::layer::{
-    map_continent, map_land, map_land_b18, map_land16, map_zoom, map_zoom_fuzzy,
+    map_continent, map_cool, map_deep_ocean, map_heat, map_island, map_land, map_land_b18,
+    map_land16, map_mushroom, map_snow, map_snow16, map_special, map_zoom, map_zoom_fuzzy,
 };
 use cubioxides::rng::{get_start_salt, get_start_seed};
 
@@ -63,6 +64,20 @@ struct LandRecord {
     world_seed: u64,
     parent_salt: u64,
     land_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct SingleHopRecord {
+    world_seed: u64,
+    parent_salt: u64,
+    child_salt: u64,
     x: i32,
     z: i32,
     w: u32,
@@ -336,6 +351,165 @@ fn map_land16_matches_cubiomes() {
             "map_land16 digest mismatch at record {i} (world={:#x}, x={}, z={}, w={}, h={})",
             rec.world_seed, rec.x, rec.z, rec.w, rec.h
         );
+    }
+}
+
+#[derive(Copy, Clone)]
+enum SingleHopKind {
+    Island,
+    Snow16,
+    Snow,
+    Special,
+    Mushroom,
+    DeepOcean,
+}
+
+fn run_single_hop_record(rec: &SingleHopRecord, kind: SingleHopKind) -> u32 {
+    let x = rec.x;
+    let z = rec.z;
+    let w = rec.w as usize;
+    let h = rec.h as usize;
+
+    let parent_w = w + 2;
+    let parent_h = h + 2;
+    let parent_x = x - 1;
+    let parent_z = z - 1;
+    let parent_start_seed = get_start_seed(rec.world_seed, rec.parent_salt);
+
+    // For map_special the parent rectangle coincides with (x, z, w, h).
+    // For the others it is (x-1, z-1, w+2, h+2).
+    let (px, pz, pw, ph) = if matches!(kind, SingleHopKind::Special) {
+        (x, z, w, h)
+    } else {
+        (parent_x, parent_z, parent_w, parent_h)
+    };
+    let mut parent_buf = vec![Biome::NONE; pw * ph];
+    map_continent(parent_start_seed, &mut parent_buf, px, pz, pw, ph);
+
+    let child_start_salt = get_start_salt(rec.world_seed, rec.child_salt);
+    let child_start_seed = get_start_seed(rec.world_seed, rec.child_salt);
+    let mut out = vec![Biome::NONE; w * h];
+
+    match kind {
+        SingleHopKind::Island => {
+            map_island(child_start_seed, &parent_buf, &mut out, x, z, w, h);
+        }
+        SingleHopKind::Snow16 => {
+            map_snow16(child_start_seed, &parent_buf, &mut out, x, z, w, h);
+        }
+        SingleHopKind::Snow => {
+            map_snow(child_start_seed, &parent_buf, &mut out, x, z, w, h);
+        }
+        SingleHopKind::Special => {
+            map_special(
+                child_start_salt,
+                child_start_seed,
+                &parent_buf,
+                &mut out,
+                x,
+                z,
+                w,
+                h,
+            );
+        }
+        SingleHopKind::Mushroom => {
+            map_mushroom(child_start_seed, &parent_buf, &mut out, x, z, w, h);
+        }
+        SingleHopKind::DeepOcean => {
+            map_deep_ocean(&parent_buf, &mut out, w, h);
+        }
+    }
+
+    let mut digest: u32 = 0;
+    for cell in &out {
+        digest ^= hash32(cell.id() as u32);
+    }
+    digest
+}
+
+#[test]
+fn map_island_matches_cubiomes() {
+    let records: Vec<SingleHopRecord> = load_fixture("island.bin", 13);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_single_hop_record(rec, SingleHopKind::Island);
+        assert_eq!(digest, rec.digest, "map_island mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_snow16_matches_cubiomes() {
+    let records: Vec<SingleHopRecord> = load_fixture("snow16.bin", 14);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_single_hop_record(rec, SingleHopKind::Snow16);
+        assert_eq!(digest, rec.digest, "map_snow16 mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_snow_matches_cubiomes() {
+    let records: Vec<SingleHopRecord> = load_fixture("snow.bin", 15);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_single_hop_record(rec, SingleHopKind::Snow);
+        assert_eq!(digest, rec.digest, "map_snow mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_special_matches_cubiomes() {
+    let records: Vec<SingleHopRecord> = load_fixture("special.bin", 16);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_single_hop_record(rec, SingleHopKind::Special);
+        assert_eq!(digest, rec.digest, "map_special mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_mushroom_matches_cubiomes() {
+    let records: Vec<SingleHopRecord> = load_fixture("mushroom.bin", 17);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_single_hop_record(rec, SingleHopKind::Mushroom);
+        assert_eq!(digest, rec.digest, "map_mushroom mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_deep_ocean_matches_cubiomes() {
+    let records: Vec<SingleHopRecord> = load_fixture("deep_ocean.bin", 18);
+    assert!(!records.is_empty());
+    for (i, rec) in records.iter().enumerate() {
+        let digest = run_single_hop_record(rec, SingleHopKind::DeepOcean);
+        assert_eq!(digest, rec.digest, "map_deep_ocean mismatch at record {i}");
+    }
+}
+
+#[test]
+fn map_cool_passes_through_uniform_input() {
+    // map_cool is pure (no seed). Quick smoke test: uniform Warm input
+    // stays Warm because no Cold/Freezing neighbour exists.
+    let parent_w = 4 + 2;
+    let parent_h = 4 + 2;
+    let parent = vec![Biome(1); parent_w * parent_h]; // 1 = Warm
+    let mut out = vec![Biome::NONE; 4 * 4];
+    map_cool(&parent, &mut out, 4, 4);
+    for cell in &out {
+        assert_eq!(*cell, Biome(1));
+    }
+}
+
+#[test]
+fn map_heat_passes_through_uniform_input() {
+    let parent_w = 4 + 2;
+    let parent_h = 4 + 2;
+    let parent = vec![Biome(4); parent_w * parent_h]; // 4 = Freezing
+    let mut out = vec![Biome::NONE; 4 * 4];
+    map_heat(&parent, &mut out, 4, 4);
+    for cell in &out {
+        assert_eq!(*cell, Biome(4));
     }
 }
 

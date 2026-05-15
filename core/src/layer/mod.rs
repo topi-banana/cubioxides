@@ -10,5 +10,11 @@
 pub mod ops;
 
 pub use ops::continent::map_continent;
+pub use ops::deep_ocean::map_deep_ocean;
+pub use ops::island::map_island;
 pub use ops::land::{map_land, map_land_b18, map_land16};
+pub use ops::mushroom::map_mushroom;
+pub use ops::snow::{map_snow, map_snow16};
+pub use ops::special::map_special;
+pub use ops::temperature::{map_cool, map_heat};
 pub use ops::zoom::{map_zoom, map_zoom_fuzzy};
