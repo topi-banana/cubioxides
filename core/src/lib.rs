@@ -14,6 +14,7 @@
 //! `std::time::SystemTime`. Features that require host facilities (currently
 //! `parallel` and `colors`) are gated on `not(target_arch = "wasm32")`.
 
+#![forbid(unsafe_code)]
 #![cfg_attr(not(test), warn(missing_docs))]
 
 pub mod mc_version;

@@ -23,7 +23,10 @@ rstest = "0.23"
 thiserror = "2.0"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# Default to deny; the cubioxides-core crate enforces forbid via an attribute
+# in lib.rs. FFI-only members (fixtures-gen, ffi-tests) downgrade this to
+# allow because they must call into the cubiomes C library.
+unsafe_code = "deny"
 missing_docs = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
 

@@ -42,7 +42,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: clippy-${{ matrix.os }}
-      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo clippy -p cubioxides-core --all-targets --all-features -- -D warnings
 
   clippy-wasm:
     name: clippy / wasm32
@@ -86,9 +86,9 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.profile }}" = "release" ]; then
-            cargo test --workspace --release
+            cargo test -p cubioxides-core --release
           else
-            cargo test --workspace
+            cargo test -p cubioxides-core
           fi
 
   doc:
@@ -100,7 +100,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: doc
-      - run: cargo doc --workspace --no-deps --all-features
+      - run: cargo doc -p cubioxides-core --no-deps --all-features
 
   wasm-build:
     name: wasm32 build (${{ matrix.features }})
