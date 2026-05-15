@@ -23,6 +23,7 @@ pub mod math;
 pub mod mc_version;
 pub mod noise;
 pub mod rng;
+pub mod sha;
 
 pub use biome::Biome;
 pub use mc_version::{Dimension, MCVersion};

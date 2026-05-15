@@ -444,6 +444,7 @@ fn perlin_record(seed: u64, x: f64, y: f64, z: f64, yamp: f64, ymin: f64) -> Per
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn regenerate_layers() -> ExitCode {
     let fixtures_dir = workspace_root().join("fixtures").join("layers");
     if let Err(err) = fs::create_dir_all(&fixtures_dir) {
@@ -540,6 +541,10 @@ fn regenerate_layers() -> ExitCode {
     }
     if let Err(err) = write_ocean_mix_fixture(&fixtures_dir.join("ocean_mix.bin")) {
         eprintln!("ocean_mix fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_voronoi_sha_fixture(&fixtures_dir.join("voronoi_sha.bin")) {
+        eprintln!("voronoi_sha fixture failed: {err}");
         return ExitCode::FAILURE;
     }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
@@ -1568,6 +1573,51 @@ fn post_biome_record(
     }
 }
 
+/// `getVoronoiSHA` record (kind = 34). Pairs a 64-bit world seed with
+/// the truncated SHA-256 digest cubiomes returns from `getVoronoiSHA`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct VoronoiShaRecord {
+    pub seed: u64,
+    pub digest: u64,
+}
+
+const VORONOI_SHA_RECORDS: u64 = 4096;
+
+fn write_voronoi_sha_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 34, VORONOI_SHA_RECORDS)?;
+
+    // Mix a small set of edge-case seeds (0, 1, u64::MAX, ...) ahead of
+    // the deterministic LCG stream so the fixture exercises both the
+    // boundary inputs and a broad random distribution.
+    let edge_cases: [u64; 8] = [
+        0,
+        1,
+        2,
+        0xffff_ffff,
+        0xffff_ffff_ffff_ffff,
+        0x8000_0000_0000_0000,
+        0x0000_0000_0000_0001,
+        0xdead_beef_cafe_babe,
+    ];
+    for seed in edge_cases {
+        let digest = unsafe { ffi::getVoronoiSHA(seed) };
+        let rec = VoronoiShaRecord { seed, digest };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+
+    let mut rng_state: u64 = 0x5ec0_0a11_4519;
+    for _ in 0..(VORONOI_SHA_RECORDS - edge_cases.len() as u64) {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        let digest = unsafe { ffi::getVoronoiSHA(seed) };
+        let rec = VoronoiShaRecord { seed, digest };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
 /// `mapOceanMix` record (kind = 33). The biome parent is a
 /// `mapContinent` chain; the ocean parent is `mapOceanTemp` driven by
 /// `PerlinNoise` initialized from `world_seed`. MC = 1.18.
@@ -2432,6 +2482,7 @@ mod ffi {
             w: c_int,
             h: c_int,
         );
+        pub fn getVoronoiSHA(seed: u64) -> u64;
         pub fn cubiomes_call_map_river(
             world_seed: u64,
             mc: c_int,
