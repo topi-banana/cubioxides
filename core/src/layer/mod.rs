@@ -9,6 +9,7 @@
 
 pub mod ops;
 
+pub use ops::biome::map_biome;
 pub use ops::continent::map_continent;
 pub use ops::deep_ocean::map_deep_ocean;
 pub use ops::island::map_island;

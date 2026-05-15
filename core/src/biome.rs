@@ -23,16 +23,54 @@ impl Biome {
     pub const OCEAN: Self = Self(0);
     /// `plains`.
     pub const PLAINS: Self = Self(1);
+    /// `desert` (biome id 2).
+    pub const DESERT: Self = Self(2);
+    /// `mountains` / `extreme_hills` (biome id 3).
+    pub const MOUNTAINS: Self = Self(3);
     /// `forest` (biome id 4 in `cubiomes/biomes.h`).
     pub const FOREST: Self = Self(4);
+    /// `taiga` (biome id 5).
+    pub const TAIGA: Self = Self(5);
+    /// `swamp` / `swampland` (biome id 6).
+    pub const SWAMP: Self = Self(6);
+    /// `river` (biome id 7).
+    pub const RIVER: Self = Self(7);
     /// `frozen_ocean` (biome id 10).
     pub const FROZEN_OCEAN: Self = Self(10);
+    /// `frozen_river` (biome id 11).
+    pub const FROZEN_RIVER: Self = Self(11);
     /// `snowy_tundra` (biome id 12).
     pub const SNOWY_TUNDRA: Self = Self(12);
     /// `mushroom_fields` (biome id 14).
     pub const MUSHROOM_FIELDS: Self = Self(14);
+    /// `beach` (biome id 16).
+    pub const BEACH: Self = Self(16);
+    /// `jungle` (biome id 21).
+    pub const JUNGLE: Self = Self(21);
+    /// `bamboo_jungle` (biome id 168).
+    pub const BAMBOO_JUNGLE: Self = Self(168);
     /// `deep_ocean` (biome id 24).
     pub const DEEP_OCEAN: Self = Self(24);
+    /// `stone_shore` (biome id 25).
+    pub const STONE_SHORE: Self = Self(25);
+    /// `snowy_beach` (biome id 26).
+    pub const SNOWY_BEACH: Self = Self(26);
+    /// `birch_forest` (biome id 27).
+    pub const BIRCH_FOREST: Self = Self(27);
+    /// `dark_forest` (biome id 29).
+    pub const DARK_FOREST: Self = Self(29);
+    /// `snowy_taiga` (biome id 30).
+    pub const SNOWY_TAIGA: Self = Self(30);
+    /// `giant_tree_taiga` / `megaTaiga` (biome id 32).
+    pub const GIANT_TREE_TAIGA: Self = Self(32);
+    /// `savanna` (biome id 35).
+    pub const SAVANNA: Self = Self(35);
+    /// `badlands` / `mesa` (biome id 37).
+    pub const BADLANDS: Self = Self(37);
+    /// `wooded_badlands_plateau` (biome id 38).
+    pub const WOODED_BADLANDS_PLATEAU: Self = Self(38);
+    /// `badlands_plateau` (biome id 39).
+    pub const BADLANDS_PLATEAU: Self = Self(39);
     /// `warm_ocean` (biome id 44).
     pub const WARM_OCEAN: Self = Self(44);
     /// `lukewarm_ocean` (biome id 45).

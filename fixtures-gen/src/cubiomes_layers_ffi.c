@@ -200,3 +200,31 @@ void cubiomes_call_map_heat(uint64_t world_seed, uint64_t continent_salt,
     call_chain3(mapHeat, world_seed, continent_salt, snow_salt, heat_salt, out,
                 x, z, w, h);
 }
+
+void cubiomes_call_map_biome(uint64_t world_seed, int mc,
+                             uint64_t continent_salt, uint64_t snow_salt,
+                             uint64_t biome_salt, int *out, int x, int z, int w,
+                             int h) {
+    Layer continent;
+    memset(&continent, 0, sizeof(continent));
+    continent.getMap = mapContinent;
+    continent.layerSalt = continent_salt;
+    continent.mc = mc;
+
+    Layer snow;
+    memset(&snow, 0, sizeof(snow));
+    snow.getMap = mapSnow;
+    snow.layerSalt = snow_salt;
+    snow.mc = mc;
+    snow.p = &continent;
+
+    Layer biome;
+    memset(&biome, 0, sizeof(biome));
+    biome.getMap = mapBiome;
+    biome.layerSalt = biome_salt;
+    biome.mc = mc;
+    biome.p = &snow;
+
+    setLayerSeed(&biome, world_seed);
+    mapBiome(&biome, out, x, z, w, h);
+}

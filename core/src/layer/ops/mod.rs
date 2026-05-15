@@ -3,6 +3,7 @@
 //! Each submodule ports one (or a small family of related)
 //! cubiomes layer-map functions from `layers.c`.
 
+pub mod biome;
 pub mod continent;
 pub mod deep_ocean;
 pub mod island;

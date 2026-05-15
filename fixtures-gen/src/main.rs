@@ -495,6 +495,10 @@ fn regenerate_layers() -> ExitCode {
             return ExitCode::FAILURE;
         }
     }
+    if let Err(err) = write_biome_fixture(&fixtures_dir.join("biome.bin")) {
+        eprintln!("biome fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1108,6 +1112,110 @@ fn temp_record(
     }
 }
 
+/// `map_biome` record (kind = 21). Same layout as `TempRecord` but
+/// the underlying chain ends at `mapBiome` (which produces real biome
+/// IDs from the temperature-category grid emitted by `mapSnow`).
+/// The MC version is fixed at `MC_1_7` (ordinal = 10) — the smallest
+/// 1.7+ value, which exercises the modern biome-selection path.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct BiomeRecord {
+    pub world_seed: u64,
+    pub continent_salt: u64,
+    pub snow_salt: u64,
+    pub biome_salt: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const BIOME_RECORDS: u64 = 4096;
+/// cubiomes' `MC_1_7` ordinal (matches `MCVersion::V1_7.ord()`).
+const MC_1_7: c_int = 10;
+
+fn write_biome_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 21, BIOME_RECORDS)?;
+
+    let mut rng_state: u64 = 0xb10e_b10e_b10e;
+    for _ in 0..BIOME_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let continent_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let snow_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let biome_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let w = ((rng_state & 0x1f) as u32) + 2;
+        let h = ((rng_state >> 8) & 0x1f) as u32 + 2;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 64;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 64;
+        let rec = biome_record(
+            world_seed,
+            continent_salt,
+            snow_salt,
+            biome_salt,
+            x,
+            z,
+            w,
+            h,
+        );
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn biome_record(
+    world_seed: u64,
+    continent_salt: u64,
+    snow_salt: u64,
+    biome_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+) -> BiomeRecord {
+    // map_biome reads a (w, h) parent (no padding), but the underlying
+    // mapSnow + mapContinent chain demands (w+4, h+4) cells at most.
+    let p_cells = ((w + 6) * (h + 6)) as usize;
+    let mut out: Vec<i32> = vec![0; p_cells];
+    unsafe {
+        ffi::cubiomes_call_map_biome(
+            world_seed,
+            MC_1_7,
+            continent_salt,
+            snow_salt,
+            biome_salt,
+            out.as_mut_ptr(),
+            x,
+            z,
+            w as c_int,
+            h as c_int,
+        );
+    }
+    let cells = (w * h) as usize;
+    let digest = digest_i32_slice(&out[..cells]);
+    BiomeRecord {
+        world_seed,
+        continent_salt,
+        snow_salt,
+        biome_salt,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
+}
+
 /// Octave noise record (kind = 5). Uses fixed omin = -3, len = 4 for both
 /// the Java and Xoroshiro initialisers (amplitudes = [1, 1, 1, 1]).
 #[repr(C)]
@@ -1546,6 +1654,18 @@ mod ffi {
             continent_salt: u64,
             snow_salt: u64,
             heat_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_biome(
+            world_seed: u64,
+            mc: c_int,
+            continent_salt: u64,
+            snow_salt: u64,
+            biome_salt: u64,
             out: *mut c_int,
             x: c_int,
             z: c_int,
