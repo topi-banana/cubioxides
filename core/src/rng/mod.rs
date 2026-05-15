@@ -5,5 +5,7 @@
 //! keeps multiplication and addition inside Rust's native machine word.
 
 pub mod java;
+pub mod xoroshiro;
 
 pub use java::JavaRng;
+pub use xoroshiro::Xoroshiro;

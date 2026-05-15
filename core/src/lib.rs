@@ -22,4 +22,4 @@ pub mod mc_version;
 pub mod rng;
 
 pub use mc_version::{Dimension, MCVersion};
-pub use rng::JavaRng;
+pub use rng::{JavaRng, Xoroshiro};
