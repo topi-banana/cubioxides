@@ -43,12 +43,14 @@ fn main() {
         emit_rerun(&path);
     }
 
-    // Non-inline wrappers exposing rng.h's static inline helpers as
-    // ordinary FFI symbols.
-    let ffi_wrapper = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/cubiomes_rng_ffi.c");
-    assert!(ffi_wrapper.exists(), "missing {}", ffi_wrapper.display());
-    build.file(&ffi_wrapper);
-    emit_rerun(&ffi_wrapper);
+    // Non-inline wrappers exposing rng.h's static inline helpers and the
+    // layer-map entry points as ordinary FFI symbols.
+    for wrapper in ["src/cubiomes_rng_ffi.c", "src/cubiomes_layers_ffi.c"] {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(wrapper);
+        assert!(path.exists(), "missing {}", path.display());
+        build.file(&path);
+        emit_rerun(&path);
+    }
 
     // Headers too — anything that affects ABI when bumped.
     for entry in std::fs::read_dir(&cubiomes_dir).expect("read cubiomes dir") {

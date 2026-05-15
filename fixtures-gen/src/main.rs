@@ -34,12 +34,17 @@ fn main() -> ExitCode {
         "verify" => verify_ffi(),
         "rng" => regenerate_rng(),
         "noise" => regenerate_noise(),
+        "layers" => regenerate_layers(),
         "regenerate-all" => {
             let r = regenerate_rng();
             if r != ExitCode::SUCCESS {
                 return r;
             }
-            regenerate_noise()
+            let r = regenerate_noise();
+            if r != ExitCode::SUCCESS {
+                return r;
+            }
+            regenerate_layers()
         }
         unknown => {
             eprintln!("unknown subcommand: {unknown}");
@@ -55,7 +60,8 @@ fn print_help() {
     eprintln!("Subcommands:");
     eprintln!("  verify           FFI smoke-test against cubiomes (must print \"1.18\")");
     eprintln!("  rng              Generate RNG fixtures (java / xoroshiro / mc_seed)");
-    eprintln!("  noise            Generate noise fixtures (perlin)");
+    eprintln!("  noise            Generate noise fixtures (perlin / octave / double_perlin)");
+    eprintln!("  layers           Generate layer fixtures (continent)");
     eprintln!("  regenerate-all   Regenerate every fixture under fixtures/");
     eprintln!("  help             Show this help");
 }
@@ -438,6 +444,110 @@ fn perlin_record(seed: u64, x: f64, y: f64, z: f64, yamp: f64, ymin: f64) -> Per
     }
 }
 
+fn regenerate_layers() -> ExitCode {
+    let fixtures_dir = workspace_root().join("fixtures").join("layers");
+    if let Err(err) = fs::create_dir_all(&fixtures_dir) {
+        eprintln!("failed to create {}: {err}", fixtures_dir.display());
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_continent_fixture(&fixtures_dir.join("continent.bin")) {
+        eprintln!("continent fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    println!("Wrote layer fixtures into {}", fixtures_dir.display());
+    ExitCode::SUCCESS
+}
+
+/// Layer mapContinent record (kind = 7). Each entry samples a small
+/// rectangle and stores a digest of every output cell so the comparison
+/// stays O(records) on the parity-test side. Laid out for `Pod` (no
+/// implicit padding, total 32 bytes).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ContinentRecord {
+    pub start_seed: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    /// `hash32`-style fold over every emitted biome ID in row-major order.
+    pub digest: u32,
+    /// Explicit terminal padding so the struct's size is a multiple of
+    /// its alignment (8 bytes); required by `bytemuck::Pod`.
+    pub pad: u32,
+}
+
+/// Number of `map_continent` samples per fixture. Smaller than `RECORD_COUNT`
+/// because each record allocates a `Vec<i32>` of `w * h` cells before
+/// digesting; a sweep across many region sizes is plenty for parity.
+const CONTINENT_RECORDS: u64 = 4096;
+
+fn write_continent_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 7, CONTINENT_RECORDS)?;
+
+    let mut rng_state: u64 = 0xc0c0_a1ce_b0ba;
+    for _ in 0..CONTINENT_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let start_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        // Random rectangle covering both small (1x1) and modest (32x32) cases.
+        let w = ((rng_state & 0x1f) as u32) + 1; // 1..=32
+        let h = ((rng_state >> 8) & 0x1f) as u32 + 1; // 1..=32
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 64; // -63..=63 ish
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 64;
+        let rec = continent_record(start_seed, x, z, w, h);
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn continent_record(start_seed: u64, x: i32, z: i32, w: u32, h: u32) -> ContinentRecord {
+    let mut out: Vec<i32> = vec![0; (w * h) as usize];
+    unsafe {
+        ffi::cubiomes_call_map_continent(
+            start_seed,
+            out.as_mut_ptr(),
+            x,
+            z,
+            w as c_int,
+            h as c_int,
+        );
+    }
+    let digest = digest_i32_slice(&out);
+    ContinentRecord {
+        start_seed,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
+}
+
+/// Folds an `i32` slice into a u32 by mixing each value with the same
+/// 32-bit mixer cubiomes uses in `tests.c::hash32`.
+fn digest_i32_slice(values: &[i32]) -> u32 {
+    let mut h: u32 = 0;
+    for v in values {
+        h ^= hash32(*v as u32);
+    }
+    h
+}
+
+/// Mirror of cubiomes' `hash32` in tests.c (same constants).
+fn hash32(mut x: u32) -> u32 {
+    x ^= x >> 15;
+    x = x.wrapping_mul(0xd168_aaad);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0xaf72_3597);
+    x ^= x >> 15;
+    x
+}
+
 /// Octave noise record (kind = 5). Uses fixed omin = -3, len = 4 for both
 /// the Java and Xoroshiro initialisers (amplitudes = [1, 1, 1, 1]).
 #[repr(C)]
@@ -740,5 +850,15 @@ mod ffi {
         ) -> c_int;
         #[allow(non_snake_case)]
         pub fn sampleDoublePerlin(noise: *const CDoublePerlinNoise, x: f64, y: f64, z: f64) -> f64;
+
+        // Layer-map wrappers (see cubiomes_layers_ffi.c).
+        pub fn cubiomes_call_map_continent(
+            start_seed: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
     }
 }
