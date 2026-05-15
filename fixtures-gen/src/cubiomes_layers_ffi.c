@@ -271,6 +271,54 @@ void cubiomes_call_map_sunflower(uint64_t world_seed, int mc,
                 biome_salt, child_salt, out, x, z, w, h);
 }
 
+void cubiomes_call_map_hills(uint64_t world_seed, int mc,
+                             uint64_t biome_parent_salt,
+                             uint64_t river_parent_salt, uint64_t hills_salt,
+                             int *out, int x, int z, int w, int h) {
+    Layer biome_p;
+    memset(&biome_p, 0, sizeof(biome_p));
+    biome_p.getMap = mapContinent;
+    biome_p.layerSalt = biome_parent_salt;
+    biome_p.mc = mc;
+
+    Layer river_p;
+    memset(&river_p, 0, sizeof(river_p));
+    river_p.getMap = mapContinent;
+    river_p.layerSalt = river_parent_salt;
+    river_p.mc = mc;
+
+    Layer hills;
+    memset(&hills, 0, sizeof(hills));
+    hills.getMap = mapHills;
+    hills.layerSalt = hills_salt;
+    hills.mc = mc;
+    hills.p = &biome_p;
+    hills.p2 = &river_p;
+
+    setLayerSeed(&hills, world_seed);
+    mapHills(&hills, out, x, z, w, h);
+}
+
+void cubiomes_call_map_shore(uint64_t world_seed, int mc, uint64_t parent_salt,
+                             uint64_t shore_salt, int *out, int x, int z, int w,
+                             int h) {
+    Layer parent;
+    memset(&parent, 0, sizeof(parent));
+    parent.getMap = mapContinent;
+    parent.layerSalt = parent_salt;
+    parent.mc = mc;
+
+    Layer shore;
+    memset(&shore, 0, sizeof(shore));
+    shore.getMap = mapShore;
+    shore.layerSalt = shore_salt;
+    shore.mc = mc;
+    shore.p = &parent;
+
+    setLayerSeed(&shore, world_seed);
+    mapShore(&shore, out, x, z, w, h);
+}
+
 void cubiomes_call_map_voronoi114(uint64_t world_seed, uint64_t parent_salt,
                                   uint64_t voronoi_salt, int *out, int x, int z,
                                   int w, int h) {

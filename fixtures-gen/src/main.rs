@@ -519,6 +519,14 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("voronoi114 fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_shore_fixture(&fixtures_dir.join("shore.bin")) {
+        eprintln!("shore fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_hills_fixture(&fixtures_dir.join("hills.bin")) {
+        eprintln!("hills fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1388,6 +1396,186 @@ fn four_hop_record(
     }
 }
 
+/// `mapHills` record (kind = 29). Two parent chains (each
+/// `mapContinent`) feed `mapHills`. MC = 1.18.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct HillsRecord {
+    pub world_seed: u64,
+    pub biome_parent_salt: u64,
+    pub river_parent_salt: u64,
+    pub hills_salt: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const HILLS_RECORDS: u64 = 4096;
+
+fn write_hills_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 29, HILLS_RECORDS)?;
+
+    let mut rng_state: u64 = 0x4111_11ee_5111;
+    for _ in 0..HILLS_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let biome_parent_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let river_parent_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let hills_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let w = ((rng_state & 0x1f) as u32) + 2;
+        let h = ((rng_state >> 8) & 0x1f) as u32 + 2;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 64;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 64;
+        let rec = hills_record(
+            world_seed,
+            biome_parent_salt,
+            river_parent_salt,
+            hills_salt,
+            x,
+            z,
+            w,
+            h,
+        );
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn hills_record(
+    world_seed: u64,
+    biome_parent_salt: u64,
+    river_parent_salt: u64,
+    hills_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+) -> HillsRecord {
+    // mapHills uses out as scratch for both parents (each pW * pH cells).
+    let p_cells = ((w + 2) * (h + 2)) as usize;
+    let mut out: Vec<i32> = vec![0; p_cells * 3];
+    unsafe {
+        ffi::cubiomes_call_map_hills(
+            world_seed,
+            MC_1_18_C,
+            biome_parent_salt,
+            river_parent_salt,
+            hills_salt,
+            out.as_mut_ptr(),
+            x,
+            z,
+            w as c_int,
+            h as c_int,
+        );
+    }
+    let digest = digest_i32_slice(&out[..(w * h) as usize]);
+    HillsRecord {
+        world_seed,
+        biome_parent_salt,
+        river_parent_salt,
+        hills_salt,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
+}
+
+/// `mapShore` record (kind = 28). Two-layer chain at `MC_1_18`: simple
+/// `mapContinent` parent followed by `mapShore`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ShoreRecord {
+    pub world_seed: u64,
+    pub parent_salt: u64,
+    pub shore_salt: u64,
+    pub x: i32,
+    pub z: i32,
+    pub w: u32,
+    pub h: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+const SHORE_RECORDS: u64 = 4096;
+/// `MC_1_18` ordinal (matches `MCVersion::V1_18.ord()`).
+const MC_1_18_C: c_int = 22;
+
+fn write_shore_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 28, SHORE_RECORDS)?;
+
+    let mut rng_state: u64 = 0x5403_0e10_1010;
+    for _ in 0..SHORE_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let world_seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let parent_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let shore_salt = rng_state | 1;
+        rng_state = lcg_step(rng_state);
+        let w = ((rng_state & 0x1f) as u32) + 2;
+        let h = ((rng_state >> 8) & 0x1f) as u32 + 2;
+        rng_state = lcg_step(rng_state);
+        let x = (rng_state as i32) % 64;
+        rng_state = lcg_step(rng_state);
+        let z = (rng_state as i32) % 64;
+        let rec = shore_record(world_seed, parent_salt, shore_salt, x, z, w, h);
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+fn shore_record(
+    world_seed: u64,
+    parent_salt: u64,
+    shore_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+) -> ShoreRecord {
+    let p_cells = ((w + 2) * (h + 2)) as usize;
+    let mut out: Vec<i32> = vec![0; p_cells];
+    unsafe {
+        ffi::cubiomes_call_map_shore(
+            world_seed,
+            MC_1_18_C,
+            parent_salt,
+            shore_salt,
+            out.as_mut_ptr(),
+            x,
+            z,
+            w as c_int,
+            h as c_int,
+        );
+    }
+    let digest = digest_i32_slice(&out[..(w * h) as usize]);
+    ShoreRecord {
+        world_seed,
+        parent_salt,
+        shore_salt,
+        x,
+        z,
+        w,
+        h,
+        digest,
+        pad: 0,
+    }
+}
+
 /// `mapVoronoi114` record (kind = 27). Two-layer chain: simple
 /// `mapContinent` parent at 1:4 scale, then `mapVoronoi114` at 1:1.
 #[repr(C)]
@@ -1980,6 +2168,29 @@ mod ffi {
         );
         pub fn cubiomes_call_map_ocean_temp(
             world_seed: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_hills(
+            world_seed: u64,
+            mc: c_int,
+            biome_parent_salt: u64,
+            river_parent_salt: u64,
+            hills_salt: u64,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        );
+        pub fn cubiomes_call_map_shore(
+            world_seed: u64,
+            mc: c_int,
+            parent_salt: u64,
+            shore_salt: u64,
             out: *mut c_int,
             x: c_int,
             z: c_int,

@@ -14,9 +14,10 @@ use std::path::PathBuf;
 use bytemuck::{Pod, Zeroable};
 use cubioxides::biome::Biome;
 use cubioxides::layer::{
-    map_bamboo, map_biome, map_continent, map_cool, map_deep_ocean, map_heat, map_island, map_land,
-    map_land_b18, map_land16, map_mushroom, map_noise, map_ocean_temp, map_snow, map_snow16,
-    map_special, map_sunflower, map_swamp_river, map_voronoi114, map_zoom, map_zoom_fuzzy,
+    map_bamboo, map_biome, map_continent, map_cool, map_deep_ocean, map_heat, map_hills,
+    map_island, map_land, map_land_b18, map_land16, map_mushroom, map_noise, map_ocean_temp,
+    map_shore, map_snow, map_snow16, map_special, map_sunflower, map_swamp_river, map_voronoi114,
+    map_zoom, map_zoom_fuzzy,
 };
 use cubioxides::mc_version::MCVersion;
 use cubioxides::noise::PerlinNoise;
@@ -836,6 +837,140 @@ struct Voronoi114FixtureRecord {
     h: u32,
     digest: u32,
     pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ShoreFixtureRecord {
+    world_seed: u64,
+    parent_salt: u64,
+    shore_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct HillsFixtureRecord {
+    world_seed: u64,
+    biome_parent_salt: u64,
+    river_parent_salt: u64,
+    hills_salt: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    digest: u32,
+    pad: u32,
+}
+
+#[test]
+fn map_hills_matches_cubiomes() {
+    let records: Vec<HillsFixtureRecord> = load_fixture("hills.bin", 29);
+    assert!(!records.is_empty());
+
+    for (i, rec) in records.iter().enumerate() {
+        let x = rec.x;
+        let z = rec.z;
+        let w = rec.w as usize;
+        let h = rec.h as usize;
+
+        let parent_w = w + 2;
+        let parent_h = h + 2;
+        let parent_x = x - 1;
+        let parent_z = z - 1;
+
+        let biome_start_seed = get_start_seed(rec.world_seed, rec.biome_parent_salt);
+        let mut biome_parent = vec![Biome::NONE; parent_w * parent_h];
+        map_continent(
+            biome_start_seed,
+            &mut biome_parent,
+            parent_x,
+            parent_z,
+            parent_w,
+            parent_h,
+        );
+
+        let river_start_seed = get_start_seed(rec.world_seed, rec.river_parent_salt);
+        let mut river_parent = vec![Biome::NONE; parent_w * parent_h];
+        map_continent(
+            river_start_seed,
+            &mut river_parent,
+            parent_x,
+            parent_z,
+            parent_w,
+            parent_h,
+        );
+
+        let hills_start_salt = get_start_salt(rec.world_seed, rec.hills_salt);
+        let hills_start_seed = get_start_seed(rec.world_seed, rec.hills_salt);
+        let mut out = vec![Biome::NONE; w * h];
+        map_hills(
+            MCVersion::V1_18,
+            hills_start_salt,
+            hills_start_seed,
+            &biome_parent,
+            &river_parent,
+            &mut out,
+            x,
+            z,
+            w,
+            h,
+        );
+
+        let mut digest: u32 = 0;
+        for cell in &out {
+            digest ^= hash32(cell.id() as u32);
+        }
+        assert_eq!(
+            digest, rec.digest,
+            "map_hills digest mismatch at record {i}"
+        );
+    }
+}
+
+#[test]
+fn map_shore_matches_cubiomes() {
+    let records: Vec<ShoreFixtureRecord> = load_fixture("shore.bin", 28);
+    assert!(!records.is_empty());
+
+    for (i, rec) in records.iter().enumerate() {
+        let x = rec.x;
+        let z = rec.z;
+        let w = rec.w as usize;
+        let h = rec.h as usize;
+
+        let parent_w = w + 2;
+        let parent_h = h + 2;
+        let parent_x = x - 1;
+        let parent_z = z - 1;
+        let parent_start_seed = get_start_seed(rec.world_seed, rec.parent_salt);
+        let mut parent_buf = vec![Biome::NONE; parent_w * parent_h];
+        map_continent(
+            parent_start_seed,
+            &mut parent_buf,
+            parent_x,
+            parent_z,
+            parent_w,
+            parent_h,
+        );
+
+        let mut out = vec![Biome::NONE; w * h];
+        map_shore(MCVersion::V1_18, &parent_buf, &mut out, w, h);
+
+        let mut digest: u32 = 0;
+        for cell in &out {
+            digest ^= hash32(cell.id() as u32);
+        }
+        assert_eq!(
+            digest, rec.digest,
+            "map_shore digest mismatch at record {i}"
+        );
+    }
 }
 
 #[test]
