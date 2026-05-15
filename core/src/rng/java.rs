@@ -15,9 +15,10 @@ const MASK: u64 = (1 << 48) - 1;
 /// Bit-exact replica of Minecraft's `java.util.Random` (48-bit LCG).
 ///
 /// The seed is *not* the raw `value` passed to [`JavaRng::new`]; Java
-/// XORs it with [`MULT`] and masks to 48 bits at seed time. Round-trip
-/// the value via [`JavaRng::raw_seed`] / [`JavaRng::from_raw`] if you
-/// need to copy an in-flight state across boundaries.
+/// XORs it with the LCG multiplier (`0x5deece66d`) and masks to 48 bits
+/// at seed time. Round-trip the value via [`JavaRng::raw_seed`] /
+/// [`JavaRng::from_raw`] if you need to copy an in-flight state across
+/// boundaries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct JavaRng {
     seed: u64,
