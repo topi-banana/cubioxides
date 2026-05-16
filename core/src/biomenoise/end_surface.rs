@@ -267,6 +267,19 @@ const YN: usize = (Y1 - Y0 + 1) as usize;
 /// `getEndSurfaceHeight(mc, seed, x, z)` — convenience wrapper.
 /// Constructs `EndNoise` + `SurfaceNoise` from `(mc, seed)` and
 /// returns the surface block height at `(x, z)`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::biomenoise::get_end_surface_height;
+///
+/// // Block-level surface height for an End coordinate. The outer
+/// // ring (|x| or |z| ≳ 2000) is mostly void, returning the y=0
+/// // sentinel. Central island heights are typically y ≈ 64.
+/// let _h_center = get_end_surface_height(MCVersion::V1_21, 0xdead_beef, 0, 0);
+/// let _h_outer = get_end_surface_height(MCVersion::V1_21, 0xdead_beef, 5000, 5000);
+/// ```
 #[must_use]
 pub fn get_end_surface_height(mc: MCVersion, seed: u64, x: i32, z: i32) -> i32 {
     let en = EndNoise::set_seed(mc, seed);
