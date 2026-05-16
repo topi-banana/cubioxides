@@ -151,6 +151,20 @@ impl EndNoise {
     /// height. `(x, z)` are in 8-block-per-cell coordinates (cubiomes'
     /// "noise space"). `range = 0` defaults to 12 cells around the
     /// sample point. Returns a height clamped to `[-100, 80]`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::MCVersion;
+    /// use cubioxides::biomenoise::EndNoise;
+    ///
+    /// // Raw noise-space height at the End origin. The 8-blocks-per-cell
+    /// // coordinate convention is non-obvious — pass world coords >> 3,
+    /// // not raw blocks. The returned f32 is always within [-100, 80].
+    /// let en = EndNoise::set_seed(MCVersion::V1_21, 0xdead_beef);
+    /// let h = en.end_height_noise(0, 0, 0);
+    /// assert!((-100.0..=80.0).contains(&h));
+    /// ```
     #[must_use]
     pub fn end_height_noise(&self, x: i32, z: i32, range: i32) -> f32 {
         let hx = x / 2;
