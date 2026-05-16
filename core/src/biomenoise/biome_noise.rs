@@ -176,6 +176,29 @@ impl BiomeNoise {
         };
         (id, np)
     }
+
+    /// Sample the `NP_DEPTH` climate parameter at fractional `(x, z)`
+    /// for `y = 0`. Bit-exact port of cubiomes' `sampleClimatePara`
+    /// with `bn->nptype == NP_DEPTH`. Used by 1.18+
+    /// `isViableStructureTerrain` to gate Desert/Jungle/Mansion on
+    /// surface depth.
+    #[must_use]
+    pub fn sample_climate_para_depth(&self, x: f64, z: f64) -> f64 {
+        let c = self.climate[NP_CONTINENTALNESS].sample(x, 0.0, z) as f32;
+        let e = self.climate[NP_EROSION].sample(x, 0.0, z) as f32;
+        let w = self.climate[NP_WEIRDNESS].sample(x, 0.0, z) as f32;
+        let np_param = [
+            c,
+            e,
+            -3.0_f32 * (f32::abs(f32::abs(w) - 0.666_666_7_f32) - 0.333_333_34_f32),
+            w,
+        ];
+        let off_f32 = sample_spline(&self.spline_stack, self.spline_root, &np_param) + 0.015_f32;
+        let off = f64::from(off_f32);
+        // y=0 — cubiomes' `1.0 - (0*4)/128.0 - 83.0/160.0 + off`.
+        let d_f64 = 1.0_f64 - 83.0_f64 / 160.0_f64 + off;
+        f64::from(d_f64 as f32)
+    }
 }
 
 /// `init_climate_seed(dpn, oct, xlo, xhi, large, nptype, nmax)` —

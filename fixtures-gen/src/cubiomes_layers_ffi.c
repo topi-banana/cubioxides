@@ -1110,3 +1110,12 @@ void cubiomes_call_get_fortress_pieces(int mc, uint64_t seed, int chunk_x,
     }
     free(pieces);
 }
+
+/* Run cubiomes' isViableStructureTerrain and return its int result. */
+int cubiomes_call_is_viable_structure_terrain(int struct_type, int mc,
+                                              uint64_t seed, int x, int z) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, 0, seed); // overworld
+    return isViableStructureTerrain(struct_type, &g, x, z);
+}

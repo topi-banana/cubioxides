@@ -1011,3 +1011,66 @@ fn village_viable(mc: MCVersion, biome_id: i32) -> bool {
     }
     false
 }
+
+/// `isViableStructureTerrain(structType, g, blockX, blockZ)` — 1.18+
+/// terrain-gate companion to [`is_viable_structure_pos`]. Returns
+/// `false` only when any of four corner depth samples falls below
+/// 0.48 (sea-level threshold). Pre-1.18 and structure types other
+/// than Desert Pyramid / Jungle Temple / Mansion always return
+/// `true`.
+///
+/// Bit-exact port of cubiomes' `isViableStructureTerrain`. Uses the
+/// new [`crate::biomenoise::biome_noise::BiomeNoise::sample_climate_para_depth`].
+#[must_use]
+pub fn is_viable_structure_terrain(
+    structure_type: StructureType,
+    g: &Generator,
+    x: i32,
+    z: i32,
+) -> bool {
+    use StructureType::*;
+    if !g.mc.is_at_least(MCVersion::V1_18) {
+        return true;
+    }
+    let (sx, sz, sample_x, sample_z) = match structure_type {
+        DesertPyramid => (21_i32, 21_i32, x, z),
+        JungleTemple => (12_i32, 15_i32, x, z),
+        Mansion => {
+            let cx = x >> 4;
+            let cz = z >> 4;
+            let mut rng = crate::finder::population_seed::chunk_generate_rng(g.seed, cx, cz);
+            let rot = rng.next_int(4);
+            let mut mx: i32 = 5;
+            let mut mz: i32 = 5;
+            if rot == 0 {
+                mx = -5;
+            } else if rot == 1 {
+                mx = -5;
+                mz = -5;
+            } else if rot == 2 {
+                mz = -5;
+            }
+            (mx, mz, cx * 16 + 7, cz * 16 + 7)
+        }
+        _ => return true,
+    };
+    let bn = match g.biome_noise.as_ref() {
+        Some(b) => b.as_ref(),
+        None => return true,
+    };
+    let corners = [
+        (f64::from(sample_x) / 4.0, f64::from(sample_z) / 4.0),
+        (
+            f64::from(sample_x + sx) / 4.0,
+            f64::from(sample_z + sz) / 4.0,
+        ),
+        (f64::from(sample_x) / 4.0, f64::from(sample_z + sz) / 4.0),
+        (f64::from(sample_x + sx) / 4.0, f64::from(sample_z) / 4.0),
+    ];
+    for (cx, cz) in corners {
+        if bn.sample_climate_para_depth(cx, cz) < 0.48 {
+            return false;
+        }
+    }
+    true
+}

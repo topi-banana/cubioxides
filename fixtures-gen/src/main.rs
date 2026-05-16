@@ -1019,6 +1019,12 @@ fn regenerate_layers() -> ExitCode {
         return ExitCode::FAILURE;
     }
     if let Err(err) =
+        write_viable_structure_terrain_fixture(&fixtures_dir.join("viable_structure_terrain.bin"))
+    {
+        eprintln!("viable_structure_terrain fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
         eprintln!("viable_feature_biome fixture failed: {err}");
@@ -3282,6 +3288,68 @@ fn write_get_house_list_fixture(path: &Path) -> std::io::Result<()> {
                 rng_final,
             };
             file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
+}
+
+/// `isViableStructureTerrain` parity record (kind = 83). One record
+/// per (mc, `structure_type`, seed, x, z) tuple.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ViableTerrainRecord {
+    pub mc: i32,
+    pub structure_type: i32,
+    pub seed: u64,
+    pub x: i32,
+    pub z: i32,
+    pub viable: i32,
+    pub padding: i32,
+}
+
+fn write_viable_structure_terrain_fixture(path: &Path) -> std::io::Result<()> {
+    // Only mc 1.18+ exercises the depth check; pre-1.18 is always 1.
+    // Structure-type focus: Desert_Pyramid, Jungle_Temple, Mansion
+    // (Mansion has a chunkGenerateRnd-driven rotation, so add a few seeds).
+    let combos: [(i32, i32); 6] = [
+        (22, 1), // V1_18 Desert_Pyramid
+        (22, 2), // V1_18 Jungle_Temple
+        (22, 9), // V1_18 Mansion
+        (28, 1), // V1_21 WD Desert_Pyramid
+        (28, 9), // V1_21 WD Mansion
+        (10, 1), // V1_7 — pre-1.18 always-true sanity.
+    ];
+    let seeds: [u64; 8] = [
+        0x0000_dead_beef_0000,
+        0x1234_5678_9abc_def0,
+        0x7edf_7985_db06_7c7d,
+        0xa110_dec0_de5e_ed00,
+        0x0,
+        0x1,
+        0xffff_ffff_ffff_ffff,
+        0x0fed_cba9_8765_4321,
+    ];
+    let coords: [(i32, i32); 3] = [(0, 0), (256, -512), (-3884, 653)];
+    let total = (combos.len() * seeds.len() * coords.len()) as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 83, total)?;
+
+    for &(mc, sty) in &combos {
+        for &seed in &seeds {
+            for &(x, z) in &coords {
+                let v =
+                    unsafe { ffi::cubiomes_call_is_viable_structure_terrain(sty, mc, seed, x, z) };
+                let rec = ViableTerrainRecord {
+                    mc,
+                    structure_type: sty,
+                    seed,
+                    x,
+                    z,
+                    viable: v,
+                    padding: 0,
+                };
+                file.write_all(bytemuck::bytes_of(&rec))?;
+            }
         }
     }
     file.flush()
@@ -6286,6 +6354,13 @@ mod ffi {
             out_count: *mut c_int,
             out_records: *mut FortressBBRecord,
         );
+        pub fn cubiomes_call_is_viable_structure_terrain(
+            struct_type: c_int,
+            mc: c_int,
+            seed: u64,
+            x: c_int,
+            z: c_int,
+        ) -> c_int;
         pub fn cubiomes_call_scan_for_quads(
             mc: c_int,
             sty: c_int,
