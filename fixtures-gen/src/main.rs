@@ -34,6 +34,7 @@ fn main() -> ExitCode {
         "verify" => verify_ffi(),
         "debug-monument-cache" => debug_monument_cache(),
         "debug-mch-cache" => debug_mch_cache(),
+        "debug-mch-scale" => debug_mch_scale(),
         "rng" => regenerate_rng(),
         "noise" => regenerate_noise(),
         "layers" => regenerate_layers(),
@@ -69,6 +70,67 @@ fn print_help() {
     eprintln!("  layers           Generate layer fixtures (continent)");
     eprintln!("  regenerate-all   Regenerate every fixture under fixtures/");
     eprintln!("  help             Show this help");
+}
+
+/// Dump cubiomes' `gen_biomes` at scales 16, 64, 256 for the
+/// V1_16_1 divergent area (rectangle covering the cell range that
+/// `map_approx_height_legacy`'s scale-4 sample reads from). The
+/// matching Rust test diffs each scale to localise the first
+/// upstream layer where divergence appears.
+fn debug_mch_scale() -> ExitCode {
+    let mc: c_int = 19; // cubiomes MC_1_16_1
+    let seed: u64 = 0x7edf_7985_db06_7c7d;
+    // The scale-4 area was {x=-158, z=-327, sx=13, sz=13}. At scale 16
+    // we want roughly (x>>2, z>>2) ± expansion = (-40, -82) to
+    // (-36, -78), so let's grab a 6x6 area at scale 16. Similarly
+    // for scale 64 and 256.
+    for (label, scale, x, z, sx, sz) in [
+        ("scale16", 16_i32, -41_i32, -83_i32, 8_i32, 8_i32),
+        ("scale64", 64_i32, -11_i32, -21_i32, 4_i32, 4_i32),
+        ("scale256", 256_i32, -3_i32, -6_i32, 3_i32, 3_i32),
+    ] {
+        let mut cache = vec![0_i32; (sx * sz) as usize];
+        let err = unsafe {
+            ffi::cubiomes_call_gen_biomes(
+                mc,
+                0,
+                0,
+                seed,
+                scale,
+                x,
+                z,
+                sx,
+                sz,
+                0,
+                1,
+                cache.as_mut_ptr(),
+            )
+        };
+        if err != 0 {
+            eprintln!("cubiomes gen_biomes returned err={err} at {label}");
+            return ExitCode::FAILURE;
+        }
+        let path = workspace_root()
+            .join("fixtures")
+            .join("layers")
+            .join(format!("debug_mch_{label}.bin"));
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let mut file = match File::create(&path) {
+            Ok(f) => BufWriter::new(f),
+            Err(e) => {
+                eprintln!("creating {}: {e}", path.display());
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Err(e) = file.write_all(bytemuck::cast_slice(&cache)) {
+            eprintln!("writing {}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
+        println!("Wrote {} cells to {}", cache.len(), path.display());
+    }
+    ExitCode::SUCCESS
 }
 
 /// Dump cubiomes' `gen_biomes` output for the legacy
