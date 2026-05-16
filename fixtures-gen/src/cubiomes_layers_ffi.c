@@ -1232,3 +1232,12 @@ void cubiomes_call_init_biome_colors(unsigned char colors[256][3]) {
 void cubiomes_call_init_biome_type_colors(unsigned char colors[256][3]) {
     initBiomeTypeColors(colors);
 }
+
+extern int biomesToImage(unsigned char *pixels, unsigned char biomeColors[256][3], const int *biomes,
+        const unsigned int sx, const unsigned int sy,
+        const unsigned int pixscale, const int flip);
+int cubiomes_call_biomes_to_image(unsigned char *pixels, unsigned char biome_colors[256][3],
+        const int *biomes, unsigned int sx, unsigned int sy,
+        unsigned int pixscale, int flip) {
+    return biomesToImage(pixels, biome_colors, biomes, sx, sy, pixscale, flip);
+}

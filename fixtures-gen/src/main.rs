@@ -1125,6 +1125,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("biome_colors fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_biomes_to_image_fixture(&fixtures_dir.join("biomes_to_image.bin")) {
+        eprintln!("biomes_to_image fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3494,6 +3498,78 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
             ids: ids_arr,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `biomesToImage` parity (kind = 95). Header + variable-length body.
+/// Body layout: [sx u32][sy u32][pixscale u32][flip u8][invalid u8][pad u16]
+/// [biomes: sx*sy * i32][pixels: 3 * sx*pixscale * sy*pixscale u8].
+fn write_biomes_to_image_fixture(path: &Path) -> std::io::Result<()> {
+    // Hand-picked grid covering valid + invalid IDs across scaling
+    // and flip options.
+    type Case = (u32, u32, u32, bool, Vec<i32>);
+    let cases: Vec<Case> = vec![
+        // 4x3 grid with ocean / plains / desert / forest etc, no scaling, flip=true.
+        (
+            4,
+            3,
+            1,
+            true,
+            vec![
+                0, 1, 2, 4, // row 0
+                7, 6, 35, 21, // row 1
+                14, 27, 132, 165, // row 2
+            ],
+        ),
+        // 2x2 with invalid IDs (-1, 256), scaling 2x.
+        (
+            2,
+            2,
+            2,
+            false,
+            vec![
+                -1, 256, // row 0 (both invalid)
+                0, 12, // row 1 (valid)
+            ],
+        ),
+        // 3x3 with pixscale=3, flip=false, mixed valid + extra-out-of-range.
+        (3, 3, 3, false, vec![0, 1, 4, 14, 24, -10, 35, 21, 500]),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 95, total)?;
+    let mut palette = [0u8; 768];
+    unsafe {
+        ffi::cubiomes_call_init_biome_colors(palette.as_mut_ptr());
+    }
+    for (sx, sy, pixscale, flip, biomes) in &cases {
+        let pixel_count = (sx * pixscale * sy * pixscale * 3) as usize;
+        let mut pixels = vec![0u8; pixel_count];
+        let mut palette_copy = palette;
+        let invalid = unsafe {
+            ffi::cubiomes_call_biomes_to_image(
+                pixels.as_mut_ptr(),
+                palette_copy.as_mut_ptr(),
+                biomes.as_ptr(),
+                *sx,
+                *sy,
+                *pixscale,
+                c_int::from(*flip),
+            )
+        };
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sy.to_le_bytes())?;
+        file.write_all(&pixscale.to_le_bytes())?;
+        file.write_all(&[u8::from(*flip)])?;
+        file.write_all(&[invalid as u8])?;
+        file.write_all(&[0u8; 2])?; // pad
+        // Biomes (i32 little-endian).
+        for &b in biomes {
+            file.write_all(&b.to_le_bytes())?;
+        }
+        // Pixels.
+        file.write_all(&pixels)?;
     }
     file.flush()
 }
@@ -7018,6 +7094,15 @@ mod ffi {
         pub fn cubiomes_call_str2mc(s: *const std::ffi::c_char) -> c_int;
         pub fn cubiomes_call_init_biome_colors(colors: *mut u8);
         pub fn cubiomes_call_init_biome_type_colors(colors: *mut u8);
+        pub fn cubiomes_call_biomes_to_image(
+            pixels: *mut u8,
+            biome_colors: *mut u8,
+            biomes: *const c_int,
+            sx: u32,
+            sy: u32,
+            pixscale: u32,
+            flip: c_int,
+        ) -> c_int;
         pub fn cubiomes_call_can_biome_generate(
             layer_id: c_int,
             mc: c_int,

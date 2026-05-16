@@ -146,6 +146,78 @@ pub fn init_biome_type_colors() -> [[u8; 3]; 256] {
     colors
 }
 
+/// `biomesToImage(pixels, biomeColors, biomes, sx, sy, pixscale, flip)`
+/// — render a `(sx, sy)` biome-id grid into an RGB pixel buffer
+/// using `biome_colors` as the palette. Bit-exact port of cubiomes'
+/// helper of the same name.
+///
+/// Behavior:
+/// - Each cell is replicated into a `pixscale × pixscale` square.
+/// - When `flip == false`, row 0 lands at the *bottom* of the
+///   output (cubiomes default for PPM output, where the natural Z+
+///   direction is up). With `flip == true`, row 0 is at the top.
+/// - Invalid IDs (`< 0` or `>= 256`) get the palette entry at
+///   `id & 0x7f` darkened by 40 per channel (saturating to 0),
+///   and the function returns `true` to flag them.
+///
+/// `pixels` must be at least `3 * (sx * pixscale) * (sy * pixscale)`
+/// bytes long. Panics if too small.
+#[allow(clippy::many_single_char_names, clippy::too_many_arguments)]
+pub fn biomes_to_image(
+    pixels: &mut [u8],
+    biome_colors: &[[u8; 3]; 256],
+    biomes: &[i32],
+    sx: u32,
+    sy: u32,
+    pixscale: u32,
+    flip: bool,
+) -> bool {
+    let sxu = sx as usize;
+    let syu = sy as usize;
+    let ps = pixscale as usize;
+    assert!(biomes.len() >= sxu * syu, "biomes slice too small");
+    assert!(
+        pixels.len() >= 3 * sxu * syu * ps * ps,
+        "pixels buffer too small"
+    );
+    let mut contains_invalid = false;
+    for j in 0..syu {
+        for i in 0..sxu {
+            let id = biomes[j * sxu + i];
+            let (r, g, b) = if (0..256).contains(&id) {
+                let c = biome_colors[id as usize];
+                (c[0], c[1], c[2])
+            } else {
+                contains_invalid = true;
+                // cubiomes: `id & 0x7f` even for negative ids.
+                let idx = (id & 0x7f) as usize;
+                let c = biome_colors[idx];
+                (
+                    c[0].saturating_sub(40),
+                    c[1].saturating_sub(40),
+                    c[2].saturating_sub(40),
+                )
+            };
+            for m in 0..ps {
+                for n in 0..ps {
+                    let col = ps * i + n;
+                    let row = if flip {
+                        ps * j + m
+                    } else {
+                        ps * (syu - 1 - j) + m
+                    };
+                    let idx = sxu * ps * row + col;
+                    let pix = &mut pixels[3 * idx..3 * idx + 3];
+                    pix[0] = r;
+                    pix[1] = g;
+                    pix[2] = b;
+                }
+            }
+        }
+    }
+    contains_invalid
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,6 +239,36 @@ mod tests {
     fn pale_garden_present() {
         let c = init_biome_colors();
         assert_eq!(c[186], [0x69, 0x6d, 0x95]);
+    }
+
+    #[test]
+    fn biomes_to_image_simple() {
+        let palette = init_biome_colors();
+        // 2x2 grid of ocean / plains / desert / forest at pixscale=1,
+        // flip=true so row 0 is at top.
+        let biomes = vec![0, 1, 2, 4]; // row 0 = (ocean, plains); row 1 = (desert, forest)
+        let mut pixels = vec![0u8; 3 * 4];
+        let invalid = biomes_to_image(&mut pixels, &palette, &biomes, 2, 2, 1, true);
+        assert!(!invalid);
+        // row 0 col 0 = ocean = 0x00, 0x00, 0x70
+        assert_eq!(&pixels[0..3], &[0x00, 0x00, 0x70]);
+        // row 0 col 1 = plains
+        assert_eq!(&pixels[3..6], &[0x8d, 0xb3, 0x60]);
+        // row 1 col 0 = desert
+        assert_eq!(&pixels[6..9], &[0xfa, 0x94, 0x18]);
+        // row 1 col 1 = forest
+        assert_eq!(&pixels[9..12], &[0x05, 0x66, 0x21]);
+    }
+
+    #[test]
+    fn biomes_to_image_invalid_id_darkens() {
+        let palette = init_biome_colors();
+        let biomes = vec![-1_i32]; // -1 & 0x7f = 0x7f = 127 (the_void = 0)
+        let mut pixels = vec![0u8; 3];
+        let invalid = biomes_to_image(&mut pixels, &palette, &biomes, 1, 1, 1, true);
+        assert!(invalid);
+        // the_void palette is [0, 0, 0]; saturating_sub(40) keeps it 0.
+        assert_eq!(pixels, vec![0, 0, 0]);
     }
 
     #[test]
