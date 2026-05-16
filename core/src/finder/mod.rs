@@ -4,15 +4,16 @@
 //! Each submodule corresponds to one cubiomes capability group:
 //! position generation ([`get_structure_pos`], [`get_feature_pos`],
 //! [`get_large_structure_pos`]), viability checks ([`viability`],
-//! [`can_biome_generate`]), structure pieces ([`end_city`],
+//! [`mod@can_biome_generate`]), structure pieces ([`end_city`],
 //! [`fortress`], [`village_houses`]), biome filtering
-//! ([`biome_filter`], [`check_for_biomes`], [`check_for_temps`],
-//! [`biome_para`]), area analysis ([`biome_centers`],
-//! [`largest_rec`], [`locate_biome`], [`monte_carlo`]),
-//! climate-driven scans ([`para_descent`], [`para_range`]),
-//! End-dim helpers ([`end`]), Strongholds ([`stronghold`]), spawn
-//! estimation ([`spawn`]), quad-base search ([`quadbase`]), and the
-//! per-structure variant decoder ([`variant`]).
+//! ([`biome_filter`], [`mod@check_for_biomes`],
+//! [`mod@check_for_temps`], [`biome_para`]), area analysis
+//! ([`biome_centers`], [`largest_rec`], [`mod@locate_biome`],
+//! [`monte_carlo`]), climate-driven scans ([`para_descent`],
+//! [`para_range`]), End-dim helpers ([`end`]), Strongholds
+//! ([`stronghold`]), spawn estimation ([`spawn`]), quad-base
+//! search ([`quadbase`]), and the per-structure variant decoder
+//! ([`variant`]).
 //!
 //! Most public APIs are re-exported at the module root for
 //! discoverability; the submodule paths are still available for
