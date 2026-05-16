@@ -199,6 +199,44 @@ impl BiomeNoise {
         let d_f64 = 1.0_f64 - 83.0_f64 / 160.0_f64 + off;
         f64::from(d_f64 as f32)
     }
+
+    /// Generate a 4×4×4 chunk-section biome cube at section coordinates
+    /// `(cx, cy, cz)` (in 1:16 scale). Bit-exact port of cubiomes'
+    /// `genBiomeNoiseChunkSection`. Output is `[x][y][z]`.
+    ///
+    /// `dat` carries the previous-leaf decision-tree index across calls
+    /// (cubiomes uses this to emulate the MC-241546 biome quirk). Pass
+    /// `&mut 0` for the first call.
+    pub fn gen_chunk_section(
+        &self,
+        out: &mut [[[i32; 4]; 4]; 4],
+        cx: i32,
+        cy: i32,
+        cz: i32,
+        dat: &mut u64,
+    ) {
+        let x4 = cx * 4;
+        let y4 = cy * 4;
+        let z4 = cz * 4;
+        if *dat == 0 {
+            // Seed `dat` from the chunk-section above.
+            let _ = self.sample_with_dat(x4 + 3, y4 - 1, z4 + 3, Some(dat), 0);
+        }
+        for (i, plane) in out.iter_mut().enumerate() {
+            for (j, row) in plane.iter_mut().enumerate() {
+                for (k, cell) in row.iter_mut().enumerate() {
+                    let (id, _) = self.sample_with_dat(
+                        x4 + i as i32,
+                        y4 + j as i32,
+                        z4 + k as i32,
+                        Some(dat),
+                        0,
+                    );
+                    *cell = id;
+                }
+            }
+        }
+    }
 }
 
 /// `init_climate_seed(dpn, oct, xlo, xhi, large, nptype, nmax)` —

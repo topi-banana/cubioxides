@@ -1228,6 +1228,23 @@ uint64_t cubiomes_call_get_min_layer_cache_size(int mc, int entry, int sx, int s
     return (uint64_t) getMinLayerCacheSize(&ls.layers[entry], sx, sz);
 }
 
+/* genBiomeNoiseChunkSection wrapper. Returns 64 ints flat (xyz order). */
+void cubiomes_call_gen_biome_noise_chunk_section(int mc, uint64_t seed,
+                                                 int cx, int cy, int cz,
+                                                 int *out64) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, DIM_OVERWORLD, seed);
+    int out[4][4][4];
+    uint64_t dat = 0;
+    genBiomeNoiseChunkSection(&g.bn, out, cx, cy, cz, &dat);
+    int n = 0;
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            for (int k = 0; k < 4; k++)
+                out64[n++] = out[i][j][k];
+}
+
 /* checkForBiomes wrapper. Builds a BiomeFilter from the same
  * required/excluded/matchany inputs that the Rust port uses, then
  * invokes cubiomes' checkForBiomes. Cache is internally allocated. */

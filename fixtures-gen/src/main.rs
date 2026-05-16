@@ -1201,6 +1201,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("check_for_biomes_beta fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_chunk_section_fixture(&fixtures_dir.join("chunk_section.bin")) {
+        eprintln!("chunk_section fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -4541,6 +4545,44 @@ fn write_check_for_biomes_beta_fixture(path: &Path) -> std::io::Result<()> {
             file.write_all(&v.to_le_bytes())?;
         }
         file.write_all(&result.to_le_bytes())?;
+    }
+    file.flush()
+}
+
+/// `genBiomeNoiseChunkSection` payload (kind = 85). Per-record:
+/// `mc i32, seed u64, cx i32, cy i32, cz i32, ids [i32; 64]`.
+fn write_chunk_section_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (i32, u64, i32, i32, i32);
+    let cases: &[Case] = &[
+        (22, 0xdead_beef, 0, 4, 0),
+        (22, 0xdead_beef, 10, 4, 20),
+        (22, 0xcafe_babe, -5, 4, -5),
+        (22, 0x1234_5678, 0, 0, 0),
+        (28, 0xabcd_1234, 0, 4, 0),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 85, total)?;
+    for &(mc, seed, cx, cy, cz) in cases {
+        let mut ids = [0_i32; 64];
+        unsafe {
+            ffi::cubiomes_call_gen_biome_noise_chunk_section(
+                mc,
+                seed,
+                cx,
+                cy,
+                cz,
+                ids.as_mut_ptr(),
+            );
+        }
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&cx.to_le_bytes())?;
+        file.write_all(&cy.to_le_bytes())?;
+        file.write_all(&cz.to_le_bytes())?;
+        for id in ids {
+            file.write_all(&id.to_le_bytes())?;
+        }
     }
     file.flush()
 }
@@ -8262,6 +8304,14 @@ mod ffi {
             maxiter: c_int,
             alpha: f64,
         ) -> f64;
+        pub fn cubiomes_call_gen_biome_noise_chunk_section(
+            mc: c_int,
+            seed: u64,
+            cx: c_int,
+            cy: c_int,
+            cz: c_int,
+            out64: *mut c_int,
+        );
         pub fn cubiomes_call_check_for_biomes(
             mc: c_int,
             seed: u64,
