@@ -39,6 +39,35 @@ pub enum MonteCarloEval {
 /// (matching cubiomes), and the function early-exits via the
 /// Wilson score interval once the success rate's confidence
 /// bounds clear `coverage` ± `1/m`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::Range;
+/// use cubioxides::finder::monte_carlo::MonteCarloEval;
+/// use cubioxides::finder::monte_carlo_biomes;
+/// use cubioxides::rng::JavaRng;
+/// use cubioxides::{Dimension, Generator, MCVersion};
+///
+/// // Estimate whether at least 30% of a 64×64 cell window at scale=4
+/// // is forest (id 4), with 90% confidence. The eval closure can
+/// // pull biomes from `g` via `g.biome_at`, but is free to do any
+/// // classification — it only sees `(g, scale, x, y, z)`.
+/// let mut g = Generator::new(MCVersion::V1_16_1, 0);
+/// g.apply_seed(Dimension::Overworld, 0xdead_beef);
+/// let mut rng = JavaRng::new(0);
+/// let range = Range { scale: 4, x: 0, z: 0, sx: 64, sz: 64, y: 64, sy: 1 };
+/// let _is_forest_heavy = monte_carlo_biomes(
+///     &g, range, &mut rng, 0.30, 0.90,
+///     |g, scale, x, y, z| {
+///         if g.biome_at(scale, x, y, z).0 == 4 {
+///             MonteCarloEval::Success
+///         } else {
+///             MonteCarloEval::Fail
+///         }
+///     },
+/// );
+/// ```
 #[allow(
     clippy::too_many_arguments,
     clippy::many_single_char_names,
