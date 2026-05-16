@@ -209,6 +209,69 @@ int cubiomes_call_is_viable_structure_pos(int mc, int dim, int structure_type,
     return isViableStructurePos(structure_type, &g, x, z, flags);
 }
 
+/* searchAll48 callback context — emulates cubiomes' user-data
+ * pattern. The "check" callback returns 1 if a seed passes the
+ * Swamp_Hut + radius=128 filter. */
+typedef struct {
+    StructureConfig sconf;
+    int radius;
+} search_all_ctx_t;
+
+static int search_all_check_quad_hut(uint64_t s48, void *data) {
+    search_all_ctx_t *ctx = (search_all_ctx_t *)data;
+    return isQuadBase(ctx->sconf, s48, ctx->radius) ? 1 : 0;
+}
+
+int cubiomes_call_search_all48_quad_hut(int mc, uint64_t start, uint64_t end,
+                                        const uint64_t *low_bits,
+                                        int low_bit_count, uint64_t *out_seeds,
+                                        int n_max) {
+    StructureConfig sc;
+    if (!getStructureConfig(Swamp_Hut, mc, &sc)) {
+        return 0;
+    }
+    /* Cubiomes' searchAll48 takes a NULL-terminated low_bits array. */
+    uint64_t *lb = (uint64_t *)malloc(sizeof(uint64_t) * (size_t)(low_bit_count + 1));
+    for (int i = 0; i < low_bit_count; i++) lb[i] = low_bits[i];
+    lb[low_bit_count] = 0;
+    search_all_ctx_t ctx = {sc, 128};
+    /* Inline the relevant portion of searchAll48Thread directly to
+     * avoid the file I/O + threading wrapper. */
+    const int lbitn = 20;
+    const uint64_t hstep = 1ULL << lbitn;
+    const uint64_t hmask = ~(hstep - 1);
+    int cnt = low_bit_count;
+    uint64_t mid = start & hmask;
+    int idx = 0;
+    uint64_t seed = mid | lb[idx];
+    while (seed < start) {
+        idx++;
+        if (idx >= cnt) {
+            idx = 0;
+            mid += hstep;
+        }
+        seed = mid | lb[idx];
+    }
+    int written = 0;
+    while (seed <= end) {
+        if (search_all_check_quad_hut(seed, &ctx)) {
+            if (written < n_max) {
+                out_seeds[written++] = seed;
+            } else {
+                break;
+            }
+        }
+        idx++;
+        if (idx >= cnt) {
+            idx = 0;
+            mid += hstep;
+        }
+        seed = mid | lb[idx];
+    }
+    free(lb);
+    return written;
+}
+
 int cubiomes_call_scan_for_quads(int mc, int sty, int radius, uint64_t s48,
                                  const uint64_t *low_bits, int low_bit_count,
                                  uint64_t salt, int x, int z, int w, int h,

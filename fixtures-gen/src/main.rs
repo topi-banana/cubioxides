@@ -702,6 +702,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("scan_for_quads fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_search_all_48_fixture(&fixtures_dir.join("search_all_48.bin")) {
+        eprintln!("search_all_48 fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2184,6 +2188,61 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `searchAll48` parity record (kind = 72). Each record covers a
+/// (start, end) 48-bit range with Swamp_Hut + radius=128 + the
+/// LOW20_QUAD_IDEAL constellations. `cnt` is the number of seeds
+/// `is_quad_base` accepted in the range; `seeds[0..cnt]` is the
+/// list in cubiomes' iteration order.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct SearchAll48Record {
+    pub start: u64,
+    pub end: u64,
+    pub cnt: i32,
+    pub pad: i32,
+    pub seeds: [u64; 8],
+}
+
+fn write_search_all_48_fixture(path: &Path) -> std::io::Result<()> {
+    // Use tight (start, end) windows so the fixture stays fast. The
+    // 20-bit stride means each window iterates `2^(48 - 20)` candidates
+    // at most; we use 2^20-block windows for ~1M candidates per
+    // record (still fast since most fail the quad check quickly).
+    let low_bits: [u64; 3] = [0x43f18, 0xc751a, 0xf520a];
+    let total: u64 = 16;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 72, total)?;
+
+    let mut rng_state: u64 = 0xb00b_face_5eed_face;
+    for _ in 0..total {
+        rng_state = lcg_step(rng_state);
+        let start = rng_state & ((1u64 << 48) - 1);
+        // ~2^28 candidates per record — kept small for fixture-gen speed.
+        let end = (start.wrapping_add(1u64 << 28)).min((1u64 << 48) - 1);
+        let mut seeds = [0u64; 8];
+        let cnt = unsafe {
+            ffi::cubiomes_call_search_all48_quad_hut(
+                22, // V1_18
+                start,
+                end,
+                low_bits.as_ptr(),
+                low_bits.len() as c_int,
+                seeds.as_mut_ptr(),
+                8,
+            )
+        };
+        let rec = SearchAll48Record {
+            start,
+            end,
+            cnt,
+            pad: 0,
+            seeds,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
 }
 
 /// `scanForQuads` parity record (kind = 71). For each (s48, x, z,
@@ -5505,6 +5564,15 @@ mod ffi {
             h: c_int,
             out_xz: *mut c_int,
             n: c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_search_all48_quad_hut(
+            mc: c_int,
+            start: u64,
+            end: u64,
+            low_bits: *const u64,
+            low_bit_count: c_int,
+            out_seeds: *mut u64,
+            n_max: c_int,
         ) -> c_int;
         pub fn cubiomes_call_get_linked_gateway_pos(
             mc: c_int,

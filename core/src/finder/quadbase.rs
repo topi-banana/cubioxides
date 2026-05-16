@@ -610,6 +610,75 @@ pub fn scan_for_quads(
     cnt
 }
 
+/// `searchAll48(range, low_bits, lbitn, check)` — enumerate 48-bit
+/// seeds in `range` whose lower `lbitn` bits match one of
+/// `low_bits`, invoking `check` for each candidate. Returns the
+/// vector of seeds for which `check` returned `true`.
+///
+/// Bit-exact port of cubiomes' inner `searchAll48Thread` loop
+/// (sequential variant — no file I/O, no resumption, no threading).
+/// The output order matches cubiomes': for each `mid` (high-bit
+/// chunk), iterate `idx = 0..low_bits.len()` of `low_bits`.
+///
+/// The `parallel` feature gates a multi-threaded variant; this
+/// commit ships only the sequential path.
+pub fn search_all_48<F: FnMut(u64) -> bool>(
+    range: core::ops::RangeInclusive<u64>,
+    low_bits: &[u64],
+    lbitn: u32,
+    mut check: F,
+) -> Vec<u64> {
+    let mut out = Vec::new();
+    let start = *range.start();
+    let end = *range.end();
+    if low_bits.is_empty() {
+        // Cubiomes' "no low-bit filter" path: iterate every seed.
+        let mut seed = start;
+        loop {
+            if check(seed) {
+                out.push(seed);
+            }
+            if seed == end {
+                break;
+            }
+            seed = seed.wrapping_add(1);
+        }
+        return out;
+    }
+
+    let hstep: u64 = 1u64 << lbitn;
+    let hmask: u64 = !(hstep - 1);
+    let cnt = low_bits.len();
+
+    let mut mid: u64 = start & hmask;
+    // Skip ahead to the first lowBits[idx] whose seed = mid | lb
+    // lands >= start.
+    let mut idx: usize = 0;
+    let mut seed = mid | low_bits[idx];
+    while seed < start {
+        idx += 1;
+        if idx >= cnt {
+            idx = 0;
+            mid = mid.wrapping_add(hstep);
+        }
+        seed = mid | low_bits[idx];
+    }
+
+    while seed <= end {
+        if check(seed) {
+            out.push(seed);
+        }
+        idx += 1;
+        if idx >= cnt {
+            idx = 0;
+            mid = mid.wrapping_add(hstep);
+        }
+        seed = mid | low_bits[idx];
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -631,5 +700,29 @@ mod tests {
         // A random seed almost certainly fails the classic check.
         assert!(!is_quad_base_feature_24_classic(sconf, 0xdead_beef));
         assert!(is_quad_base_feature_24(sconf, 0xdead_beef, 0, 0, 0).is_none());
+    }
+
+    #[test]
+    fn search_all_48_enumerates_low_bit_seeds_in_order() {
+        // 4-bit stride, low_bits = [5, 11]. Range 0..=63 should yield
+        // (mid=0, lb=5)=5, (mid=0, lb=11)=11, (mid=16, lb=5)=21,
+        // (mid=16, lb=11)=27, ..., (mid=48, lb=11)=59.
+        let seeds = super::search_all_48(0..=63, &[5, 11], 4, |_| true);
+        assert_eq!(seeds, vec![5, 11, 21, 27, 37, 43, 53, 59]);
+    }
+
+    #[test]
+    fn search_all_48_skips_seeds_before_start() {
+        // start=20, lb=[5, 11], stride=16. mid=16, lb=5 → 21 (>= 20)
+        // mid=16, lb=11 → 27, mid=32, lb=5 → 37, mid=32, lb=11 → 43.
+        let seeds = super::search_all_48(20..=43, &[5, 11], 4, |_| true);
+        assert_eq!(seeds, vec![21, 27, 37, 43]);
+    }
+
+    #[test]
+    fn search_all_48_with_check_filter_returns_only_passing() {
+        // Same as above but only seeds > 30 pass.
+        let seeds = super::search_all_48(0..=63, &[5, 11], 4, |s| s > 30);
+        assert_eq!(seeds, vec![37, 43, 53, 59]);
     }
 }
