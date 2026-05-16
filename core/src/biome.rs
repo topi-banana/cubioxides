@@ -488,6 +488,23 @@ impl Biome {
     /// `isOverworld(mc, id)` — predicate `biomeExists && id is in
     /// the Overworld dimension`. Bit-exact port of cubiomes'
     /// `isOverworld`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::MCVersion;
+    /// use cubioxides::biome::Biome;
+    ///
+    /// // Plains is always overworld; the_end / nether_wastes never
+    /// // are. A few biomes flip with the version:
+    /// // - dripstone_caves (174) only counts as overworld on 1.18+
+    /// // - mountain_edge (20) only on pre-1.7
+    /// assert!(Biome::is_overworld_id(MCVersion::V1_18, Biome::PLAINS.id()));
+    /// assert!(!Biome::is_overworld_id(MCVersion::V1_18, Biome::THE_END.id()));
+    /// assert!(!Biome::is_overworld_id(MCVersion::V1_18, Biome::NETHER_WASTES.id()));
+    /// assert!(Biome::is_overworld_id(MCVersion::V1_18, Biome::DRIPSTONE_CAVES.id()));
+    /// assert!(!Biome::is_overworld_id(MCVersion::V1_17, Biome::DRIPSTONE_CAVES.id()));
+    /// ```
     #[must_use]
     pub fn is_overworld_id(mc: crate::mc_version::MCVersion, id: i32) -> bool {
         use crate::mc_version::MCVersion;
