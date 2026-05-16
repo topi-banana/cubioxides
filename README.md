@@ -22,6 +22,34 @@ current scope and progress.
 | `fixtures-gen`  | Dev tool: links cubiomes via FFI and dumps reference fixtures. |
 | `ffi-tests`     | Dev tool: differential tests against cubiomes via bindgen.     |
 
+## Usage
+
+```rust
+use cubioxides::{Biome, Dimension, Generator, MCVersion, Range};
+
+let mut g = Generator::new(MCVersion::V1_21, 0);
+g.apply_seed(Dimension::Overworld, 0xdead_beef);
+
+// Sample a single biome at block (0, 64, 0) at the 1:4 grid.
+let biome = g.biome_at(4, 0, 64, 0);
+println!("biome at origin: {biome:?}");
+
+// Fill a 16×16 cell area at scale=4 in one call.
+let mut cache = vec![Biome::NONE; 16 * 16];
+g.gen_biomes(
+    &mut cache,
+    Range { scale: 4, x: 0, z: 0, sx: 16, sz: 16, y: 64, sy: 1 },
+);
+```
+
+For Nether / End dimensions, pass the matching `Dimension` to
+`apply_seed`. For 1.18+ Modern biomes, the `flags` argument accepts
+`LARGE_BIOMES`, `NO_BETA_OCEAN`, and `FORCE_OCEAN_VARIANTS` (all
+defined at the crate root). For lower-level access, the
+`gen_biome_noise_scaled` / `gen_nether_scaled` / `gen_end_scaled`
+free functions take a noise field directly, bypassing the
+`Generator` wrapper.
+
 ## Building
 
 ```sh
