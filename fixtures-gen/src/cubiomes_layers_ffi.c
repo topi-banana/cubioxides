@@ -1266,6 +1266,17 @@ int cubiomes_call_gen_nether_voronoi(int mc, uint64_t seed,
     return err;
 }
 
+/* getLayerForScale wrapper. Returns the layer index in g->ls.layers
+ * (matches cubiomes' L_* enum), or -1 if the result is NULL. */
+int cubiomes_call_get_layer_for_scale(int mc, int scale) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, DIM_OVERWORLD, 0);
+    const Layer *layer = getLayerForScale(&g, scale);
+    if (!layer) return -1;
+    return (int)(layer - g.ls.layers);
+}
+
 /* getMinCacheSize wrapper. Builds a Generator at (mc, flags),
  * applies seed for dim, then queries the min cache size. */
 uint64_t cubiomes_call_get_min_cache_size(int mc, int dim, uint64_t seed,

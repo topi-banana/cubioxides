@@ -1239,6 +1239,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("min_cache_size fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_layer_for_scale_fixture(&fixtures_dir.join("layer_for_scale.bin")) {
+        eprintln!("layer_for_scale fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -5142,6 +5146,42 @@ fn write_min_cache_size_fixture(path: &Path) -> std::io::Result<()> {
     file.flush()
 }
 
+/// `getLayerForScale` parity fixture (kind = 102). Each record:
+/// `mc(i32) scale(i32) result(i32)`. Layout = 4 + 4 + 4 = 12 bytes
+/// per record. cubiomes returns NULL → -1 here.
+fn write_layer_for_scale_fixture(path: &Path) -> std::io::Result<()> {
+    let mcs: &[i32] = &[
+        2,  // B1_8
+        3,  // V1_0 (layered)
+        12, // V1_7
+        16, // V1_13
+        17, // V1_14
+        18, // V1_15
+        19, // V1_16_1
+        20, // V1_16
+        21, // V1_17
+        22, // V1_18 (NULL — Modern)
+        28, // V1_21 (NULL — Modern)
+    ];
+    let scales: &[i32] = &[
+        0, // entry / NULL in our port
+        1, 4, 16, 64, 256, 3, // unsupported
+        7, // unsupported
+    ];
+    let total = (mcs.len() * scales.len()) as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 102, total)?;
+    for &mc in mcs {
+        for &scale in scales {
+            let result = unsafe { ffi::cubiomes_call_get_layer_for_scale(mc, scale) };
+            file.write_all(&mc.to_le_bytes())?;
+            file.write_all(&scale.to_le_bytes())?;
+            file.write_all(&result.to_le_bytes())?;
+        }
+    }
+    file.flush()
+}
+
 /// `inverf` parity record (kind = 97). Stored as f64 bits.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -8841,6 +8881,7 @@ mod ffi {
             sy: c_int,
             sz: c_int,
         ) -> u64;
+        pub fn cubiomes_call_get_layer_for_scale(mc: c_int, scale: c_int) -> c_int;
         pub fn cubiomes_call_check_for_temps(
             mc: c_int,
             seed: u64,

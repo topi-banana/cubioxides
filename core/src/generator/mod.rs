@@ -289,6 +289,22 @@ impl Generator {
         Biome(out[0])
     }
 
+    /// Cubiomes' `getLayerForScale(g, scale)` — return the
+    /// [`LayerId`] of the layer that emits at `scale`. Only meaningful
+    /// for layered MC (Beta 1.8 – 1.17); returns `None` for 1.18+,
+    /// Beta 1.7 or earlier, or for any scale not in `{1, 4, 16, 64,
+    /// 256}`. The "`scale == 0`" cubiomes special-case maps to the
+    /// generator's cached entry; we emit `None` since the Rust port
+    /// doesn't keep a stateful entry pointer.
+    #[must_use]
+    pub fn layer_for_scale(&self, scale: i32) -> Option<LayerId> {
+        if self.overworld_kind != OverworldKind::Layered {
+            return None;
+        }
+        let stack = self.layer_stack.as_ref()?;
+        layered_entry_for_scale(stack, scale)
+    }
+
     /// Cubiomes' `getMinCacheSize(g, scale, sx, sy, sz)` — minimum
     /// length in `Biome` units required for a [`Self::gen_biomes`]
     /// cache. Bit-exact port: returns the same number cubiomes does
