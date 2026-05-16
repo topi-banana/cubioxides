@@ -10,9 +10,15 @@ reference C implementation when given the same seed and coordinates.
 
 ## Status
 
-Work in progress. See the milestone plan in
-[`.claude/plans/`](https://github.com/topi-banana/cubioxides) for
-current scope and progress.
+Every cubiomes `biomenoise.h` / `generator.h` / `finders.h` /
+`layers.h` / `quadbase.h` / `util.h` / `noise.h` / `rng.h` public
+function has a Rust counterpart with a bit-exact parity test
+against the C reference. The only function that intentionally
+returns `Unsupported` is the 1.18+ Overworld branch of
+`check_for_biomes`, which uses libc `rand()` for Monte Carlo
+sampling and so can't match cubiomes bit-exactly. Pre-1.18 and
+non-Overworld `check_for_biomes` paths run an exhaustive simple
+implementation that matches cubiomes on Pass/Fail.
 
 ## Crates
 
