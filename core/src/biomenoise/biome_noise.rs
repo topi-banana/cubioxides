@@ -66,6 +66,20 @@ impl BiomeNoise {
     /// `large` enables cubiomes' `LARGE_BIOMES` axes (different MD5
     /// magics + lower `omin` for the temperature / humidity /
     /// continentalness / erosion stacks).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::MCVersion;
+    /// use cubioxides::biomenoise::BiomeNoise;
+    ///
+    /// // 1.18+ Overworld climate sampler. Driving this directly
+    /// // bypasses Generator and is what `Generator::apply_seed`
+    /// // builds for Modern overworlds.
+    /// let bn = BiomeNoise::new(MCVersion::V1_21, 0xdead_beef, false);
+    /// // Returned tuple is (biome_id, climate np-array at 1/10000 units).
+    /// let (_biome_id, _np) = bn.sample(0, 64, 0, 0);
+    /// ```
     #[must_use]
     pub fn new(mc: MCVersion, seed: u64, large: bool) -> Self {
         let (spline_stack, spline_root) = build_overworld_spline();
