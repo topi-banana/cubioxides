@@ -668,6 +668,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("map_approx_height fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_get_spawn_fixture(&fixtures_dir.join("get_spawn.bin")) {
+        eprintln!("get_spawn fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2150,6 +2154,59 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `getSpawn` parity record (kind = 65). MC pool matches
+/// `estimate_spawn` minus B1.7 (which short-circuits identically).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct GetSpawnRecord {
+    pub mc: i32,
+    pub pad: i32,
+    pub seed: u64,
+    pub spawn_x: i32,
+    pub spawn_z: i32,
+}
+
+fn write_get_spawn_fixture(path: &Path) -> std::io::Result<()> {
+    // 1.0 (Beta returns estimate verbatim — interesting but trivial),
+    // 1.7 (legacy 1.13-1.17 branch), 1.18 (modern spiral),
+    // 1.21 WD (modern spiral, new btree).
+    //
+    // 1.12 path uses the slow 1000-iter random walk which can take
+    // ~100ms per seed; skip it to keep fixture-gen quick.
+    let mc_pool: [i32; 3] = [10, 22, 28];
+    let per_mc: u64 = 16;
+    let total = mc_pool.len() as u64 * per_mc;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 65, total)?;
+
+    let mut rng_state: u64 = 0x0000_5e94_b00b_5eed;
+    for &mc in &mc_pool {
+        for _ in 0..per_mc {
+            rng_state = lcg_step(rng_state);
+            let seed = rng_state;
+            let mut px: c_int = 0;
+            let mut pz: c_int = 0;
+            unsafe {
+                ffi::cubiomes_call_get_spawn(
+                    mc,
+                    seed,
+                    std::ptr::from_mut(&mut px),
+                    std::ptr::from_mut(&mut pz),
+                );
+            }
+            let rec = GetSpawnRecord {
+                mc,
+                pad: 0,
+                seed,
+                spawn_x: px,
+                spawn_z: pz,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
 }
 
 /// `mapApproxHeight` parity record (kind = 64). Records the
@@ -4911,6 +4968,7 @@ mod ffi {
             y: *mut f32,
             ids: *mut c_int,
         ) -> c_int;
+        pub fn cubiomes_call_get_spawn(mc: c_int, seed: u64, px: *mut c_int, pz: *mut c_int);
         pub fn cubiomes_call_get_optimal_afk(
             px: *mut c_int,
             pz: *mut c_int,

@@ -32,7 +32,7 @@ pub use quadbase::{
     get_optimal_afk, get_quad_hut_cst, is_quad_base_feature_24, is_quad_base_feature_24_classic,
 };
 pub use slime::is_slime_chunk;
-pub use spawn::estimate_spawn;
+pub use spawn::{estimate_spawn, get_spawn};
 pub use stronghold::{
     StrongholdIter, init_first_stronghold, is_stronghold_biome, next_stronghold,
     next_stronghold_no_biome,

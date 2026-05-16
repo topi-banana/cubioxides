@@ -16,11 +16,13 @@
 
 #![allow(clippy::many_single_char_names)]
 
+use crate::biome::{Biome, get_biome_depth_and_scale};
+use crate::biomenoise::surface::SurfaceNoise;
 use crate::biomenoise::{SAMPLE_NO_BIOME, SAMPLE_NO_DEPTH};
 use crate::finder::Pos;
 use crate::finder::locate_biome::locate_biome;
-use crate::generator::Generator;
-use crate::mc_version::MCVersion;
+use crate::generator::{Generator, map_approx_height};
+use crate::mc_version::{Dimension, MCVersion};
 use crate::rng::JavaRng;
 
 const PI: f64 = std::f64::consts::PI;
@@ -162,4 +164,155 @@ fn calc_fitness(g: &Generator, x: i32, z: i32) -> u64 {
             .wrapping_add(a as u64)
             .wrapping_add(b as u64)
     }
+}
+
+/// `getSpawn(g)` — block-level spawn refinement. Mirrors cubiomes'
+/// `getSpawn` from `finders.c`.
+///
+/// Starts from [`estimate_spawn`] and then runs a per-MC-version
+/// refinement loop:
+///
+/// - MC ≤ Beta 1.7: returns the estimate directly (no refinement).
+/// - MC ≤ 1.12: 1000-iteration random walk, accepting the first
+///   position whose biome has `grass > 0` and `mapApproxHeight ≥ grass`.
+/// - MC 1.13–1.17: spiral search over a 33×33 chunk window centred
+///   on the estimate; for each chunk, scan the 16 cells of its
+///   `mapApproxHeight` grid for a grass-eligible cell.
+/// - MC ≥ 1.18: 11×11 chunk spiral; per cell, accept if
+///   `y > 63` OR biome is frozen ocean / deep frozen ocean / frozen
+///   river. Falls back to the chunk centre if no match.
+#[must_use]
+pub fn get_spawn(g: &Generator) -> Pos {
+    let mut rng = JavaRng::new(0);
+    let mut spawn = estimate_spawn(g, Some(&mut rng));
+
+    if g.mc.is_before(MCVersion::B1_8) {
+        return spawn;
+    }
+
+    let sn = SurfaceNoise::init(Dimension::Overworld, g.seed);
+
+    if g.mc.is_before(MCVersion::V1_13) {
+        // 1.0 – 1.12: 1000-iter random walk.
+        for _ in 0..1000_i32 {
+            let mut y = [0.0_f32; 1];
+            let mut ids = [Biome::default(); 1];
+            map_approx_height(
+                &mut y,
+                Some(&mut ids),
+                g,
+                &sn,
+                spawn.x >> 2,
+                spawn.z >> 2,
+                1,
+                1,
+            );
+            let grass = get_biome_depth_and_scale(ids[0].0).map_or(0, |v| v.grass);
+            if grass > 0 && y[0] >= grass as f32 {
+                break;
+            }
+            spawn.x += rng.next_int(64) - rng.next_int(64);
+            spawn.z += rng.next_int(64) - rng.next_int(64);
+        }
+        return spawn;
+    }
+
+    if g.mc.is_before(MCVersion::V1_18) {
+        // 1.13 – 1.17: spiral search over 33×33 chunk window.
+        spiral_spawn_search(
+            &mut spawn, g, &sn, 1024, -16, 16, true, // 4×4 chunk scan
+        );
+        return spawn;
+    }
+
+    // 1.18+: 11×11 chunk spiral, smaller per-chunk scan.
+    spiral_spawn_search(&mut spawn, g, &sn, 121, -5, 5, false);
+    spawn
+}
+
+/// Cubiomes' spiral-search common loop shared by the 1.13-1.17 and
+/// 1.18+ branches of `getSpawn`. The two branches differ in iter
+/// count, chunk-window radius, per-chunk accept criterion, and
+/// whether they sample the full 4×4 grid (1.17-) or block-by-block
+/// (1.18+).
+#[allow(clippy::too_many_arguments)]
+fn spiral_spawn_search(
+    spawn: &mut Pos,
+    g: &Generator,
+    sn: &SurfaceNoise,
+    iters: i32,
+    lo: i32,
+    hi: i32,
+    legacy_117: bool,
+) {
+    let mut j = 0_i32;
+    let mut k = 0_i32;
+    let mut u = 0_i32;
+    let mut v = -1_i32;
+    for _ in 0..iters {
+        let in_window = if legacy_117 {
+            j > lo && j <= hi && k > lo && k <= hi
+        } else {
+            j >= lo && j <= hi && k >= lo && k <= hi
+        };
+        if in_window {
+            let cx0 = (spawn.x & !15) + j * 16;
+            let cz0 = (spawn.z & !15) + k * 16;
+            if legacy_117 {
+                // Sample 4×4 grid of biome cells at scale 4.
+                let mut y = [0.0_f32; 16];
+                let mut ids = [Biome::default(); 16];
+                map_approx_height(&mut y, Some(&mut ids), g, sn, cx0 >> 2, cz0 >> 2, 4, 4);
+                for ii in 0..4_i32 {
+                    for jj in 0..4_i32 {
+                        let idx = (jj * 4 + ii) as usize;
+                        let grass = get_biome_depth_and_scale(ids[idx].0).map_or(0, |v| v.grass);
+                        if grass <= 0 || y[idx] < grass as f32 {
+                            continue;
+                        }
+                        spawn.x = cx0 + ii * 4;
+                        spawn.z = cz0 + jj * 4;
+                        return;
+                    }
+                }
+            } else {
+                // 1.18+: sample 1×1 per cell at scale 4.
+                for ii in 0..4_i32 {
+                    for jj in 0..4_i32 {
+                        let x = cx0 + ii * 4;
+                        let z = cz0 + jj * 4;
+                        let mut y_buf = [0.0_f32; 1];
+                        let mut id_buf = [Biome::default(); 1];
+                        map_approx_height(
+                            &mut y_buf,
+                            Some(&mut id_buf),
+                            g,
+                            sn,
+                            x >> 2,
+                            z >> 2,
+                            1,
+                            1,
+                        );
+                        let id = id_buf[0].0;
+                        // frozen_ocean = 10, deep_frozen_ocean = 50, frozen_river = 11
+                        if y_buf[0] > 63.0 || id == 10 || id == 50 || id == 11 {
+                            spawn.x = x;
+                            spawn.z = z;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        if j == k || (j < 0 && j == -k) || (j > 0 && j == 1 - k) {
+            let tmp = u;
+            u = -v;
+            v = tmp;
+        }
+        j += u;
+        k += v;
+    }
+    // No match: snap to chunk centre.
+    spawn.x = (spawn.x & !15) + 8;
+    spawn.z = (spawn.z & !15) + 8;
 }

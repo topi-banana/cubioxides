@@ -186,6 +186,15 @@ int cubiomes_call_map_approx_height(int mc, int dim, uint64_t seed, int x,
     return mapApproxHeight(y, ids, &g, &sn, x, z, w, h);
 }
 
+void cubiomes_call_get_spawn(int mc, uint64_t seed, int *px, int *pz) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, 0, seed);
+    Pos p = getSpawn(&g);
+    *px = p.x;
+    *pz = p.z;
+}
+
 #include "quadbase.h"
 
 void cubiomes_call_get_optimal_afk(int *px, int *pz, int *spcnt, int p0x,
