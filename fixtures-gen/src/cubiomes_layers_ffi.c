@@ -1228,6 +1228,32 @@ uint64_t cubiomes_call_get_min_layer_cache_size(int mc, int entry, int sx, int s
     return (uint64_t) getMinLayerCacheSize(&ls.layers[entry], sx, sz);
 }
 
+/* checkForBiomesAtLayer with BF_APPROX flag. The cubiomes-side
+ * checkForBiomesAtLayer would normally run the swap-map chain
+ * after the prefilter passes. To extract just the prefilter, we
+ * pre-clear the parts of the filter the chain would inspect, so
+ * if the prefilter passes the chain trivially returns 1. */
+int cubiomes_call_approx_prefilter(int mc, uint64_t seed,
+                                   int entry_scale, int x, int z,
+                                   int w, int h,
+                                   const int *required, int required_len,
+                                   const int *excluded, int excluded_len,
+                                   const int *matchany, int matchany_len) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, DIM_OVERWORLD, seed);
+    BiomeFilter bf;
+    setupBiomeFilter(&bf, mc, BF_APPROX, required, required_len,
+                     excluded, excluded_len, matchany, matchany_len);
+    Layer *entry = NULL;
+    if (entry_scale == 4)        entry = &g.ls.layers[L_RIVER_MIX_4];
+    else if (entry_scale == 16)  entry = &g.ls.layers[L_SHORE_16];
+    else if (entry_scale == 64)  entry = &g.ls.layers[L_HILLS_64];
+    else if (entry_scale == 256) entry = &g.ls.layers[L_BIOME_256];
+    else return -1;
+    return checkForBiomesAtLayer(&g.ls, entry, NULL, seed, x, z, w, h, &bf);
+}
+
 /* genBiomeNoiseScaled wrapper for scale=1 (voronoi). Returns biome
  * IDs as a flat row-major buffer. */
 int cubiomes_call_gen_voronoi_biomes(int mc, uint64_t seed,

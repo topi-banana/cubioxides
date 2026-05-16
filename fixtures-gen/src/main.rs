@@ -1217,6 +1217,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("voronoi_biomes fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_approx_prefilter_fixture(&fixtures_dir.join("approx_prefilter.bin")) {
+        eprintln!("approx_prefilter fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -4792,6 +4796,104 @@ fn write_voronoi_biomes_fixture(path: &Path) -> std::io::Result<()> {
         for id in &ids {
             file.write_all(&id.to_le_bytes())?;
         }
+    }
+    file.flush()
+}
+
+/// `checkForBiomesAtLayer` `BF_APPROX` prefilter payload (kind = 81).
+/// We record cubiomes' final result (0 / 1 / 2); the Rust port can
+/// only verify the `false`-decisive cases since it stops at the
+/// prefilter without running the swap-map chain.
+fn write_approx_prefilter_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (
+        i32,
+        u64,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        Vec<i32>,
+        Vec<i32>,
+        Vec<i32>,
+    );
+    let cases: Vec<Case> = vec![
+        // (mc, seed, entry_scale, x, z, w, h, required, excluded, matchany)
+        // Require mushroom_fields in a small area — usually rejects.
+        (17, 0xdead_beef, 4, 0, 0, 32, 32, vec![14], vec![], vec![]),
+        // Require multiple Special biomes — usually rejects.
+        (
+            17,
+            0xdead_beef,
+            4,
+            0,
+            0,
+            16,
+            16,
+            vec![21, 37, 32],
+            vec![],
+            vec![],
+        ),
+        // Empty filter — trivially passes.
+        (17, 0xdead_beef, 4, 0, 0, 32, 32, vec![], vec![], vec![]),
+        // Require ocean — usually passes (ocean is common).
+        (17, 0xdead_beef, 4, 0, 0, 32, 32, vec![0], vec![], vec![]),
+        // 1.14: Require Special+Lush (jungle).
+        (17, 0xcafe_babe, 16, 0, 0, 16, 16, vec![21], vec![], vec![]),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 81, total)?;
+    for (mc, seed, entry_scale, x, z, w, h, req, exc, any) in cases {
+        let mut req8 = [0_i32; 8];
+        let mut exc8 = [0_i32; 8];
+        let mut any8 = [0_i32; 8];
+        for (i, &v) in req.iter().enumerate() {
+            req8[i] = v;
+        }
+        for (i, &v) in exc.iter().enumerate() {
+            exc8[i] = v;
+        }
+        for (i, &v) in any.iter().enumerate() {
+            any8[i] = v;
+        }
+        let result = unsafe {
+            ffi::cubiomes_call_approx_prefilter(
+                mc,
+                seed,
+                entry_scale,
+                x,
+                z,
+                w,
+                h,
+                req.as_ptr(),
+                req.len() as c_int,
+                exc.as_ptr(),
+                exc.len() as c_int,
+                any.as_ptr(),
+                any.len() as c_int,
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&entry_scale.to_le_bytes())?;
+        file.write_all(&x.to_le_bytes())?;
+        file.write_all(&z.to_le_bytes())?;
+        file.write_all(&w.to_le_bytes())?;
+        file.write_all(&h.to_le_bytes())?;
+        file.write_all(&(req.len() as i32).to_le_bytes())?;
+        file.write_all(&(exc.len() as i32).to_le_bytes())?;
+        file.write_all(&(any.len() as i32).to_le_bytes())?;
+        for v in req8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        for v in exc8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        for v in any8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        file.write_all(&result.to_le_bytes())?;
     }
     file.flush()
 }
@@ -8521,6 +8623,21 @@ mod ffi {
             cz: c_int,
             out64: *mut c_int,
         );
+        pub fn cubiomes_call_approx_prefilter(
+            mc: c_int,
+            seed: u64,
+            entry_scale: c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+            required: *const c_int,
+            required_len: c_int,
+            excluded: *const c_int,
+            excluded_len: c_int,
+            matchany: *const c_int,
+            matchany_len: c_int,
+        ) -> c_int;
         pub fn cubiomes_call_gen_voronoi_biomes(
             mc: c_int,
             seed: u64,
