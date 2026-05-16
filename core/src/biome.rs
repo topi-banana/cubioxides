@@ -510,6 +510,106 @@ impl From<Biome> for i32 {
     }
 }
 
+/// Cubiomes' `getBiomeDepthAndScale` output triple. `grass` is the
+/// minimum surface block-Y for grass placement (0 means the biome
+/// doesn't produce grass; 60–64 are typical for shores / rivers;
+/// 62 is the default for most overworld biomes).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BiomeDepthScale {
+    /// Terrain depth offset (cubiomes' `d`).
+    pub depth: f64,
+    /// Terrain noise amplitude (cubiomes' `s`).
+    pub scale: f64,
+    /// Minimum spawn-grass height (cubiomes' `g`).
+    pub grass: i32,
+}
+
+/// `getBiomeDepthAndScale(id, depth, scale, grass)` — return the
+/// pre-1.18 biome metadata triple, or `None` if the biome ID is
+/// unknown. Bit-exact port of cubiomes' switch in `biomenoise.c`.
+#[must_use]
+#[allow(clippy::too_many_lines, clippy::match_same_arms)]
+pub fn get_biome_depth_and_scale(id: i32) -> Option<BiomeDepthScale> {
+    // dh = default height (62).
+    const DH: i32 = 62;
+    let (s, d, g) = match id {
+        0 => (0.100, -1.000, DH),   // ocean
+        1 => (0.050, 0.125, DH),    // plains
+        2 => (0.050, 0.125, 0),     // desert
+        3 => (0.500, 1.000, DH),    // mountains
+        4 => (0.200, 0.100, DH),    // forest
+        5 => (0.200, 0.200, DH),    // taiga
+        6 => (0.100, -0.200, DH),   // swamp
+        7 => (0.000, -0.500, 60),   // river
+        10 => (0.100, -1.000, DH),  // frozen_ocean
+        11 => (0.000, -0.500, 60),  // frozen_river
+        12 => (0.050, 0.125, DH),   // snowy_tundra
+        13 => (0.300, 0.450, DH),   // snowy_mountains
+        14 => (0.300, 0.200, 0),    // mushroom_fields
+        15 => (0.025, 0.000, 0),    // mushroom_field_shore
+        16 => (0.025, 0.000, 64),   // beach
+        17 => (0.300, 0.450, 0),    // desert_hills
+        18 => (0.300, 0.450, DH),   // wooded_hills
+        19 => (0.300, 0.450, DH),   // taiga_hills
+        20 => (0.300, 0.800, DH),   // mountain_edge
+        21 => (0.200, 0.100, DH),   // jungle
+        22 => (0.300, 0.450, DH),   // jungle_hills
+        23 => (0.200, 0.100, DH),   // jungle_edge
+        24 => (0.100, -1.800, DH),  // deep_ocean
+        25 => (0.800, 0.100, 64),   // stone_shore
+        26 => (0.025, 0.000, 64),   // snowy_beach
+        27 => (0.200, 0.100, DH),   // birch_forest
+        28 => (0.300, 0.450, DH),   // birch_forest_hills
+        29 => (0.200, 0.100, DH),   // dark_forest
+        30 => (0.200, 0.200, DH),   // snowy_taiga
+        31 => (0.300, 0.450, DH),   // snowy_taiga_hills
+        32 => (0.200, 0.200, DH),   // giant_tree_taiga
+        33 => (0.300, 0.450, DH),   // giant_tree_taiga_hills
+        34 => (0.500, 1.000, DH),   // wooded_mountains
+        35 => (0.050, 0.125, DH),   // savanna
+        36 => (0.025, 1.500, DH),   // savanna_plateau
+        37 => (0.200, 0.100, 0),    // badlands
+        38 => (0.025, 1.500, 0),    // wooded_badlands_plateau
+        39 => (0.025, 1.500, 0),    // badlands_plateau
+        44 => (0.100, -1.000, 0),   // warm_ocean
+        45 => (0.100, -1.000, DH),  // lukewarm_ocean
+        46 => (0.100, -1.000, DH),  // cold_ocean
+        47 => (0.100, -1.800, 0),   // deep_warm_ocean
+        48 => (0.100, -1.800, DH),  // deep_lukewarm_ocean
+        49 => (0.100, -1.800, DH),  // deep_cold_ocean
+        50 => (0.100, -1.800, DH),  // deep_frozen_ocean
+        129 => (0.050, 0.125, DH),  // sunflower_plains
+        130 => (0.250, 0.225, 0),   // desert_lakes
+        131 => (0.500, 1.000, DH),  // gravelly_mountains
+        132 => (0.400, 0.100, DH),  // flower_forest
+        133 => (0.400, 0.300, DH),  // taiga_mountains
+        134 => (0.300, -0.100, DH), // swamp_hills
+        140 => (0.450, 0.425, 0),   // ice_spikes
+        149 => (0.400, 0.200, DH),  // modified_jungle
+        151 => (0.400, 0.200, DH),  // modified_jungle_edge
+        155 => (0.400, 0.200, DH),  // tall_birch_forest
+        156 => (0.500, 0.550, DH),  // tall_birch_hills
+        157 => (0.400, 0.200, DH),  // dark_forest_hills
+        158 => (0.400, 0.300, DH),  // snowy_taiga_mountains
+        160 => (0.200, 0.200, DH),  // giant_spruce_taiga
+        161 => (0.200, 0.200, DH),  // giant_spruce_taiga_hills
+        162 => (0.500, 1.000, DH),  // modified_gravelly_mountains
+        163 => (1.225, 0.3625, DH), // shattered_savanna
+        164 => (1.212, 1.050, DH),  // shattered_savanna_plateau
+        165 => (0.200, 0.100, 0),   // eroded_badlands
+        166 => (0.300, 0.450, 0),   // modified_wooded_badlands_plateau
+        167 => (0.300, 0.450, 0),   // modified_badlands_plateau
+        168 => (0.200, 0.100, DH),  // bamboo_jungle
+        169 => (0.300, 0.450, DH),  // bamboo_jungle_hills
+        _ => return None,
+    };
+    Some(BiomeDepthScale {
+        depth: d,
+        scale: s,
+        grass: g,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

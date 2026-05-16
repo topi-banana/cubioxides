@@ -171,6 +171,11 @@ int cubiomes_call_is_end_chunk_empty(int mc, uint64_t seed, int chunk_x,
     return isEndChunkEmpty(&en, &sn, seed, chunk_x, chunk_z);
 }
 
+int cubiomes_call_get_biome_depth_and_scale(int id, double *depth,
+                                            double *scale, int *grass) {
+    return getBiomeDepthAndScale(id, depth, scale, grass);
+}
+
 
 void cubiomes_call_nth_strongholds(int mc, uint64_t seed, int n_steps,
                                    int *out_xz) {

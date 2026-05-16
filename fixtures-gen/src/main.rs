@@ -656,6 +656,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("end_chunk_empty fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_biome_depth_scale_fixture(&fixtures_dir.join("biome_depth_scale.bin")) {
+        eprintln!("biome_depth_scale fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2138,6 +2142,49 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `getBiomeDepthAndScale` parity record (kind = 62). Exercises
+/// each biome id 0..256.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct BiomeDepthScaleRecord {
+    pub id: i32,
+    pub found: i32,
+    pub grass: i32,
+    pub pad: i32,
+    pub depth_bits: u64,
+    pub scale_bits: u64,
+}
+
+fn write_biome_depth_scale_fixture(path: &Path) -> std::io::Result<()> {
+    let total: u64 = 256;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 62, total)?;
+
+    for id in 0..256_i32 {
+        let mut depth = 0.0_f64;
+        let mut scale = 0.0_f64;
+        let mut grass: c_int = 0;
+        let found = unsafe {
+            ffi::cubiomes_call_get_biome_depth_and_scale(
+                id,
+                std::ptr::from_mut(&mut depth),
+                std::ptr::from_mut(&mut scale),
+                std::ptr::from_mut(&mut grass),
+            )
+        };
+        let rec = BiomeDepthScaleRecord {
+            id,
+            found,
+            grass,
+            pad: 0,
+            depth_bits: depth.to_bits(),
+            scale_bits: scale.to_bits(),
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
 }
 
 /// `isEndChunkEmpty` parity record (kind = 61).
@@ -4638,6 +4685,12 @@ mod ffi {
             seed: u64,
             chunk_x: c_int,
             chunk_z: c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_get_biome_depth_and_scale(
+            id: c_int,
+            depth: *mut f64,
+            scale: *mut f64,
+            grass: *mut c_int,
         ) -> c_int;
         pub fn cubiomes_call_get_mineshafts(
             mc: c_int,
