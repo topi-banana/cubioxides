@@ -78,6 +78,21 @@ impl PerlinNoise {
     }
 
     /// Initialise from a Xoroshiro RNG (1.18+ biome generation).
+    ///
+    /// Used by every overworld climate axis from MC 1.18 onwards.
+    /// The RNG is advanced by 3 `next_double` calls and 256 `next_int`
+    /// calls — same shuffle shape as [`Self::from_java`], but driven
+    /// by Mojang's `Xoroshiro128++` rather than `java.util.Random`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::{PerlinNoise, Xoroshiro};
+    ///
+    /// let mut xr = Xoroshiro::new(0xdead_beef);
+    /// let noise = PerlinNoise::from_xoroshiro(&mut xr);
+    /// let _y = noise.sample(1.0, 2.0, 3.0, 0.0, 0.0);
+    /// ```
     #[must_use]
     pub fn from_xoroshiro(xr: &mut Xoroshiro) -> Self {
         let a = xr.next_double() * 256.0;
