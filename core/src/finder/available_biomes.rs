@@ -28,6 +28,24 @@ use crate::mc_version::MCVersion;
 /// order so the result is meaningful. Callers that need cubiomes'
 /// (buggy) bitset for parity should use the raw
 /// [`can_biome_generate`] in the same swapped form themselves.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::biome::Biome;
+/// use cubioxides::finder::get_available_biomes;
+/// use cubioxides::layer::LayerId;
+///
+/// // 1.13–1.17 at the 1:256 ocean-temperature layer always emits
+/// // only the five ocean temperature variants — a deterministic
+/// // invariant of the layer stack that's useful for filter
+/// // pre-screening. (1.18+ bypasses layer filtering entirely.)
+/// let set = get_available_biomes(LayerId::OceanTemp256, MCVersion::V1_16_1, 0);
+/// assert!(set.contains(Biome::WARM_OCEAN.id()));
+/// assert!(set.contains(Biome::FROZEN_OCEAN.id()));
+/// assert!(!set.contains(Biome::PLAINS.id()));
+/// ```
 #[must_use]
 pub fn get_available_biomes(layer: LayerId, mc: MCVersion, flags: u32) -> BiomeSet {
     let mut set = BiomeSet::new();
