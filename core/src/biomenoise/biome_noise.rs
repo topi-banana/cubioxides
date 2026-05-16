@@ -101,6 +101,22 @@ impl BiomeNoise {
     /// set the returned id is `-1`.
     #[must_use]
     pub fn sample(&self, x: i32, y: i32, z: i32, sample_flags: u32) -> (i32, [i64; NP_MAX]) {
+        self.sample_with_dat(x, y, z, None, sample_flags)
+    }
+
+    /// `sampleBiomeNoise(bn, np, x, y, z, dat, flags)` with the
+    /// optional `dat` carry — the previous decision-tree leaf
+    /// index used to emulate the order-dependent MC-241546 biome
+    /// generation. Same return contract as [`Self::sample`].
+    #[must_use]
+    pub fn sample_with_dat(
+        &self,
+        x: i32,
+        y: i32,
+        z: i32,
+        dat: Option<&mut u64>,
+        sample_flags: u32,
+    ) -> (i32, [i64; NP_MAX]) {
         let mut px = f64::from(x);
         let mut pz = f64::from(z);
         if sample_flags & SAMPLE_NO_SHIFT == 0 {
@@ -154,7 +170,7 @@ impl BiomeNoise {
                 np[4] as u64,
                 np[5] as u64,
             ];
-            climate_to_biome(self.mc, &np_u, None)
+            climate_to_biome(self.mc, &np_u, dat)
         } else {
             -1
         };

@@ -623,6 +623,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("biome_predicates fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_stronghold_full_fixture(&fixtures_dir.join("stronghold_full.bin")) {
+        eprintln!("stronghold_full fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1913,6 +1917,47 @@ fn write_quadbase_fixture(path: &Path) -> std::io::Result<()> {
             feature24_radius_bits: feat24.to_bits(),
             cst,
             low20,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// Biome-checked stronghold iteration parity record (kind = 54).
+/// Stores the (x, z) of the first 3 strongholds returned by
+/// cubiomes' biome-aware `nextStronghold` for each (mc, seed) pair.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct StrongholdFullRecord {
+    pub mc: i32,
+    pub pad: i32,
+    pub seed: u64,
+    pub pos_xz: [i32; 6],
+}
+
+const STRONGHOLD_FULL_RECORDS: u64 = 128;
+
+fn write_stronghold_full_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 54, STRONGHOLD_FULL_RECORDS)?;
+    // Layered (10=1.7, 15=1.12) + Modern (22=1.18) + 1.19.4+
+    // (28=1.21 WD) — covers the three biome-aware code paths.
+    let mc_pool: [i32; 4] = [10, 15, 22, 28];
+    let mut rng_state: u64 = 0x0000_5478_55a4_b1ed;
+    for _ in 0..STRONGHOLD_FULL_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let mc = mc_pool[(rng_state as usize) % mc_pool.len()];
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        let mut buf = [0_i32; 6];
+        unsafe {
+            ffi::cubiomes_call_nth_strongholds(mc, seed, 3, buf.as_mut_ptr());
+        }
+        let rec = StrongholdFullRecord {
+            mc,
+            pad: 0,
+            seed,
+            pos_xz: buf,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
     }
@@ -4068,6 +4113,12 @@ mod ffi {
             seed: u64,
             px: *mut c_int,
             pz: *mut c_int,
+        );
+        pub fn cubiomes_call_nth_strongholds(
+            mc: c_int,
+            seed: u64,
+            n_steps: c_int,
+            out_xz: *mut c_int,
         );
         pub fn cubiomes_call_get_mineshafts(
             mc: c_int,

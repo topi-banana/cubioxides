@@ -101,6 +101,27 @@ int cubiomes_call_get_quad_hut_cst(uint64_t low20) {
     return getQuadHutCst(low20);
 }
 
+void cubiomes_call_nth_strongholds(int mc, uint64_t seed, int n_steps,
+                                   int *out_xz) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, 0, seed);
+    StrongholdIter sh;
+    initFirstStronghold(&sh, mc, seed);
+    for (int i = 0; i < n_steps; i++) {
+        int rem = nextStronghold(&sh, &g);
+        out_xz[i * 2 + 0] = sh.pos.x;
+        out_xz[i * 2 + 1] = sh.pos.z;
+        if (rem <= 0) {
+            for (int k = i + 1; k < n_steps; k++) {
+                out_xz[k * 2 + 0] = 0;
+                out_xz[k * 2 + 1] = 0;
+            }
+            break;
+        }
+    }
+}
+
 void cubiomes_call_init_first_stronghold(int mc, uint64_t seed, int *px,
                                          int *pz) {
     Pos p = initFirstStronghold(NULL, mc, seed);

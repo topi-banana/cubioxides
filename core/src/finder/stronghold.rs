@@ -10,6 +10,8 @@
 
 use crate::biome::Biome;
 use crate::finder::Pos;
+use crate::finder::locate_biome::locate_biome;
+use crate::generator::Generator;
 use crate::mc_version::MCVersion;
 use crate::rng::JavaRng;
 
@@ -105,22 +107,76 @@ pub fn init_first_stronghold(mc: MCVersion, s48: u64) -> (Pos, StrongholdIter) {
     (p, iter)
 }
 
-/// MC 1.19.4+ no-biome stronghold advance — mirrors cubiomes'
-/// `nextStronghold(sh, g=NULL)` for `mc > MC_1_19_2`. Returns the
-/// number of strongholds remaining after this one.
-///
-/// For pre-1.19.4 (which always biome-checks) the biome-aware
-/// variant lives in a follow-up that exposes `locateBiome`.
-pub fn next_stronghold_no_biome(sh: &mut StrongholdIter) -> i32 {
-    assert!(
-        sh.mc.is_at_least(MCVersion::V1_19),
-        "next_stronghold_no_biome requires MC ≥ 1.19.4 (got {:?})",
-        sh.mc
-    );
+/// Build cubiomes' `(validB, validM)` masks for stronghold biomes
+/// on the given MC.
+fn stronghold_biome_masks(mc: MCVersion) -> (u64, u64) {
+    let mut valid_b: u64 = 0;
+    let mut valid_m: u64 = 0;
+    for i in 0..64 {
+        if is_stronghold_biome(mc, i) {
+            valid_b |= 1u64 << i;
+        }
+        if is_stronghold_biome(mc, i + 128) {
+            valid_m |= 1u64 << i;
+        }
+    }
+    (valid_b, valid_m)
+}
 
-    // Advance the Java RNG once (cubiomes' `nextLong(&sh->rnds)`).
-    let _ = sh.rnds.next_long();
-    sh.pos = sh.nextapprox;
+/// `nextStronghold(sh, g)` — biome-aware variant. Snaps `sh.pos`
+/// to the closest matching stronghold biome and advances `sh` to
+/// the next stronghold's approximate position. Returns the
+/// countdown (strongholds remaining after this call).
+///
+/// Requires `g` to be `apply_seed`-ed on Overworld with the same
+/// world seed `sh` was initialised from. Pre-B1.8 returns 0 (no
+/// strongholds in that era).
+pub fn next_stronghold(sh: &mut StrongholdIter, g: &Generator) -> i32 {
+    if !sh.mc.is_at_least(MCVersion::B1_8) {
+        return 0;
+    }
+    let (valid_b, valid_m) = stronghold_biome_masks(sh.mc);
+
+    if sh.mc.is_at_least(MCVersion::V1_19) {
+        // 1.19.4+: fresh local Java RNG seeded from rnds.next_long.
+        let mut lbr = JavaRng::new(sh.rnds.next_long());
+        let (pos, _) = locate_biome(
+            g,
+            sh.nextapprox.x,
+            0,
+            sh.nextapprox.z,
+            112,
+            valid_b,
+            valid_m,
+            &mut lbr,
+        );
+        sh.pos = pos;
+    } else {
+        // B1.8 – 1.19.2: locate_biome shares the iterator's RNG.
+        let (pos, _) = locate_biome(
+            g,
+            sh.nextapprox.x,
+            0,
+            sh.nextapprox.z,
+            112,
+            valid_b,
+            valid_m,
+            &mut sh.rnds,
+        );
+        sh.pos = pos;
+    }
+
+    advance_iter_state(sh);
+    if sh.mc.is_at_least(MCVersion::V1_9) {
+        128 - (sh.index - 1)
+    } else {
+        3 - (sh.index - 1)
+    }
+}
+
+/// Common ring-advance logic shared between the biome-aware and
+/// no-biome stronghold iterators.
+fn advance_iter_state(sh: &mut StrongholdIter) {
     // Snap to chunk staircase position (4, 4 inside the chunk).
     sh.pos.x = (sh.pos.x & !15) + 4;
     sh.pos.z = (sh.pos.z & !15) + 4;
@@ -149,7 +205,25 @@ pub fn next_stronghold_no_biome(sh: &mut StrongholdIter) -> i32 {
     sh.nextapprox.x = ((sh.angle.cos() * sh.dist).round() as i32 * 16) + 8;
     sh.nextapprox.z = ((sh.angle.sin() * sh.dist).round() as i32 * 16) + 8;
     sh.index += 1;
+}
 
+/// MC 1.19.4+ no-biome stronghold advance — mirrors cubiomes'
+/// `nextStronghold(sh, g=NULL)` for `mc > MC_1_19_2`. Returns the
+/// number of strongholds remaining after this one.
+///
+/// For pre-1.19.4 the biome-checked variant `next_stronghold` must
+/// be used instead.
+pub fn next_stronghold_no_biome(sh: &mut StrongholdIter) -> i32 {
+    assert!(
+        sh.mc.is_at_least(MCVersion::V1_19),
+        "next_stronghold_no_biome requires MC ≥ 1.19.4 (got {:?})",
+        sh.mc
+    );
+
+    // Advance the Java RNG once (cubiomes' `nextLong(&sh->rnds)`).
+    let _ = sh.rnds.next_long();
+    sh.pos = sh.nextapprox;
+    advance_iter_state(sh);
     if sh.mc.is_at_least(MCVersion::V1_9) {
         128 - (sh.index - 1)
     } else {
