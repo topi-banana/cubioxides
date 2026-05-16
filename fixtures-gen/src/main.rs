@@ -1129,6 +1129,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("biomes_to_image fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_wilson_fixture(&fixtures_dir.join("wilson.bin")) {
+        eprintln!("wilson fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3496,6 +3500,58 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
             p1x,
             p1z,
             ids: ids_arr,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `wilson` parity record (kind = 96). Bit-exact comparison via
+/// f64 `to_bits()`. Covers a representative set of (n, p, z) tuples.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct WilsonRecord {
+    pub n: f64,
+    pub p: f64,
+    pub z: f64,
+    pub lo_bits: u64,
+    pub hi_bits: u64,
+}
+
+fn write_wilson_fixture(path: &Path) -> std::io::Result<()> {
+    let cases: &[(f64, f64, f64)] = &[
+        (100.0, 0.5, 1.96),
+        (100.0, 0.5, 2.576),
+        (1000.0, 0.1, 1.96),
+        (1000.0, 0.9, 1.96),
+        (50.0, 0.0, 2.0),
+        (50.0, 1.0, 2.0),
+        (1.0, 1.0, 1.96),
+        (1e6, 0.5, 1.96),
+        (1e6, 0.0001, 3.0),
+        (10.0, 0.3, 1.5),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 96, total)?;
+    for &(n, p, z) in cases {
+        let mut lo: f64 = 0.0;
+        let mut hi: f64 = 0.0;
+        unsafe {
+            ffi::cubiomes_call_wilson(
+                n,
+                p,
+                z,
+                std::ptr::from_mut(&mut lo),
+                std::ptr::from_mut(&mut hi),
+            );
+        }
+        let rec = WilsonRecord {
+            n,
+            p,
+            z,
+            lo_bits: lo.to_bits(),
+            hi_bits: hi.to_bits(),
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
     }
@@ -7103,6 +7159,7 @@ mod ffi {
             pixscale: u32,
             flip: c_int,
         ) -> c_int;
+        pub fn cubiomes_call_wilson(n: f64, p: f64, z: f64, lo: *mut f64, hi: *mut f64);
         pub fn cubiomes_call_can_biome_generate(
             layer_id: c_int,
             mc: c_int,

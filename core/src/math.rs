@@ -139,6 +139,29 @@ pub fn simplex_grad(idx: u8, x: f64, y: f64, z: f64, d: f64) -> f64 {
     con * con * indexed_lerp(idx, x, y, z)
 }
 
+/// Wilson score interval for a binomial proportion. Returns
+/// `(lo, hi)` where `n` is the total trial count, `p` is the
+/// observed success ratio (`successes / n`), and `z` is the
+/// confidence z-score (e.g. 1.96 for 95%).
+///
+/// Bit-exact port of `cubiomes/finders.c::wilson`. Uses the same
+/// `+ FLT_EPSILON` margin cubiomes adds to the radius `d`. Used by
+/// the upstream `monteCarloBiomes` sampling helper.
+///
+/// [Wilson score interval]: https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Wilson_score_interval
+#[inline]
+#[must_use]
+#[allow(clippy::many_single_char_names)]
+pub fn wilson(n: f64, p: f64, z: f64) -> (f64, f64) {
+    let s = z * z / n;
+    let t = 1.0 / (1.0 + s);
+    let w = t * (p + 0.5 * s);
+    // cubiomes uses C's `FLT_EPSILON` (single-precision epsilon
+    // ≈ 1.192e-7), not `DBL_EPSILON`, even though `d` is a `double`.
+    let d = t * z * ((p * (1.0 - p) + 0.25 * s) / n).sqrt() + f64::from(f32::EPSILON);
+    (w - d, w + d)
+}
+
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
@@ -238,6 +261,24 @@ mod tests {
         // yield zero contribution.
         assert_eq!(simplex_grad(0, 1.0, 1.0, 1.0, 0.5), 0.0);
         assert_eq!(simplex_grad(0, 5.0, 0.0, 0.0, 0.5), 0.0);
+    }
+
+    #[test]
+    fn wilson_known_value() {
+        // For n=100, p=0.5, z=1.96 (95% CI) the Wilson score
+        // interval is approximately (0.4038, 0.5962).
+        let (lo, hi) = wilson(100.0, 0.5, 1.96);
+        assert!((lo - 0.4038).abs() < 1e-3, "lo = {lo}");
+        assert!((hi - 0.5962).abs() < 1e-3, "hi = {hi}");
+    }
+
+    #[test]
+    fn wilson_extremes_bounded() {
+        // p=0 means lo should be near 0 (small positive),
+        // hi should be < 1.
+        let (lo, hi) = wilson(50.0, 0.0, 2.0);
+        assert!(lo >= 0.0 - 1e-6, "lo = {lo}");
+        assert!(hi < 1.0, "hi = {hi}");
     }
 
     #[test]

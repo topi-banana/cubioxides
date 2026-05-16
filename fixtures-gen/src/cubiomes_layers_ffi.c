@@ -1241,3 +1241,8 @@ int cubiomes_call_biomes_to_image(unsigned char *pixels, unsigned char biome_col
         unsigned int pixscale, int flip) {
     return biomesToImage(pixels, biome_colors, biomes, sx, sy, pixscale, flip);
 }
+
+extern void wilson(double n, double p, double z, double *lo, double *hi);
+void cubiomes_call_wilson(double n, double p, double z, double *lo, double *hi) {
+    wilson(n, p, z, lo, hi);
+}
