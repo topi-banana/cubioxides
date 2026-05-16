@@ -24,6 +24,23 @@ pub const TC_LEN: usize = 9;
 /// at zero.
 ///
 /// `tc` is indexed by `BiomeTempCategory` value (see [`TC_LEN`]).
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::finder::check_for_temps;
+/// use cubioxides::layer::stack::{LayerStack, setup_layer_stack};
+///
+/// // Cheap pre-1.18 pre-filter on the L_SPECIAL_1024 area: every
+/// // non-zero tc slot needs at least that many cells in the
+/// // (x, z, w, h) window. A `tc` of all zeros trivially passes.
+/// let mut stack = LayerStack::new();
+/// setup_layer_stack(&mut stack, MCVersion::V1_16_1, false);
+/// let tc = [0i32; cubioxides::finder::check_for_temps::TC_LEN];
+/// let ok = check_for_temps(&mut stack, 0xdead_beef, 0, 0, 4, 4, &tc);
+/// assert!(ok);
+/// ```
 #[must_use]
 pub fn check_for_temps(
     stack: &mut LayerStack,
