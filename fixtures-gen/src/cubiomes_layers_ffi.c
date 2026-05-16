@@ -1227,6 +1227,16 @@ uint64_t cubiomes_call_get_min_layer_cache_size(int mc, int entry, int sx, int s
     return (uint64_t) getMinLayerCacheSize(&ls.layers[entry], sx, sz);
 }
 
+/* checkForTemps wrapper. Caller supplies a flat tc[9] int array. */
+int cubiomes_call_check_for_temps(int mc, uint64_t seed, int x, int z, int w, int h,
+                                  const int *tc9) {
+    LayerStack ls;
+    setupLayerStack(&ls, mc, 0);
+    int tc[9];
+    for (int i = 0; i < 9; i++) tc[i] = tc9[i];
+    return checkForTemps(&ls, seed, x, z, w, h, tc);
+}
+
 /* setupBiomeFilter wrapper. Returns the entire BiomeFilter struct as
  * a flat array of 29 u64 (28 mask fields + flags + special_cnt packed). */
 void cubiomes_call_setup_biome_filter(int mc, uint32_t flags,

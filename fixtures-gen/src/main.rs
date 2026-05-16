@@ -1178,6 +1178,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("min_layer_cache_size fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_check_for_temps_fixture(&fixtures_dir.join("check_for_temps.bin")) {
+        eprintln!("check_for_temps fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -4064,6 +4068,62 @@ fn write_min_layer_cache_fixture(path: &Path) -> std::io::Result<()> {
         file.write_all(&sx.to_le_bytes())?;
         file.write_all(&sz.to_le_bytes())?;
         file.write_all(&cache_size.to_le_bytes())?;
+    }
+    file.flush()
+}
+
+/// `checkForTemps` payload (kind = 90). Per-record:
+/// `mc i32, seed u64, x i32, z i32, w i32, h i32, tc [i32; 9], result i32`.
+fn write_check_for_temps_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (i32, u64, i32, i32, i32, i32, [i32; 9]);
+    let cases: &[Case] = &[
+        // Empty tc → trivially true (no minimum, no special).
+        (10, 0xdead_beef, 0, 0, 4, 4, [0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        // Require at least 1 Oceanic.
+        (10, 0xdead_beef, 0, 0, 4, 4, [1, 0, 0, 0, 0, 0, 0, 0, 0]),
+        // Require 1 of every base category — likely impossible on small area.
+        (10, 0xdead_beef, 0, 0, 4, 4, [1, 1, 1, 1, 1, 0, 0, 0, 0]),
+        // Require Special+Warm (index 6); triggers the chunk-seed prefilter.
+        (10, 0xdead_beef, 0, 0, 16, 16, [0, 0, 0, 0, 0, 0, 1, 0, 0]),
+        // Negative slot: forbid Freezing.
+        (
+            10,
+            0xcafe_babe,
+            100,
+            100,
+            8,
+            8,
+            [0, 0, 0, 0, -1, 0, 0, 0, 0],
+        ),
+        // 1.14 with mixed requirements.
+        (17, 0x1234, -50, -50, 8, 8, [0, 1, 0, 0, 0, 0, 0, 0, 0]),
+        // 1.17 wider area.
+        (
+            20,
+            0xdead_beef_u64,
+            0,
+            0,
+            32,
+            32,
+            [4, 4, 4, 4, 4, 0, 0, 0, 0],
+        ),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 90, total)?;
+    for &(mc, seed, x, z, w, h, tc) in cases {
+        let result =
+            unsafe { ffi::cubiomes_call_check_for_temps(mc, seed, x, z, w, h, tc.as_ptr()) };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&x.to_le_bytes())?;
+        file.write_all(&z.to_le_bytes())?;
+        file.write_all(&w.to_le_bytes())?;
+        file.write_all(&h.to_le_bytes())?;
+        for v in tc {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        file.write_all(&result.to_le_bytes())?;
     }
     file.flush()
 }
@@ -7757,6 +7817,15 @@ mod ffi {
             sx: c_int,
             sz: c_int,
         ) -> u64;
+        pub fn cubiomes_call_check_for_temps(
+            mc: c_int,
+            seed: u64,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+            tc9: *const c_int,
+        ) -> c_int;
         pub fn cubiomes_call_setup_biome_filter(
             mc: c_int,
             flags: u32,
