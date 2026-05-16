@@ -1206,6 +1206,18 @@ int cubiomes_call_get_biome_para_limits(int mc, int id, int *out12) {
     return 1;
 }
 
+/* getPossibleBiomesForLimits wrapper: caller supplies the 6×2 limits
+ * and a 256-byte output buffer. */
+void cubiomes_call_get_possible_biomes_for_limits(int mc, const int *limits12,
+                                                  char *out256) {
+    int limits[6][2];
+    for (int i = 0; i < 6; i++) {
+        limits[i][0] = limits12[2 * i];
+        limits[i][1] = limits12[2 * i + 1];
+    }
+    getPossibleBiomesForLimits(out256, mc, limits);
+}
+
 int cubiomes_call_get_largest_rec(int target, const int *ids, int sx, int sz,
                                   int *p0x, int *p0z, int *p1x, int *p1z) {
     Pos p0 = {0, 0};

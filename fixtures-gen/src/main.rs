@@ -1152,6 +1152,12 @@ fn regenerate_layers() -> ExitCode {
         return ExitCode::FAILURE;
     }
     if let Err(err) =
+        write_possible_biomes_fixture(&fixtures_dir.join("possible_biomes_for_limits.bin"))
+    {
+        eprintln!("possible_biomes_for_limits fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
         eprintln!("viable_feature_biome fixture failed: {err}");
@@ -3756,6 +3762,95 @@ fn write_biome_para_limits_fixture(path: &Path) -> std::io::Result<()> {
                 file.write_all(&v.to_le_bytes())?;
             }
         }
+    }
+    file.flush()
+}
+
+/// `getPossibleBiomesForLimits` payload (kind = 94). Per-record:
+/// `mc_ord i32`, `limits [i32; 12]`, `ids [u8; 256]`.
+fn write_possible_biomes_fixture(path: &Path) -> std::io::Result<()> {
+    // Build several (mc, limits) probes that cover an open box,
+    // narrow per-axis windows, and the empty intersection.
+    type LimRow = (i32, [i32; 12]);
+    let imax = i32::MAX;
+    let imin = i32::MIN;
+    let cases: &[LimRow] = &[
+        // V1_18 — fully open limits: every biome that's reachable should appear.
+        (
+            22,
+            [
+                imin, imax, imin, imax, imin, imax, imin, imax, imin, imax, imin, imax,
+            ],
+        ),
+        // V1_19 — same open box (drift sanity check across the 19 diff).
+        (
+            24,
+            [
+                imin, imax, imin, imax, imin, imax, imin, imax, imin, imax, imin, imax,
+            ],
+        ),
+        // V1_20 — same open box; deep_dark / mangrove / cherry_grove must light up.
+        (
+            25,
+            [
+                imin, imax, imin, imax, imin, imax, imin, imax, imin, imax, imin, imax,
+            ],
+        ),
+        // V1_21 — same, pale_garden joins.
+        (
+            28,
+            [
+                imin, imax, imin, imax, imin, imax, imin, imax, imin, imax, imin, imax,
+            ],
+        ),
+        // V1_18 — narrow temperature band (deserts only).
+        (
+            22,
+            [
+                6000, 8000, imin, imax, imin, imax, imin, imax, imin, imax, imin, imax,
+            ],
+        ),
+        // V1_18 — narrow continentalness (deep ocean band).
+        (
+            22,
+            [
+                imin, imax, imin, imax, -10000, -5000, imin, imax, imin, imax, imin, imax,
+            ],
+        ),
+        // V1_18 — depth far above caves: only caves bracket.
+        (
+            22,
+            [
+                imin, imax, imin, imax, imin, imax, imin, imax, 5000, 8000, imin, imax,
+            ],
+        ),
+        // V1_18 — impossible (T low > T high cap) → empty set.
+        (
+            22,
+            [
+                10000, 10000, imin, imax, imin, imax, imin, imax, imin, imax, imin, imax,
+            ],
+        ),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 94, total)?;
+    for (mc, limits) in cases {
+        let mut ids = [0_i8; 256];
+        unsafe {
+            ffi::cubiomes_call_get_possible_biomes_for_limits(
+                *mc,
+                limits.as_ptr(),
+                ids.as_mut_ptr(),
+            );
+        }
+        file.write_all(&mc.to_le_bytes())?;
+        for &v in limits {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        // i8 → u8 (cubiomes uses `char ids[256]`, treated as boolean).
+        let bytes: [u8; 256] = ids.map(|b| b as u8);
+        file.write_all(&bytes)?;
     }
     file.flush()
 }
@@ -7428,6 +7523,11 @@ mod ffi {
             id: c_int,
             out12: *mut c_int,
         ) -> c_int;
+        pub fn cubiomes_call_get_possible_biomes_for_limits(
+            mc: c_int,
+            limits12: *const c_int,
+            out256: *mut std::ffi::c_char,
+        );
         pub fn cubiomes_call_id_set_add(out_m_l: *mut u64, out_m_m: *mut u64, id: c_int);
         pub fn cubiomes_call_id_set_test(m_l: u64, m_m: u64, id: c_int) -> c_int;
         pub fn cubiomes_call_get_dimension(id: c_int) -> c_int;

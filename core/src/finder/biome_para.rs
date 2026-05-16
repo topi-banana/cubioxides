@@ -5,6 +5,7 @@
 //! humidity, continentalness, erosion, depth, weirdness) for the
 //! given MC version.
 
+use crate::biome::Biome;
 use crate::mc_version::MCVersion;
 
 /// One min/max pair on a climate axis (integer-quantised, like
@@ -167,6 +168,38 @@ pub fn get_biome_para_limits(mc: MCVersion, id: i32) -> Option<ParaExtremes> {
         }
     }
     lookup(PARA_RANGE_18, id)
+}
+
+/// Marks every overworld biome ID (1.18+) whose climate range
+/// intersects `limits` (each axis a `(min, max)` pair). Mirrors
+/// cubiomes' `getPossibleBiomesForLimits`.
+///
+/// Returns a boolean array indexed by biome ID. For pre-1.18 worlds
+/// the array stays all-false (cubiomes uses `getBiomeParaLimits`
+/// which returns NULL, so no row is reachable).
+#[must_use]
+pub fn get_possible_biomes_for_limits(mc: MCVersion, limits: &ParaExtremes) -> [bool; 256] {
+    let mut ids = [false; 256];
+    for i in 0..256_i32 {
+        if !Biome::is_overworld_id(mc, i) {
+            continue;
+        }
+        let Some(bp) = get_biome_para_limits(mc, i) else {
+            continue;
+        };
+        let mut ok = true;
+        for (axis, &(lo, hi)) in bp.iter().enumerate() {
+            let (l_lo, l_hi) = limits[axis];
+            if l_lo > hi || l_hi < lo {
+                ok = false;
+                break;
+            }
+        }
+        if ok {
+            ids[i as usize] = true;
+        }
+    }
+    ids
 }
 
 #[cfg(test)]
