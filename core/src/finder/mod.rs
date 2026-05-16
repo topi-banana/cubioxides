@@ -40,16 +40,30 @@ pub mod variant;
 pub mod viability;
 pub mod village_houses;
 
+pub use available_biomes::get_available_biomes;
+pub use biome_centers::{BiomeCenters, get_biome_centers};
 pub use biome_filter::{BiomeFilter, setup_biome_filter};
+pub use biome_para::{
+    ParaExtremes, get_biome_para_extremes, get_biome_para_limits, get_possible_biomes_for_limits,
+};
+pub use can_biome_generate::can_biome_generate;
 pub use check_for_biomes::{
     CheckForBiomesResult, approx_prefilter_at_layer, check_for_biomes, check_for_biomes_at_layer,
 };
+pub use check_for_temps::check_for_temps;
 pub use end::{
     EndIsland, get_end_islands, get_fixed_end_gateways, get_linked_gateway_chunk,
     get_linked_gateway_pos, is_end_chunk_empty, map_end_island_height,
 };
+pub use end_city::get_end_city_pieces;
+pub use fortress::get_fortress_pieces;
+pub use gen_potential::gen_potential;
+pub use largest_rec::get_largest_rec;
 pub use locate_biome::{id_matches, locate_biome};
 pub use mineshaft::get_mineshafts;
+pub use monte_carlo::monte_carlo_biomes;
+pub use para_descent::get_para_descent;
+pub use para_range::get_para_range;
 pub use population_seed::{chunk_generate_rng, get_population_seed};
 #[cfg(all(feature = "parallel", not(target_arch = "wasm32")))]
 pub use quadbase::search_all_48_parallel;
@@ -65,6 +79,7 @@ pub use stronghold::{
     StrongholdIter, init_first_stronghold, is_stronghold_biome, next_stronghold,
     next_stronghold_no_biome,
 };
+pub use village_houses::get_house_list;
 pub use variant::{StructureVariant, get_variant};
 pub use viability::{is_viable_feature_biome, is_viable_structure_pos};
 
