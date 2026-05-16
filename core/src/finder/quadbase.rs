@@ -687,10 +687,19 @@ pub fn get_optimal_afk(p: &[Pos; 4], ax: i32, ay: i32, az: i32, spcnt: Option<&m
 }
 
 /// `isQuadBase(sconf, seed, radius)` — type-aware dispatcher for
-/// quad-base detection. **Partial port**: only `Swamp_Hut` with
-/// `radius == 128` is supported (the most common path used by
-/// `scan_for_quads`). Returns `Some(sqrad)` on a quad-base hit,
-/// `None` otherwise.
+/// quad-base detection. Returns `Some(sqrad)` on a quad-base hit
+/// (the squared bounding-sphere radius in blocks), `None`
+/// otherwise.
+///
+/// Covers every structure type cubiomes' `isQuadBase` does:
+/// `SwampHut` (uses `isQuadBaseFeature24` when `radius == 128`,
+/// `isQuadBaseFeature` otherwise), `DesertPyramid` / `JungleTemple`
+/// / `Igloo` / `Village` (same predicate, `(0, 0, 0)` bbox),
+/// `Outpost` (`(72, 54, 72)` bbox), `OceanRuin` / `Shipwreck` /
+/// `RuinedPortal` (`(0, 0, 0)` bbox via `isQuadBaseFeature`), and
+/// `Monument` (uses `isQuadBaseLarge` with `(58, 23, 58)` bbox).
+/// Panics for any other structure type — cubiomes prints an error
+/// and `exit()`s.
 #[must_use]
 pub fn is_quad_base(sconf: StructureConfig, seed: u64, radius: i32) -> Option<f32> {
     use crate::finder::StructureType;
