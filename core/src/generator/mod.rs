@@ -228,18 +228,20 @@ impl Generator {
             }
             OverworldKind::Layered => {
                 let stack = self.layer_stack.as_ref().expect("layer stack");
-                let entry = layered_entry_for_scale(stack, scale)
-                    .unwrap_or_else(|| panic!("unsupported scale {scale} for layered MC"));
-                let mut out = [Biome::NONE; 1];
-                gen_area(stack, entry, &mut out, x, z, 1, 1);
-                out[0]
+                if let Some(entry) = layered_entry_for_scale(stack, scale) {
+                    let mut out = [Biome::NONE; 1];
+                    gen_area(stack, entry, &mut out, x, z, 1, 1);
+                    out[0]
+                } else {
+                    self.biome_at_via_gen_biomes(scale, x, y, z)
+                }
             }
             OverworldKind::Modern => {
                 let bn = self.biome_noise.as_ref().expect("BiomeNoise seeded");
                 let (sx, sy, sz) = match scale {
                     1 => voronoi_access_3d(self.sha, x, y, z),
                     4 => (x, y, z),
-                    other => panic!("unsupported scale {other} for 1.18+ Overworld"),
+                    _ => return self.biome_at_via_gen_biomes(scale, x, y, z),
                 };
                 let (id, _) = bn.sample(sx, sy, sz, 0);
                 Biome(id)
@@ -255,10 +257,31 @@ impl Generator {
         let (sx, sy, sz) = match scale {
             1 => voronoi_access_3d(self.sha, x, y, z),
             4 => (x, y, z),
-            other => panic!("unsupported scale {other} for Nether"),
+            _ => return self.biome_at_via_gen_biomes(scale, x, y, z),
         };
         let (b, _) = nn.get_nether_biome(sx, sy, sz);
         b
+    }
+
+    /// Single-cell fallback that builds a 1×1×1 [`Range`] and
+    /// delegates to [`Self::gen_biomes`]. Used when the scale isn't
+    /// one of the fast-path constants — mirrors what cubiomes'
+    /// `getBiomeAt` does for every call.
+    fn biome_at_via_gen_biomes(&self, scale: i32, x: i32, y: i32, z: i32) -> Biome {
+        let mut cache = [Biome(0); 1];
+        self.gen_biomes(
+            &mut cache,
+            Range {
+                scale,
+                x,
+                z,
+                sx: 1,
+                sz: 1,
+                y,
+                sy: 1,
+            },
+        );
+        cache[0]
     }
 
     fn biome_at_end(&self, scale: i32, x: i32, y: i32, z: i32) -> Biome {
@@ -296,7 +319,7 @@ impl Generator {
             }
             4 => en.map_end(&mut out, x, z, 1, 1),
             16 => en.map_end_biome(&mut out, x, z, 1, 1),
-            other => panic!("unsupported scale {other} for End"),
+            _ => return self.biome_at_via_gen_biomes(scale, x, y, z),
         }
         Biome(out[0])
     }
@@ -809,6 +832,32 @@ mod tests {
         let mut g = Generator::new(MCVersion::V1_14, 0);
         g.apply_seed(Dimension::End, 0xdead_beef);
         let _ = g.biome_at(1, 100, 64, 100);
+    }
+
+    #[test]
+    fn biome_at_modern_unusual_scale_works() {
+        // 1.18 Modern Overworld with scale not in {1, 4} falls back
+        // to gen_biomes — should not panic.
+        let mut g = Generator::new(MCVersion::V1_18, 0);
+        g.apply_seed(Dimension::Overworld, 0xdead_beef);
+        let _ = g.biome_at(16, 0, 64, 0);
+        let _ = g.biome_at(64, 0, 64, 0);
+    }
+
+    #[test]
+    fn biome_at_nether_unusual_scale_works() {
+        // 1.18 Nether with scale 16 should fall back to gen_biomes.
+        let mut g = Generator::new(MCVersion::V1_18, 0);
+        g.apply_seed(Dimension::Nether, 0xdead_beef);
+        let _ = g.biome_at(16, 0, 64, 0);
+    }
+
+    #[test]
+    fn biome_at_end_large_scale_works() {
+        // End scale 64 (radial pseudo-biome) — falls back to gen_biomes.
+        let mut g = Generator::new(MCVersion::V1_18, 0);
+        g.apply_seed(Dimension::End, 0xdead_beef);
+        let _ = g.biome_at(64, 0, 0, 0);
     }
 
     #[test]
