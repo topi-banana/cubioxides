@@ -20,6 +20,7 @@ pub mod can_biome_generate;
 pub mod end;
 pub mod end_city;
 pub mod fortress;
+pub mod gen_potential;
 pub mod largest_rec;
 pub mod locate_biome;
 pub mod mineshaft;

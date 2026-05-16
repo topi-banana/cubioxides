@@ -1157,6 +1157,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("possible_biomes_for_limits fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_gen_potential_fixture(&fixtures_dir.join("gen_potential.bin")) {
+        eprintln!("gen_potential fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3851,6 +3855,68 @@ fn write_possible_biomes_fixture(path: &Path) -> std::io::Result<()> {
         // i8 → u8 (cubiomes uses `char ids[256]`, treated as boolean).
         let bytes: [u8; 256] = ids.map(|b| b as u8);
         file.write_all(&bytes)?;
+    }
+    file.flush()
+}
+
+/// `genPotential` payload (kind = 93). Per-record:
+/// `mc_ord i32`, `layer_id i32`, `flags u32`, `biome_id i32`,
+/// `m_l u64`, `m_m u64`.
+fn write_gen_potential_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (i32, i32, u32, i32);
+    let cases: &[Case] = &[
+        // (mc, layer, flags, biome_id) — span every layer the function
+        // implements, with a mix of biome inputs.
+        (22, 14, 0, 0),     // Special1024, Oceanic
+        (22, 14, 0, 1),     // Special1024, Warm
+        (22, 19, 0, 0),     // Mushroom256, Oceanic — kicks DeepOcean256
+        (22, 19, 0, 14),    // Mushroom256, mushroom_fields
+        (5, 19, 0, 0),      // Mushroom256 at 1.5 (legacy path)
+        (22, 20, 0, 1),     // DeepOcean256, Warm (base)
+        (22, 20, 0, 0x101), // DeepOcean256, Warm | mutated
+        (22, 20, 0, 4),     // DeepOcean256, Freezing
+        (22, 21, 0, 0),     // Biome256, ocean
+        (22, 21, 0, 4),     // Biome256, forest
+        (28, 21, 0, 21),    // Biome256, jungle in 1.21
+        (22, 21, 0, 38),    // Biome256, wooded_badlands_plateau
+        (22, 25, 0, 5),     // BiomeEdge64, taiga (drives Hills64)
+        (22, 25, 0, 3),     // BiomeEdge64, mountains
+        (22, 25, 0, 1),     // BiomeEdge64, plains
+        (22, 29, 0, 1),     // Hills64, plains
+        (22, 30, 0, 1),     // Sunflower64, plains
+        (22, 33, 0, 0),     // Zoom16, ocean
+        (22, 34, 0, 0),     // Shore16, ocean
+        (22, 34, 0, 12),    // Shore16, snowy_tundra
+        (22, 34, 0, 21),    // Shore16, jungle (passes through RiverMix4)
+        (22, 47, 0, 0),     // RiverMix4, ocean (1.13+ ocean expansion)
+        (22, 47, 0, 24),    // RiverMix4, deep_ocean
+        (22, 47, 0, 1),     // RiverMix4, plains
+        (22, 55, 0, 0),     // OceanMix4
+        (22, 56, 0, 42),    // Voronoi1 — final layer, just stamps id 42
+        (22, 56, 0, 200),   // Voronoi1 — id >= 128 lands in mM
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 93, total)?;
+    for &(mc, layer, flags, biome) in cases {
+        let mut m_l: u64 = 0;
+        let mut m_m: u64 = 0;
+        unsafe {
+            ffi::cubiomes_call_gen_potential(
+                mc,
+                layer,
+                flags,
+                biome,
+                std::ptr::from_mut(&mut m_l),
+                std::ptr::from_mut(&mut m_m),
+            );
+        }
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&layer.to_le_bytes())?;
+        file.write_all(&flags.to_le_bytes())?;
+        file.write_all(&biome.to_le_bytes())?;
+        file.write_all(&m_l.to_le_bytes())?;
+        file.write_all(&m_m.to_le_bytes())?;
     }
     file.flush()
 }
@@ -7527,6 +7593,14 @@ mod ffi {
             mc: c_int,
             limits12: *const c_int,
             out256: *mut std::ffi::c_char,
+        );
+        pub fn cubiomes_call_gen_potential(
+            mc: c_int,
+            layer_id: c_int,
+            flags: u32,
+            biome_id: c_int,
+            out_m_l: *mut u64,
+            out_m_m: *mut u64,
         );
         pub fn cubiomes_call_id_set_add(out_m_l: *mut u64, out_m_m: *mut u64, id: c_int);
         pub fn cubiomes_call_id_set_test(m_l: u64, m_m: u64, id: c_int) -> c_int;

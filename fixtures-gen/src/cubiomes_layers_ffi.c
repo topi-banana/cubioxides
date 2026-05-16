@@ -1206,6 +1206,16 @@ int cubiomes_call_get_biome_para_limits(int mc, int id, int *out12) {
     return 1;
 }
 
+/* genPotential wrapper: returns the (mL, mM) bit-mask pair as out
+ * parameters; both are zeroed before the call. */
+void cubiomes_call_gen_potential(int mc, int layer_id, uint32_t flags, int biome_id,
+                                 uint64_t *out_m_l, uint64_t *out_m_m) {
+    uint64_t mL = 0, mM = 0;
+    genPotential(&mL, &mM, layer_id, mc, flags, biome_id);
+    *out_m_l = mL;
+    *out_m_m = mM;
+}
+
 /* getPossibleBiomesForLimits wrapper: caller supplies the 6×2 limits
  * and a 256-byte output buffer. */
 void cubiomes_call_get_possible_biomes_for_limits(int mc, const int *limits12,
