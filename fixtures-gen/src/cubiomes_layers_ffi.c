@@ -1217,3 +1217,6 @@ int cubiomes_call_get_dimension(int id) { return getDimension(id); }
 
 extern const char *biome2str(int mc, int id);
 const char *cubiomes_call_biome2str(int mc, int id) { return biome2str(mc, id); }
+
+extern const char *struct2str(int stype);
+const char *cubiomes_call_struct2str(int stype) { return struct2str(stype); }

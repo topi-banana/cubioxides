@@ -1109,6 +1109,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("biome2str fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_struct2str_fixture(&fixtures_dir.join("struct2str.bin")) {
+        eprintln!("struct2str fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3476,6 +3480,51 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
             p1x,
             p1z,
             ids: ids_arr,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `struct2str` parity record (kind = 91). One record per
+/// structure type ordinal 0..32 (covers all cubiomes types plus
+/// a few invalid values to verify the NULL return path).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct Struct2StrRecord {
+    pub stype: i32,
+    pub name_len: i32,
+    pub has_name: i32,
+    pub padding: i32,
+    pub name: [u8; 32],
+}
+
+fn write_struct2str_fixture(path: &Path) -> std::io::Result<()> {
+    let stypes: Vec<i32> = (0..32).collect();
+    let total = stypes.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 91, total)?;
+    for &stype in &stypes {
+        let mut name = [0u8; 32];
+        let mut name_len: i32 = 0;
+        let mut has_name: i32 = 0;
+        unsafe {
+            let ptr = ffi::cubiomes_call_struct2str(stype);
+            if !ptr.is_null() {
+                has_name = 1;
+                let cstr = CStr::from_ptr(ptr);
+                let bytes = cstr.to_bytes();
+                let n = bytes.len().min(name.len());
+                name[..n].copy_from_slice(&bytes[..n]);
+                name_len = bytes.len() as i32;
+            }
+        }
+        let rec = Struct2StrRecord {
+            stype,
+            name_len,
+            has_name,
+            padding: 0,
+            name,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
     }
@@ -6854,6 +6903,7 @@ mod ffi {
         pub fn cubiomes_call_id_set_test(m_l: u64, m_m: u64, id: c_int) -> c_int;
         pub fn cubiomes_call_get_dimension(id: c_int) -> c_int;
         pub fn cubiomes_call_biome2str(mc: c_int, id: c_int) -> *const std::ffi::c_char;
+        pub fn cubiomes_call_struct2str(stype: c_int) -> *const std::ffi::c_char;
         pub fn cubiomes_call_can_biome_generate(
             layer_id: c_int,
             mc: c_int,

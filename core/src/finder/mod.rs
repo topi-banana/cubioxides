@@ -134,6 +134,47 @@ impl StructureType {
             _ => return None,
         })
     }
+
+    /// `struct2str(stype)` — return the human-readable structure
+    /// name, or `None` for [`Self::Feature`] / [`Self::EndIsland`]
+    /// (cubiomes treats those as internal helpers and they have no
+    /// canonical name).
+    ///
+    /// Bit-exact port of `cubiomes/util.c::struct2str`. Note that
+    /// some names differ from the enum variant: `Outpost` →
+    /// `pillager_outpost`, `Treasure` → `buried_treasure`,
+    /// `Bastion` → `bastion_remnant`, `Geode` → `amethyst_geode`,
+    /// `JungleTemple` → `jungle_pyramid`.
+    #[must_use]
+    pub const fn name(self) -> Option<&'static str> {
+        Some(match self {
+            Self::DesertPyramid => "desert_pyramid",
+            Self::JungleTemple => "jungle_pyramid",
+            Self::SwampHut => "swamp_hut",
+            Self::Igloo => "igloo",
+            Self::Village => "village",
+            Self::OceanRuin => "ocean_ruin",
+            Self::Shipwreck => "shipwreck",
+            Self::Monument => "monument",
+            Self::Mansion => "mansion",
+            Self::Outpost => "pillager_outpost",
+            Self::Treasure => "buried_treasure",
+            Self::Mineshaft => "mineshaft",
+            Self::DesertWell => "desert_well",
+            Self::RuinedPortal => "ruined_portal",
+            Self::RuinedPortalN => "ruined_portal_nether",
+            Self::Geode => "amethyst_geode",
+            Self::AncientCity => "ancient_city",
+            Self::TrailRuins => "trail_ruins",
+            Self::TrialChambers => "trial_chambers",
+            Self::Fortress => "fortress",
+            Self::Bastion => "bastion_remnant",
+            Self::EndCity => "end_city",
+            Self::EndGateway => "end_gateway",
+            // Feature, EndIsland have no canonical name.
+            Self::Feature | Self::EndIsland => return None,
+        })
+    }
 }
 
 /// Per-version structure placement parameters. Mirrors cubiomes'
