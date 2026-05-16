@@ -501,7 +501,7 @@ pub fn get_large_structure_pos(config: StructureConfig, seed: u64, reg_x: i32, r
 
 /// `setAttemptSeed` — cubiomes' helper that mutates `s` into the
 /// chunk-attempt RNG state used by Outpost.
-fn set_attempt_seed(s: u64, cx: i32, cz: i32) -> JavaRng {
+pub(crate) fn set_attempt_seed(s: u64, cx: i32, cz: i32) -> JavaRng {
     let value = s ^ ((cx >> 4) as i64 as u64) ^ (((cz >> 4) as i64 as u64) << 4);
     let mut rng = JavaRng::new(value);
     rng.next(31);

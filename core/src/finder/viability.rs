@@ -9,8 +9,11 @@
 #![allow(clippy::collapsible_match, clippy::needless_return)]
 
 use crate::biome::Biome;
+use crate::finder::population_seed::chunk_generate_rng;
 use crate::finder::variant::get_variant;
-use crate::finder::{StructureType, get_structure_config, get_structure_pos};
+use crate::finder::{
+    StructureType, get_feature_pos, get_structure_config, get_structure_pos, set_attempt_seed,
+};
 use crate::generator::Generator;
 use crate::math::floordiv;
 use crate::mc_version::{Dimension, MCVersion};
@@ -283,15 +286,72 @@ fn viable_overworld_modern(
             is_viable_feature_biome(g.mc, structure_type, id)
         }
 
+        Outpost => return viable_outpost_modern(g, x, z, chunk_x, chunk_z),
+
         // Bastion / Fortress are Nether-only — should never reach
-        // here. Feature is pre-1.13 only. Defer Monument / Outpost /
+        // here. Feature is pre-1.13 only. Defer Monument /
         // EndCity / EndGateway / EndIsland to follow-up sub-stages.
-        Feature | Monument | Outpost | EndCity | EndGateway | EndIsland | Fortress | Bastion => {
+        Feature | Monument | EndCity | EndGateway | EndIsland | Fortress | Bastion => {
             unimplemented!(
                 "Modern Overworld is_viable_structure_pos: {structure_type:?} not yet ported"
             )
         }
     }
+}
+
+/// 1.18+ Outpost viability. Three gates:
+///   1. `setAttemptSeed`-keyed `nextInt(5) == 0` per-chunk roll.
+///   2. No Village placed within ±10 chunks (1.16.1+ short-circuit
+///      bypasses the recursive `isViableStructurePos(Village)` check).
+///   3. The biome at the chunkGenerateRnd-chosen variant centroid
+///      matches `isViableFeatureBiome(Outpost, ...)`.
+fn viable_outpost_modern(g: &Generator, x: i32, z: i32, chunk_x: i64, chunk_z: i64) -> bool {
+    let mut rng = set_attempt_seed(g.seed, x >> 4, z >> 4);
+    if rng.next_int(5) != 0 {
+        return false;
+    }
+    let Some(vilconf) = get_structure_config(StructureType::Village, g.mc) else {
+        return false;
+    };
+    let cx = (x >> 4) as i64;
+    let cz = (z >> 4) as i64;
+    let cx0 = cx - 10;
+    let cx1 = cx + 10;
+    let cz0 = cz - 10;
+    let cz1 = cz + 10;
+    let region = i32::from(vilconf.region_size);
+    let rx0 = floordiv(cx0 as i32, region);
+    let rx1 = floordiv(cx1 as i32, region);
+    let rz0 = floordiv(cz0 as i32, region);
+    let rz1 = floordiv(cz1 as i32, region);
+    for rz in rz0..=rz1 {
+        for rx in rx0..=rx1 {
+            let p = get_feature_pos(vilconf, g.seed, rx, rz);
+            let pc_x = (p.x >> 4) as i64;
+            let pc_z = (p.z >> 4) as i64;
+            if pc_x >= cx0 && pc_x <= cx1 && pc_z >= cz0 && pc_z <= cz1 {
+                // 1.16.1+ short-circuits without the recursive check.
+                return false;
+            }
+        }
+    }
+
+    // 1.18+ picks one of the 4 corners of the variant box.
+    let mut rng2 = chunk_generate_rng(g.seed, x >> 4, z >> 4);
+    let (off_x, off_z) = match rng2.next_int(4) {
+        0 => (15, 15),
+        1 => (-15, 15),
+        2 => (-15, -15),
+        3 => (15, -15),
+        _ => return false,
+    };
+    let sample_x = (((chunk_x * 32 + off_x) / 2) >> 2) as i32;
+    let sample_z = (((chunk_z * 32 + off_z) / 2) >> 2) as i32;
+    let id = modern_biome_at_scale0(g, sample_x, 319 >> 2, sample_z);
+    if id < 0 {
+        return false;
+    }
+    is_viable_feature_biome(g.mc, StructureType::Outpost, id)
 }
 
 /// Cubiomes' `getBiomeAt(g, 0, x, y, z)` for 1.18+ Overworld
