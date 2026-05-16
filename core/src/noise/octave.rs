@@ -216,12 +216,17 @@ impl OctaveNoise {
     /// `sampleOctaveAmp`.
     #[must_use]
     pub fn sample_amp(&self, x: f64, y: f64, z: f64, yamp: f64, ymin: f64, ydefault: bool) -> f64 {
+        use crate::biomenoise::surface::maintain_precision;
         let mut v = 0.0;
         for p in &self.octaves {
             let lf = p.lacunarity;
-            let ax = x * lf;
-            let ay = if ydefault { -p.b } else { y * lf };
-            let az = z * lf;
+            let ax = maintain_precision(x * lf);
+            let ay = if ydefault {
+                -p.b
+            } else {
+                maintain_precision(y * lf)
+            };
+            let az = maintain_precision(z * lf);
             v += p.amplitude * p.sample(ax, ay, az, yamp * lf, ymin * lf);
         }
         v

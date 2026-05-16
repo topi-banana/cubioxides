@@ -1228,6 +1228,29 @@ uint64_t cubiomes_call_get_min_layer_cache_size(int mc, int entry, int sx, int s
     return (uint64_t) getMinLayerCacheSize(&ls.layers[entry], sx, sz);
 }
 
+/* genBiomeNoiseBetaScaled wrapper. Initialises a Generator at
+ * Beta-era `mc`, applies seed, then runs gen_biomes. Cubiomes
+ * decides between simple/full paths internally based on
+ * NO_BETA_OCEAN flag and r.scale. */
+int cubiomes_call_gen_beta_biomes(int mc, uint64_t seed, uint32_t flags,
+                                  int scale, int rx, int rz,
+                                  int sx, int sz, int *out) {
+    Generator g;
+    setupGenerator(&g, mc, flags);
+    applySeed(&g, DIM_OVERWORLD, seed);
+    Range r;
+    r.scale = scale; r.x = rx; r.z = rz;
+    r.sx = sx; r.sz = sz; r.y = 0; r.sy = 1;
+    int *cache = allocCache(&g, r);
+    if (!cache) return -1;
+    int err = genBiomes(&g, cache, r);
+    if (err == 0) {
+        for (int i = 0; i < sx * sz; i++) out[i] = cache[i];
+    }
+    free(cache);
+    return err;
+}
+
 /* getBiomeCenters wrapper. Returns the count `n`; pos and sizes
  * are written into the caller's buffers (assumed nmax-sized). */
 int cubiomes_call_get_biome_centers(int mc, uint64_t seed,

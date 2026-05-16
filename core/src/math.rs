@@ -78,6 +78,37 @@ pub fn lerp3(
     lerp(dz, lo, hi)
 }
 
+/// 3D interpolation across 4 vertical "columns" of `[lo, hi]` pairs
+/// at the corners of a unit square. Matches cubiomes' static
+/// `lerp4` in `biomenoise.c`:
+///
+/// ```text
+/// b00 = a[0] + (a[1] - a[0]) * dy
+/// b01 = b[0] + (b[1] - b[0]) * dy
+/// b10 = c[0] + (c[1] - c[0]) * dy
+/// b11 = d[0] + (d[1] - d[0]) * dy
+/// return lerp(dx, lerp(dz, b00, b10), lerp(dz, b01, b11))
+/// ```
+#[inline]
+#[must_use]
+pub fn lerp4(
+    a: &[f64; 2],
+    b: &[f64; 2],
+    c: &[f64; 2],
+    d: &[f64; 2],
+    dy: f64,
+    dx: f64,
+    dz: f64,
+) -> f64 {
+    let b00 = a[0] + (a[1] - a[0]) * dy;
+    let b01 = b[0] + (b[1] - b[0]) * dy;
+    let b10 = c[0] + (c[1] - c[0]) * dy;
+    let b11 = d[0] + (d[1] - d[0]) * dy;
+    let b0 = b00 + (b10 - b00) * dz;
+    let b1 = b01 + (b11 - b01) * dz;
+    b0 + (b1 - b0) * dx
+}
+
 /// Linear interpolation, clamped to `[from, to]`.
 ///
 /// Matches cubiomes' `clampedLerp`.

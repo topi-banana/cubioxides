@@ -1209,6 +1209,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("biome_centers fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_beta_gen_biomes_fixture(&fixtures_dir.join("beta_gen_biomes.bin")) {
+        eprintln!("beta_gen_biomes fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -4672,6 +4676,62 @@ fn write_biome_centers_fixture(path: &Path) -> std::io::Result<()> {
         }
         for v in &sizes {
             file.write_all(&v.to_le_bytes())?;
+        }
+    }
+    file.flush()
+}
+
+/// `genBiomes` Beta-path payload (kind = 83). Per-record:
+/// `mc i32, seed u64, flags u32, scale i32, rx i32, rz i32,
+///  sx i32, sz i32, err i32, ids [i32; sx*sz]`. Variable length
+/// per record (length-prefixed via (sx, sz)).
+fn write_beta_gen_biomes_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (i32, u64, u32, i32, i32, i32, i32, i32);
+    // NOTE: Cubiomes' samplePerlinBeta17Terrain has out-of-bounds reads
+    // (UB but platform-stable); when `snb=Some` is in play the result
+    // diverges from a bounds-checked Rust port. So we only fixture the
+    // `snb=None` / NO_BETA_OCEAN cases here.
+    const NO_BETA_OCEAN: u32 = 0x2;
+    let f = NO_BETA_OCEAN;
+    let cases: &[Case] = &[
+        // (mc, seed, flags, scale, rx, rz, sx, sz)
+        (1, 0xdead_beef, f, 4, 0, 0, 8, 8),
+        (1, 0xcafe_babe, f, 4, 0, 0, 8, 8),
+        (1, 0x1234_5678, f, 4, -32, -32, 16, 16),
+        // Larger area at B1_7.
+        (1, 0xdead_beef, f, 4, -64, -64, 32, 32),
+        // B1_7 at different scale (using snb=None path).
+        (1, 0xdead_beef, f, 16, 0, 0, 4, 4),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 83, total)?;
+    for &(mc, seed, flags, scale, rx, rz, sx, sz) in cases {
+        let mut ids = vec![0_i32; (sx * sz) as usize];
+        let err = unsafe {
+            ffi::cubiomes_call_gen_beta_biomes(
+                mc,
+                seed,
+                flags,
+                scale,
+                rx,
+                rz,
+                sx,
+                sz,
+                ids.as_mut_ptr(),
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&flags.to_le_bytes())?;
+        file.write_all(&scale.to_le_bytes())?;
+        file.write_all(&rx.to_le_bytes())?;
+        file.write_all(&rz.to_le_bytes())?;
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sz.to_le_bytes())?;
+        file.write_all(&err.to_le_bytes())?;
+        for id in &ids {
+            file.write_all(&id.to_le_bytes())?;
         }
     }
     file.flush()
@@ -8402,6 +8462,17 @@ mod ffi {
             cz: c_int,
             out64: *mut c_int,
         );
+        pub fn cubiomes_call_gen_beta_biomes(
+            mc: c_int,
+            seed: u64,
+            flags: u32,
+            scale: c_int,
+            rx: c_int,
+            rz: c_int,
+            sx: c_int,
+            sz: c_int,
+            out: *mut c_int,
+        ) -> c_int;
         pub fn cubiomes_call_get_biome_centers(
             mc: c_int,
             seed: u64,

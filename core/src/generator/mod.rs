@@ -362,15 +362,14 @@ impl Generator {
                     .biome_noise_beta
                     .as_ref()
                     .expect("BiomeNoiseBeta seeded");
-                // The SurfaceNoiseBeta-driven sea-level override is
-                // skipped for scale >= 4 in cubiomes (`!snb || r.scale >= 4`).
-                // The complex scale < 4 path (diagonal column-noise
-                // traversal) is deferred — panic if we land there for now.
-                assert!(
-                    r.scale >= 4 || self.flags & NO_BETA_OCEAN != 0,
-                    "Beta gen_biomes: scale < 4 with sea-level override not yet ported"
-                );
-                crate::biomenoise::beta::gen_biome_noise_beta_scaled_simple(bnb, cache, r);
+                // Cubiomes uses snb=NULL when NO_BETA_OCEAN is set, else
+                // builds a fresh SurfaceNoiseBeta from the world seed.
+                if self.flags & NO_BETA_OCEAN != 0 {
+                    crate::biomenoise::beta::gen_biome_noise_beta_scaled(bnb, None, cache, r);
+                } else {
+                    let snb = crate::biomenoise::surface_beta::SurfaceNoiseBeta::init(self.seed);
+                    crate::biomenoise::beta::gen_biome_noise_beta_scaled(bnb, Some(&snb), cache, r);
+                }
             }
         }
     }

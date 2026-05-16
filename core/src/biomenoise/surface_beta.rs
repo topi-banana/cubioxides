@@ -93,6 +93,7 @@ pub fn gen_column_noise(
 /// transform to the column samples and produce 2 final values.
 ///
 /// Bit-exact port of cubiomes' static `processColumnNoise`.
+#[allow(clippy::similar_names, clippy::manual_midpoint)]
 pub fn process_column_noise(out: &mut [f64; 2], src: &SeaLevelColumnNoiseBeta, climate: &[f64; 2]) {
     let mut humi = 1.0 - climate[0] * climate[1];
     humi *= humi;
@@ -115,33 +116,35 @@ pub fn process_column_noise(out: &mut [f64; 2], src: &SeaLevelColumnNoiseBeta, c
             cont_b / 1.4 / 2.0
         };
         cont_a = 0.0;
+    } else if cont_b > 1.0 {
+        cont_b = 1.0 / 8.0;
     } else {
-        if cont_b > 1.0 {
-            cont_b = 1.0;
-        }
         cont_b /= 8.0;
     }
-    if cont_a < 0.0 {
-        cont_a = 0.0;
-    }
-    cont_a += 0.5;
+    cont_a = if cont_a < 0.0 { 0.5 } else { cont_a + 0.5 };
     cont_b = cont_b * 17.0 / 16.0;
-    let mid = 8.5 + cont_b * 17.0;
-    for k in 0..2_usize {
-        let main = src.main_sample[k] / 10.0 + 1.0;
-        let main = main.clamp(0.0, 1.0);
-        let min_v = src.min_sample[k] / 512.0;
-        let max_v = src.max_sample[k] / 512.0;
-        let cell = if main < 1.0 {
-            // Lerp between min and max, biased by main.
-            min_v + (max_v - min_v) * main
+    cont_b = 17.0 / 2.0 + cont_b * 4.0;
+    let low = &src.min_sample;
+    let high = &src.max_sample;
+    let selector = &src.main_sample;
+    for i in 0..2_usize {
+        let proc_cont_raw = ((i as f64 + 7.0 - cont_b) * 12.0) / cont_a;
+        let proc_cont = if proc_cont_raw < 0.0 {
+            proc_cont_raw * 4.0
         } else {
-            max_v
+            proc_cont_raw
         };
-        let cell = cell - 8.0;
-        let cell = cell + cont_a * 4.0;
-        let cell = if cell > 0.0 { cell * 4.0 } else { cell };
-        out[k] = cell - mid + (k as f64) * 4.0;
+        let l_sample = low[i] / 512.0;
+        let h_sample = high[i] / 512.0;
+        let s_sample = (selector[i] / 10.0 + 1.0) / 2.0;
+        let choose_lhs = if s_sample < 0.0 {
+            l_sample
+        } else if s_sample > 1.0 {
+            h_sample
+        } else {
+            l_sample + (h_sample - l_sample) * s_sample
+        };
+        out[i] = choose_lhs - proc_cont;
     }
 }
 

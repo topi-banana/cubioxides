@@ -185,4 +185,3 @@ fn flood_fill_gen(
         n,
     ))
 }
-
