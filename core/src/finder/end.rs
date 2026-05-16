@@ -336,6 +336,52 @@ const INVERSE_DROP: [f64; 19] = [
     200.0,
 ];
 
+/// Cubiomes' 20 fixed end-gateway anchor positions, in canonical
+/// order before the per-seed shuffle. Mirrors the static `fixed[]`
+/// array in `getFixedEndGateways`.
+const FIXED_END_GATEWAYS: [(i32, i32); 20] = [
+    (96, 0),
+    (91, 29),
+    (77, 56),
+    (56, 77),
+    (29, 91),
+    (-1, 96),
+    (-30, 91),
+    (-57, 77),
+    (-78, 56),
+    (-92, 29),
+    (-96, -1),
+    (-92, -30),
+    (-78, -57),
+    (-57, -78),
+    (-30, -92),
+    (0, -96),
+    (29, -92),
+    (56, -78),
+    (77, -57),
+    (91, -30),
+];
+
+/// `getFixedEndGateways(mc, seed, src)` — fill `src` with the 20
+/// fixed end-gateway anchor positions in the order determined by
+/// the seed's Fisher-Yates shuffle. The `mc` argument is ignored;
+/// cubiomes accepts it for API uniformity.
+pub fn get_fixed_end_gateways(_mc: MCVersion, seed: u64, src: &mut [crate::finder::Pos; 20]) {
+    let mut order: [u8; 20] = [
+        19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
+    ];
+    let mut rng = JavaRng::new(seed);
+    for i in 0..20_u32 {
+        let j = 19 - rng.next_int((20 - i) as i32) as usize;
+        order.swap(i as usize, j);
+    }
+    for (slot, &idx) in src.iter_mut().zip(order.iter()) {
+        let (px, pz) = FIXED_END_GATEWAYS[idx as usize];
+        slot.x = px;
+        slot.z = pz;
+    }
+}
+
 /// `isEndChunkEmpty(en, sn, seed, chunkX, chunkZ)` — return `true`
 /// (cubiomes' 1) when the chunk has no End surface blocks, else
 /// `false` (cubiomes' 0).

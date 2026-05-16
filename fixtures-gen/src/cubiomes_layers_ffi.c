@@ -209,6 +209,15 @@ int cubiomes_call_is_viable_structure_pos(int mc, int dim, int structure_type,
     return isViableStructurePos(structure_type, &g, x, z, flags);
 }
 
+void cubiomes_call_get_fixed_end_gateways(int mc, uint64_t seed, int *out_xz) {
+    Pos src[20];
+    getFixedEndGateways(mc, seed, src);
+    for (int i = 0; i < 20; i++) {
+        out_xz[i * 2 + 0] = src[i].x;
+        out_xz[i * 2 + 1] = src[i].z;
+    }
+}
+
 int cubiomes_call_get_variant(int structure_type, int mc, uint64_t seed, int x,
                               int z, int biome_id, int *out) {
     StructureVariant sv;

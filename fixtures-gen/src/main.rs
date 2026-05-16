@@ -688,6 +688,11 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("get_variant fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_fixed_end_gateways_fixture(&fixtures_dir.join("fixed_end_gateways.bin"))
+    {
+        eprintln!("fixed_end_gateways fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2170,6 +2175,55 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `getFixedEndGateways` parity record (kind = 69). The 20-position
+/// output is stored as two `[i32; 20]` halves (Pod's auto-impl tops
+/// out at length 32).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct FixedEndGatewaysRecord {
+    pub mc: i32,
+    pub pad: i32,
+    pub seed: u64,
+    pub xs: [i32; 20],
+    pub zs: [i32; 20],
+}
+
+fn write_fixed_end_gateways_fixture(path: &Path) -> std::io::Result<()> {
+    // mc is ignored by cubiomes; pick a single representative.
+    let mc_pool: [i32; 3] = [17, 22, 28];
+    let per_mc: u64 = 64;
+    let total = mc_pool.len() as u64 * per_mc;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 69, total)?;
+
+    let mut rng_state: u64 = 0xface_1234_5678_b00b;
+    for &mc in &mc_pool {
+        for _ in 0..per_mc {
+            rng_state = lcg_step(rng_state);
+            let seed = rng_state;
+            let mut buf = [0_i32; 40];
+            unsafe {
+                ffi::cubiomes_call_get_fixed_end_gateways(mc, seed, buf.as_mut_ptr());
+            }
+            let mut xs = [0_i32; 20];
+            let mut zs = [0_i32; 20];
+            for i in 0..20 {
+                xs[i] = buf[i * 2];
+                zs[i] = buf[i * 2 + 1];
+            }
+            let rec = FixedEndGatewaysRecord {
+                mc,
+                pad: 0,
+                seed,
+                xs,
+                zs,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
 }
 
 /// `getVariant` parity record (kind = 68). Captures the 11
@@ -5214,6 +5268,7 @@ mod ffi {
             biome_id: c_int,
             out: *mut c_int,
         ) -> c_int;
+        pub fn cubiomes_call_get_fixed_end_gateways(mc: c_int, seed: u64, out_xz: *mut c_int);
         pub fn cubiomes_call_get_optimal_afk(
             px: *mut c_int,
             pz: *mut c_int,
