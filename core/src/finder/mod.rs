@@ -40,6 +40,10 @@ pub mod variant;
 pub mod viability;
 pub mod village_houses;
 
+pub use biome_filter::{BiomeFilter, setup_biome_filter};
+pub use check_for_biomes::{
+    CheckForBiomesResult, approx_prefilter_at_layer, check_for_biomes, check_for_biomes_at_layer,
+};
 pub use end::{
     EndIsland, get_end_islands, get_fixed_end_gateways, get_linked_gateway_chunk,
     get_linked_gateway_pos, is_end_chunk_empty, map_end_island_height,
