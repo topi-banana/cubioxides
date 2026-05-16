@@ -1219,6 +1219,14 @@ void cubiomes_call_gen_potential(int mc, int layer_id, uint32_t flags, int biome
 int cubiomes_debug_is_overworld(int mc, int id) { return isOverworld(mc, id); }
 int cubiomes_debug_biome_exists(int mc, int id) { return biomeExists(mc, id); }
 
+/* getMinLayerCacheSize wrapper. Sets up the layer stack at `mc`,
+ * then queries the cache size at `entry` for an `sx × sz` area. */
+uint64_t cubiomes_call_get_min_layer_cache_size(int mc, int entry, int sx, int sz) {
+    LayerStack ls;
+    setupLayerStack(&ls, mc, 0);
+    return (uint64_t) getMinLayerCacheSize(&ls.layers[entry], sx, sz);
+}
+
 /* setupBiomeFilter wrapper. Returns the entire BiomeFilter struct as
  * a flat array of 29 u64 (28 mask fields + flags + special_cnt packed). */
 void cubiomes_call_setup_biome_filter(int mc, uint32_t flags,

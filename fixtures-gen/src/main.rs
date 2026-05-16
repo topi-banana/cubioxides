@@ -1173,6 +1173,11 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("biome_filter fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_min_layer_cache_fixture(&fixtures_dir.join("min_layer_cache_size.bin"))
+    {
+        eprintln!("min_layer_cache_size fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -4018,6 +4023,47 @@ fn write_biome_filter_fixture(path: &Path) -> std::io::Result<()> {
         }
         file.write_all(&special_cnt.to_le_bytes())?;
         file.write_all(&out_flags.to_le_bytes())?;
+    }
+    file.flush()
+}
+
+/// `getMinLayerCacheSize` payload (kind = 91). Per-record:
+/// `mc_ord i32`, `entry i32`, `sx i32`, `sz i32`, `cache_size u64`.
+fn write_min_layer_cache_fixture(path: &Path) -> std::io::Result<()> {
+    // (mc, entry layer, sx, sz). Spans every layer that has a stable
+    // LayerId in our Rust enum, across a few sizes and MC versions.
+    type Case = (i32, i32, i32, i32);
+    let cases: &[Case] = &[
+        // Scale 4 entries (RiverMix4 = 47) across 1.7–1.17.
+        (10, 47, 16, 16),
+        (10, 47, 32, 32),
+        (17, 47, 16, 16),
+        (20, 47, 32, 32),
+        // Scale 16 entries (Shore16 = 34).
+        (17, 34, 8, 8),
+        (10, 34, 16, 16),
+        // Scale 64 entries (Hills64 = 29 / BiomeEdge64 = 25).
+        (17, 25, 4, 4),
+        (17, 29, 16, 16),
+        // Scale 256 entries (Biome256 = 21).
+        (17, 21, 4, 4),
+        // Scale 4096 entries (Continent4096 = 0).
+        (17, 0, 2, 2),
+        // Voronoi1 (56) at scale 1.
+        (17, 56, 8, 8),
+        // OceanMix4 (55).
+        (17, 55, 16, 16),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 91, total)?;
+    for &(mc, entry, sx, sz) in cases {
+        let cache_size = unsafe { ffi::cubiomes_call_get_min_layer_cache_size(mc, entry, sx, sz) };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&entry.to_le_bytes())?;
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sz.to_le_bytes())?;
+        file.write_all(&cache_size.to_le_bytes())?;
     }
     file.flush()
 }
@@ -7705,6 +7751,12 @@ mod ffi {
         );
         pub fn cubiomes_debug_is_overworld(mc: c_int, id: c_int) -> c_int;
         pub fn cubiomes_debug_biome_exists(mc: c_int, id: c_int) -> c_int;
+        pub fn cubiomes_call_get_min_layer_cache_size(
+            mc: c_int,
+            entry: c_int,
+            sx: c_int,
+            sz: c_int,
+        ) -> u64;
         pub fn cubiomes_call_setup_biome_filter(
             mc: c_int,
             flags: u32,

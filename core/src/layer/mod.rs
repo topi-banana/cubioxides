@@ -7,6 +7,7 @@
 //! (`Layer`, `LayerStack`, the DAG dispatch) land in later M3
 //! sub-stages as more `mapfunc_t`s come online.
 
+pub mod cache;
 pub mod dispatch;
 pub mod ops;
 pub mod stack;
