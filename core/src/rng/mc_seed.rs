@@ -53,6 +53,21 @@ pub const fn mc_first_is_zero(s: u64, m: i32) -> bool {
 /// Coordinates are sign-extended through `i32 -> i64 -> u64` to match
 /// cubiomes' `getChunkSeed`, which uses `uint64_t` arithmetic on `int`
 /// inputs via C's implicit promotion rules.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::rng::mc_seed::get_chunk_seed;
+///
+/// // Same start_seed + coords → same chunk seed every time. The
+/// // cell-keyed RNG that every layer-evaluation `mc_step_seed` chain
+/// // hangs off of starts here.
+/// let a = get_chunk_seed(0xdead_beef, 12, 34);
+/// let b = get_chunk_seed(0xdead_beef, 12, 34);
+/// assert_eq!(a, b);
+/// // And different (x, z) almost always yield different seeds.
+/// assert_ne!(a, get_chunk_seed(0xdead_beef, 12, 35));
+/// ```
 #[inline]
 #[must_use]
 pub const fn get_chunk_seed(start_seed: u64, x: i32, z: i32) -> u64 {
