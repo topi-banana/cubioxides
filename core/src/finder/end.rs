@@ -336,6 +336,176 @@ const INVERSE_DROP: [f64; 19] = [
     200.0,
 ];
 
+/// `getLinkedGatewayChunk(en, sn, seed, src, dst)` — return the
+/// chunk position of the End-gateway-linked island reachable from
+/// `src`. Mirrors cubiomes' function from `finders.c`.
+///
+/// Walks a ray from the End origin through `src` at radius 1024
+/// blocks (the cubiomes gateway-link radius), then either steps
+/// forward or backward in 16-block increments looking for the
+/// first non-empty / last non-empty chunk. The optional `dst` is
+/// filled with the final ray-anchor block position.
+#[must_use]
+pub fn get_linked_gateway_chunk(
+    en: &EndNoise,
+    sn: &SurfaceNoise,
+    seed: u64,
+    src: crate::finder::Pos,
+    dst: Option<&mut crate::finder::Pos>,
+) -> crate::finder::Pos {
+    let mag = ((src.x as f64) * (src.x as f64) + (src.z as f64) * (src.z as f64)).sqrt();
+    let invr = 1.0 / mag;
+    let mut dx = src.x as f64 * invr;
+    let mut dz = src.z as f64 * invr;
+    let mut px = dx * 1024.0;
+    let mut pz = dz * 1024.0;
+    dx *= 16.0;
+    dz *= 16.0;
+
+    let mut c = crate::finder::Pos {
+        x: (px.floor() as i32) >> 4,
+        z: (pz.floor() as i32) >> 4,
+    };
+
+    if is_end_chunk_empty(en, sn, seed, c.x, c.z) {
+        // Walk forward looking for the first non-empty chunk.
+        for _ in 0..15 {
+            px += dx;
+            pz += dz;
+            let qx = (px.floor() as i32) >> 4;
+            let qz = (pz.floor() as i32) >> 4;
+            if qx == c.x && qz == c.z {
+                continue;
+            }
+            c.x = qx;
+            c.z = qz;
+            if !is_end_chunk_empty(en, sn, seed, c.x, c.z) {
+                break;
+            }
+        }
+    } else {
+        // Walk backward looking for the last non-empty chunk.
+        for _ in 0..15 {
+            px -= dx;
+            pz -= dz;
+            let qx = (px.floor() as i32) >> 4;
+            let qz = (pz.floor() as i32) >> 4;
+            if is_end_chunk_empty(en, sn, seed, qx, qz) {
+                break;
+            }
+            c.x = qx;
+            c.z = qz;
+        }
+    }
+
+    if let Some(d) = dst {
+        d.x = px.floor() as i32;
+        d.z = pz.floor() as i32;
+    }
+    c
+}
+
+/// `getLinkedGatewayPos(en, sn, seed, src)` — return the block
+/// position of the linked end-gateway destination for `src`.
+///
+/// Bit-exact port of cubiomes' function from `finders.c`. For
+/// MC > 1.16 the destination is the chunk's `(15, 15)` corner.
+/// For MC ≤ 1.16 the search finds the highest non-empty cell
+/// inside the chunk (via `mapEndSurfaceHeight` + `mapEndIslandHeight`)
+/// then expands to a 33×33 area centred on `(dst.x-16, dst.z-16)`
+/// for the final highest-point selection.
+#[must_use]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+pub fn get_linked_gateway_pos(
+    en: &EndNoise,
+    sn: &SurfaceNoise,
+    seed: u64,
+    src: crate::finder::Pos,
+) -> crate::finder::Pos {
+    let mut ymin: i32 = 0;
+    let mut dst = crate::finder::Pos { x: 0, z: 0 };
+    let c = get_linked_gateway_chunk(en, sn, seed, src, Some(&mut dst));
+
+    let mut y = vec![0.0_f32; 33 * 33];
+
+    if en.mc.is_at_least(MCVersion::V1_17) {
+        // 1.17+: gateway lands at the (15, 15) corner of the chunk.
+        dst.x = c.x * 16 + 15;
+        dst.z = c.z * 16 + 15;
+    } else {
+        crate::biomenoise::end_surface::map_end_surface_height(
+            &mut y,
+            en,
+            sn,
+            c.x * 16,
+            c.z * 16,
+            16,
+            16,
+            1,
+            30,
+        );
+        map_end_island_height(&mut y, en, seed, c.x * 16, c.z * 16, 16, 16, 1);
+
+        let mut d: u64 = 0;
+        for j in 0..16_i32 {
+            for i in 0..16_i32 {
+                let v = y[(j * 16 + i) as usize] as i32;
+                if v < 30 {
+                    continue;
+                }
+                let dxx = (16 * c.x + i) as i64 as u64;
+                let dzz = (16 * c.z + j) as i64 as u64;
+                let dr = dxx
+                    .wrapping_mul(dxx)
+                    .wrapping_add(dzz.wrapping_mul(dzz))
+                    .wrapping_add((v as i64 as u64).wrapping_mul(v as i64 as u64));
+                if dr > d {
+                    d = dr;
+                    dst.x = dxx as i32;
+                    dst.z = dzz as i32;
+                }
+            }
+        }
+        for i in 0..16 * 16 {
+            if y[i] as f64 > ymin as f64 {
+                ymin = y[i].floor() as i32;
+            }
+        }
+    }
+
+    // 33×33 area centred on (dst.x-16, dst.z-16) for the final
+    // highest-point selection.
+    let sp = crate::finder::Pos {
+        x: dst.x - 16,
+        z: dst.z - 16,
+    };
+    y.fill(0.0);
+    map_end_island_height(&mut y, en, seed, sp.x, sp.z, 33, 33, 1);
+    for i in 0..33 * 33 {
+        if y[i] as f64 > ymin as f64 {
+            ymin = y[i].floor() as i32;
+        }
+    }
+    crate::biomenoise::end_surface::map_end_surface_height(
+        &mut y, en, sn, sp.x, sp.z, 33, 33, 1, ymin,
+    );
+    map_end_island_height(&mut y, en, seed, sp.x, sp.z, 33, 33, 1);
+
+    let mut best: f32 = -1.0;
+    for i in 0..33_i32 {
+        for j in 0..33_i32 {
+            let v = y[(j * 33 + i) as usize];
+            if v <= best {
+                continue;
+            }
+            best = v;
+            dst.x = sp.x + i;
+            dst.z = sp.z + j;
+        }
+    }
+    dst
+}
+
 /// Cubiomes' 20 fixed end-gateway anchor positions, in canonical
 /// order before the per-seed shuffle. Mirrors the static `fixed[]`
 /// array in `getFixedEndGateways`.

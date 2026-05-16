@@ -693,6 +693,11 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("fixed_end_gateways fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_linked_gateway_pos_fixture(&fixtures_dir.join("linked_gateway_pos.bin"))
+    {
+        eprintln!("linked_gateway_pos fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2175,6 +2180,71 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `getLinkedGatewayPos` parity record (kind = 70). Each record
+/// captures the resolved gateway destination for a (mc, seed,
+/// src) input. `src` is one of the 20 fixed gateway anchor
+/// positions.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct LinkedGatewayPosRecord {
+    pub mc: i32,
+    pub src_x: i32,
+    pub src_z: i32,
+    pub dst_x: i32,
+    pub dst_z: i32,
+    pub pad: i32,
+    pub seed: u64,
+}
+
+fn write_linked_gateway_pos_fixture(path: &Path) -> std::io::Result<()> {
+    // Cover the three significant code paths:
+    //   - 1.13/1.14 (MC ≤ 1.16): full surface-height search
+    //   - 1.17+ (MC > MC_1_16): trivial (15, 15) corner
+    //   - 1.18+: same trivial path with the modern btree.
+    // Each call does several `isEndChunkEmpty` + 33×33 surface-height
+    // generations, so keep the record count small (slow fixture-gen).
+    let mc_pool: [i32; 4] = [17, 20, 22, 28];
+    // Pick 4 of the 20 fixed gateway anchors (covers a range of angles).
+    let anchors: [(i32, i32); 4] = [(96, 0), (-1, 96), (-96, -1), (0, -96)];
+    let per_seed: u64 = 8;
+    let total = (mc_pool.len() * anchors.len()) as u64 * per_seed;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 70, total)?;
+
+    let mut rng_state: u64 = 0xface_b00b_face_5eed;
+    for &mc in &mc_pool {
+        for &(sx, sz) in &anchors {
+            for _ in 0..per_seed {
+                rng_state = lcg_step(rng_state);
+                let seed = rng_state;
+                let mut dx: c_int = 0;
+                let mut dz: c_int = 0;
+                unsafe {
+                    ffi::cubiomes_call_get_linked_gateway_pos(
+                        mc,
+                        seed,
+                        sx,
+                        sz,
+                        std::ptr::from_mut(&mut dx),
+                        std::ptr::from_mut(&mut dz),
+                    );
+                }
+                let rec = LinkedGatewayPosRecord {
+                    mc,
+                    src_x: sx,
+                    src_z: sz,
+                    dst_x: dx,
+                    dst_z: dz,
+                    pad: 0,
+                    seed,
+                };
+                file.write_all(bytemuck::bytes_of(&rec))?;
+            }
+        }
+    }
+    file.flush()
 }
 
 /// `getFixedEndGateways` parity record (kind = 69). The 20-position
@@ -5316,6 +5386,14 @@ mod ffi {
             out: *mut c_int,
         ) -> c_int;
         pub fn cubiomes_call_get_fixed_end_gateways(mc: c_int, seed: u64, out_xz: *mut c_int);
+        pub fn cubiomes_call_get_linked_gateway_pos(
+            mc: c_int,
+            seed: u64,
+            src_x: c_int,
+            src_z: c_int,
+            out_x: *mut c_int,
+            out_z: *mut c_int,
+        );
         pub fn cubiomes_call_get_optimal_afk(
             px: *mut c_int,
             pz: *mut c_int,

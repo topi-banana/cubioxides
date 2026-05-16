@@ -209,6 +209,18 @@ int cubiomes_call_is_viable_structure_pos(int mc, int dim, int structure_type,
     return isViableStructurePos(structure_type, &g, x, z, flags);
 }
 
+void cubiomes_call_get_linked_gateway_pos(int mc, uint64_t seed, int src_x,
+                                          int src_z, int *out_x, int *out_z) {
+    EndNoise en;
+    setEndSeed(&en, mc, seed);
+    SurfaceNoise sn;
+    initSurfaceNoise(&sn, DIM_END, seed);
+    Pos src = {src_x, src_z};
+    Pos dst = getLinkedGatewayPos(&en, &sn, seed, src);
+    *out_x = dst.x;
+    *out_z = dst.z;
+}
+
 void cubiomes_call_get_fixed_end_gateways(int mc, uint64_t seed, int *out_xz) {
     Pos src[20];
     getFixedEndGateways(mc, seed, src);

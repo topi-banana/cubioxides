@@ -26,7 +26,8 @@ pub mod variant;
 pub mod viability;
 
 pub use end::{
-    EndIsland, get_end_islands, get_fixed_end_gateways, is_end_chunk_empty, map_end_island_height,
+    EndIsland, get_end_islands, get_fixed_end_gateways, get_linked_gateway_chunk,
+    get_linked_gateway_pos, is_end_chunk_empty, map_end_island_height,
 };
 pub use locate_biome::{id_matches, locate_biome};
 pub use mineshaft::get_mineshafts;
