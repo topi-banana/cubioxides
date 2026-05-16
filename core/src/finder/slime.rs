@@ -10,6 +10,17 @@ use crate::rng::JavaRng;
 
 /// Returns `true` iff the chunk at `(chunk_x, chunk_z)` is a slime
 /// chunk for the given world `seed`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::finder::is_slime_chunk;
+///
+/// // Cubiomes' deterministic slime-chunk classifier — same answer
+/// // for the same (seed, chunk_x, chunk_z) on every platform.
+/// // About 10 % of chunks at any given seed are slime chunks.
+/// let _is_slime = is_slime_chunk(0xdead_beef, 0, 0);
+/// ```
 #[must_use]
 pub fn is_slime_chunk(seed: u64, chunk_x: i32, chunk_z: i32) -> bool {
     // cubiomes' arithmetic mixes 32-bit and 64-bit signed operands;
