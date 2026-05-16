@@ -1113,6 +1113,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("struct2str fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_mc2str_fixture(&fixtures_dir.join("mc2str.bin")) {
+        eprintln!("mc2str fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3480,6 +3484,50 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
             p1x,
             p1z,
             ids: ids_arr,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `mc2str` parity record (kind = 92). One record per MC ord.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct Mc2StrRecord {
+    pub mc: i32,
+    pub name_len: i32,
+    pub has_name: i32,
+    pub padding: i32,
+    pub name: [u8; 32],
+}
+
+fn write_mc2str_fixture(path: &Path) -> std::io::Result<()> {
+    // 0..30 covers Undef..V1_21 plus a few invalid ords for "?".
+    let mcs: Vec<i32> = (0..30).collect();
+    let total = mcs.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 92, total)?;
+    for &mc in &mcs {
+        let mut name = [0u8; 32];
+        let mut name_len: i32 = 0;
+        let mut has_name: i32 = 0;
+        unsafe {
+            let ptr = ffi::mc2str(mc);
+            if !ptr.is_null() {
+                has_name = 1;
+                let cstr = CStr::from_ptr(ptr);
+                let bytes = cstr.to_bytes();
+                let n = bytes.len().min(name.len());
+                name[..n].copy_from_slice(&bytes[..n]);
+                name_len = bytes.len() as i32;
+            }
+        }
+        let rec = Mc2StrRecord {
+            mc,
+            name_len,
+            has_name,
+            padding: 0,
+            name,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
     }

@@ -106,6 +106,49 @@ impl MCVersion {
     pub const fn is_before(self, other: Self) -> bool {
         self.ord() < other.ord()
     }
+
+    /// `mc2str(mc)` — return cubiomes' display name for this version,
+    /// or `None` for [`Self::Undef`].
+    ///
+    /// Bit-exact port of `cubiomes/util.c::mc2str`. Mirrors cubiomes'
+    /// formatting (`"1.21 WD"` for the Winter Drop, `"Beta 1.7"` /
+    /// `"Beta 1.8"` for the pre-release versions, `"1.16.1"` /
+    /// `"1.19.2"` / `"1.21.1"` / `"1.21.3"` for the specific patch
+    /// versions that cubiomes treats as distinct).
+    #[must_use]
+    pub const fn name(self) -> Option<&'static str> {
+        Some(match self {
+            Self::B1_7 => "Beta 1.7",
+            Self::B1_8 => "Beta 1.8",
+            Self::V1_0 => "1.0",
+            Self::V1_1 => "1.1",
+            Self::V1_2 => "1.2",
+            Self::V1_3 => "1.3",
+            Self::V1_4 => "1.4",
+            Self::V1_5 => "1.5",
+            Self::V1_6 => "1.6",
+            Self::V1_7 => "1.7",
+            Self::V1_8 => "1.8",
+            Self::V1_9 => "1.9",
+            Self::V1_10 => "1.10",
+            Self::V1_11 => "1.11",
+            Self::V1_12 => "1.12",
+            Self::V1_13 => "1.13",
+            Self::V1_14 => "1.14",
+            Self::V1_15 => "1.15",
+            Self::V1_16_1 => "1.16.1",
+            Self::V1_16 => "1.16",
+            Self::V1_17 => "1.17",
+            Self::V1_18 => "1.18",
+            Self::V1_19_2 => "1.19.2",
+            Self::V1_19 => "1.19",
+            Self::V1_20 => "1.20",
+            Self::V1_21_1 => "1.21.1",
+            Self::V1_21_3 => "1.21.3",
+            Self::V1_21 => "1.21 WD",
+            Self::Undef => return None,
+        })
+    }
 }
 
 /// Minecraft dimension identifier.
