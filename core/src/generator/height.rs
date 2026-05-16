@@ -10,9 +10,11 @@
 //!   at scale 4.
 //! - **MC ≥ 1.18 Overworld**: samples `BiomeNoise.np[NP_DEPTH]` per
 //!   cell, writes `np[NP_DEPTH] / 76.0` into `y`.
-//! - **Legacy 1.0–1.17 Overworld**: 5×5 weighted kernel + per-y noise
-//!   probe (deferred to a follow-up stage — panics for now).
-//! - **Beta (B1.0–B1.7)**: `approxSurfaceBeta` (deferred — panics).
+//! - **Legacy 1.0–1.17 Overworld**: 5×5 weighted kernel over biome
+//!   depth/scale at scale 4, then per-cell octave-depth offset +
+//!   binary search for the topmost surface block.
+//! - **Beta (B1.0–B1.7)**: per-cell `approx_surface_beta` sampling at
+//!   `(cell_x*4 + 2, cell_z*4 + 2)`.
 
 #![allow(
     clippy::many_single_char_names,
@@ -70,8 +72,7 @@ const BIOME_KERNEL: [f32; 25] = [
 ///
 /// Returns 0 on success, 127 for the Nether (special convention: the
 /// `y` buffer is *not* written), 1 for unsupported End versions
-/// (MC ≤ 1.8). Panics for the legacy 1.0–1.17 Overworld path and
-/// for Beta — these branches are deferred.
+/// (MC ≤ 1.8).
 #[allow(clippy::too_many_arguments)]
 pub fn map_approx_height(
     y: &mut [f32],
