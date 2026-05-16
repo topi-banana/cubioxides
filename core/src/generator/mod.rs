@@ -561,125 +561,138 @@ impl Generator {
             return;
         }
         let en = self.end.as_ref().expect("End noise seeded");
-        if r.scale == 1 {
-            self.gen_biomes_end_voronoi(en, cache, r);
-            return;
-        }
-        let area = r.sx as usize * r.sz as usize;
-        let mut buf = vec![0_i32; area];
-        match r.scale {
-            4 => en.map_end(&mut buf, r.x, r.z, r.sx as usize, r.sz as usize),
-            16 => en.map_end_biome(&mut buf, r.x, r.z, r.sx as usize, r.sz as usize),
-            // Cubiomes' else branch: any scale not in {1, 4, 16}
-            // falls into the radial-distance pseudo-biome path. The
-            // `scale / 8.0` formula handles arbitrary positive
-            // scales, so 2/3/8/32/64/256/... all work.
-            _ => self.gen_end_large_scale(en, &mut buf, r),
-        }
-        for k in 0..r.sy as usize {
-            for (i, &v) in buf.iter().enumerate() {
-                cache[k * area + i] = Biome(v);
-            }
+        gen_end_scaled(en, cache, r, self.mc, self.sha);
+    }
+}
+
+/// `genEndScaled(en, out, r, mc, sha)` — fill `cache` with End
+/// biome ids over the requested 3D `Range`. Bit-exact port of
+/// cubiomes' `genEndScaled`: scale=1 uses voronoi (planar
+/// `mapVoronoi114` pre-1.15, `mapVoronoiPlane` 1.15+), scale=4 uses
+/// `mapEnd`, scale=16 uses `mapEndBiome`, every other scale uses
+/// the radial pseudo-biome formula `r.scale / 8.0`.
+///
+/// Callers usually want [`Generator::gen_biomes`]; this lower-level
+/// helper is for code that has an [`EndNoise`] directly.
+pub fn gen_end_scaled(en: &EndNoise, cache: &mut [Biome], r: Range, mc: MCVersion, sha: u64) {
+    if r.scale == 1 {
+        gen_end_voronoi(en, cache, r, mc, sha);
+        return;
+    }
+    let area = r.sx as usize * r.sz as usize;
+    let mut buf = vec![0_i32; area];
+    match r.scale {
+        4 => en.map_end(&mut buf, r.x, r.z, r.sx as usize, r.sz as usize),
+        16 => en.map_end_biome(&mut buf, r.x, r.z, r.sx as usize, r.sz as usize),
+        // Cubiomes' else branch: any scale not in {1, 4, 16}
+        // falls into the radial-distance pseudo-biome path. The
+        // `scale / 8.0` formula handles arbitrary positive
+        // scales, so 2/3/8/32/64/256/... all work.
+        _ => gen_end_large_scale(en, &mut buf, r, mc),
+    }
+    for k in 0..r.sy as usize {
+        for (i, &v) in buf.iter().enumerate() {
+            cache[k * area + i] = Biome(v);
         }
     }
+}
 
-    /// End `scale > 16` — cubiomes' radial-distance pseudo-biome
-    /// generator. Inside r ≤ 16384, returns `the_end`; for 1.13+ when
-    /// `(int)rsq` overflows negative, returns `end_barrens`;
-    /// otherwise samples `endHeightNoise` to choose between
-    /// `end_highlands`, `end_midlands`, `end_barrens`,
-    /// `small_end_islands`.
-    #[allow(clippy::invalid_upcast_comparisons)]
-    fn gen_end_large_scale(&self, en: &EndNoise, buf: &mut [i32], r: Range) {
-        let d = (r.scale as f32) / 8.0_f32;
-        let mc_after_113 = self.mc.is_at_least(MCVersion::V1_14);
-        for j in 0..r.sz as usize {
-            for i in 0..r.sx as usize {
-                let hx = ((i as i64 + r.x as i64) as f32 * d) as i64;
-                let hz = ((j as i64 + r.z as i64) as f32 * d) as i64;
-                let rsq = (hx * hx + hz * hz) as u64;
-                let id = if rsq <= 16384 {
-                    Biome::THE_END.0
-                } else if mc_after_113 && (rsq as i32) < 0 {
-                    // cubiomes' (int)rsq cast: lower 32 bits viewed
-                    // as signed int. Becomes negative once rsq's bit
-                    // 31 is set, which is the "rsq is very large"
-                    // shortcut path.
+/// End `scale > 16` (or any non-{1, 4, 16} scale) — cubiomes'
+/// radial-distance pseudo-biome generator. Inside r ≤ 16384, returns
+/// `the_end`; for 1.14+ when `(int)rsq` overflows negative, returns
+/// `end_barrens`; otherwise samples `endHeightNoise` to choose
+/// between `end_highlands`, `end_midlands`, `end_barrens`,
+/// `small_end_islands`.
+#[allow(clippy::invalid_upcast_comparisons)]
+pub fn gen_end_large_scale(en: &EndNoise, buf: &mut [i32], r: Range, mc: MCVersion) {
+    let d = (r.scale as f32) / 8.0_f32;
+    let mc_after_113 = mc.is_at_least(MCVersion::V1_14);
+    for j in 0..r.sz as usize {
+        for i in 0..r.sx as usize {
+            let hx = ((i as i64 + r.x as i64) as f32 * d) as i64;
+            let hz = ((j as i64 + r.z as i64) as f32 * d) as i64;
+            let rsq = (hx * hx + hz * hz) as u64;
+            let id = if rsq <= 16384 {
+                Biome::THE_END.0
+            } else if mc_after_113 && (rsq as i32) < 0 {
+                // cubiomes' (int)rsq cast: lower 32 bits viewed
+                // as signed int. Becomes negative once rsq's bit
+                // 31 is set, which is the "rsq is very large"
+                // shortcut path.
+                Biome::END_BARRENS.0
+            } else {
+                let h = en.end_height_noise(hx as i32, hz as i32, 4);
+                if h > 40.0 {
+                    Biome::END_HIGHLANDS.0
+                } else if h >= 0.0 {
+                    Biome::END_MIDLANDS.0
+                } else if h >= -20.0 {
                     Biome::END_BARRENS.0
                 } else {
-                    let h = en.end_height_noise(hx as i32, hz as i32, 4);
-                    if h > 40.0 {
-                        Biome::END_HIGHLANDS.0
-                    } else if h >= 0.0 {
-                        Biome::END_MIDLANDS.0
-                    } else if h >= -20.0 {
-                        Biome::END_BARRENS.0
-                    } else {
-                        Biome::SMALL_END_ISLANDS.0
-                    }
-                };
-                buf[j * r.sx as usize + i] = id;
-            }
+                    Biome::SMALL_END_ISLANDS.0
+                }
+            };
+            buf[j * r.sx as usize + i] = id;
         }
     }
+}
 
-    /// End scale=1 via voronoi access — mirrors cubiomes'
-    /// `genEndScaled` scale=1 branch. Pre-1.15 uses `mapVoronoi114`
-    /// (planar, expanded to 3D by replicating Y=0); 1.15+ uses
-    /// `mapVoronoiPlane` iterated per Y layer.
-    fn gen_biomes_end_voronoi(&self, en: &EndNoise, cache: &mut [Biome], r: Range) {
-        let sx = r.sx as usize;
-        let sy = r.sy as usize;
-        let sz = r.sz as usize;
-        let s = get_voronoi_src_range(r);
-        let s_sx = s.sx as usize;
-        let s_sz = s.sz as usize;
-        let mut parent = vec![0_i32; s_sx * s_sz];
-        en.map_end(&mut parent, s.x, s.z, s_sx, s_sz);
-        let parent_b: Vec<Biome> = parent.iter().map(|&v| Biome(v)).collect();
+/// End scale=1 voronoi access — `genEndScaled` scale=1 branch.
+/// Pre-1.15 uses `mapVoronoi114` (planar, expanded to 3D by
+/// replicating Y=0); 1.15+ uses `mapVoronoiPlane` iterated per Y
+/// layer (true 3D voronoi).
+pub fn gen_end_voronoi(en: &EndNoise, cache: &mut [Biome], r: Range, mc: MCVersion, sha: u64) {
+    let sx = r.sx as usize;
+    let sy = r.sy as usize;
+    let sz = r.sz as usize;
+    let s = get_voronoi_src_range(r);
+    let s_sx = s.sx as usize;
+    let s_sz = s.sz as usize;
+    let mut parent = vec![0_i32; s_sx * s_sz];
+    en.map_end(&mut parent, s.x, s.z, s_sx, s_sz);
+    let parent_b: Vec<Biome> = parent.iter().map(|&v| Biome(v)).collect();
 
-        if self.mc.is_at_least(MCVersion::V1_15) {
-            // 3D voronoi — iterate per Y layer.
-            let area = sx * sz;
-            for k in 0..sy {
-                let slice = &mut cache[k * area..(k + 1) * area];
-                crate::layer::ops::voronoi::map_voronoi_plane(
-                    self.sha,
-                    &parent_b,
-                    s.x,
-                    s.z,
-                    s_sx,
-                    s_sz,
-                    slice,
-                    r.x,
-                    r.y + k as i32,
-                    r.z,
-                    sx,
-                    sz,
-                );
-            }
-        } else {
-            // Planar voronoi — 2D output then replicate across Y.
-            let area = sx * sz;
-            let mut out_plane = vec![Biome::NONE; area];
-            crate::layer::ops::voronoi::map_voronoi114(
-                crate::rng::mc_seed::get_layer_salt(10),
-                0,
+    if mc.is_at_least(MCVersion::V1_15) {
+        // 3D voronoi — iterate per Y layer.
+        let area = sx * sz;
+        for k in 0..sy {
+            let slice = &mut cache[k * area..(k + 1) * area];
+            crate::layer::ops::voronoi::map_voronoi_plane(
+                sha,
                 &parent_b,
                 s.x,
                 s.z,
                 s_sx,
                 s_sz,
-                &mut out_plane,
+                slice,
                 r.x,
+                r.y + k as i32,
                 r.z,
                 sx,
                 sz,
             );
-            for k in 0..sy {
-                for i in 0..area {
-                    cache[k * area + i] = out_plane[i];
-                }
+        }
+    } else {
+        // Planar voronoi — 2D output then replicate across Y.
+        let area = sx * sz;
+        let mut out_plane = vec![Biome::NONE; area];
+        crate::layer::ops::voronoi::map_voronoi114(
+            crate::rng::mc_seed::get_layer_salt(10),
+            0,
+            &parent_b,
+            s.x,
+            s.z,
+            s_sx,
+            s_sz,
+            &mut out_plane,
+            r.x,
+            r.z,
+            sx,
+            sz,
+        );
+        for k in 0..sy {
+            for i in 0..area {
+                cache[k * area + i] = out_plane[i];
             }
         }
     }
