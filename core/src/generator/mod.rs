@@ -220,11 +220,14 @@ impl Generator {
     fn biome_at_overworld(&self, scale: i32, x: i32, y: i32, z: i32) -> Biome {
         match self.overworld_kind {
             OverworldKind::Beta => {
-                self.biome_noise_beta
-                    .as_ref()
-                    .expect("Beta noise seeded")
-                    .sample(x, z)
-                    .0
+                // cubiomes' `getBiomeAt` for Beta builds a 1×1 Range
+                // and delegates to `genBiomeNoiseBetaScaled`, which
+                // applies `mid = scale >> 1` shifting per cell. For
+                // scale=1 the shift is zero so direct sampling at
+                // (x, z) is correct; for scale=4 cubiomes samples at
+                // (x*4+2, z*4+2). Delegate through gen_biomes so the
+                // scale factor is honoured uniformly.
+                self.biome_at_via_gen_biomes(scale, x, y, z)
             }
             OverworldKind::Layered => {
                 let stack = self.layer_stack.as_ref().expect("layer stack");
@@ -858,6 +861,20 @@ mod tests {
         let mut g = Generator::new(MCVersion::V1_18, 0);
         g.apply_seed(Dimension::End, 0xdead_beef);
         let _ = g.biome_at(64, 0, 0, 0);
+    }
+
+    #[test]
+    fn biome_at_beta_applies_scale() {
+        // Beta scale=1 samples at (x, z); scale=4 samples at
+        // (x*4+2, z*4+2). The two should generally produce different
+        // biome ids at (0, 0).
+        let mut g = Generator::new(MCVersion::B1_7, 0);
+        g.apply_seed(Dimension::Overworld, 0xdead_beef);
+        let a = g.biome_at(1, 100, 64, 100);
+        let b = g.biome_at(4, 100, 64, 100);
+        // Deterministic — running twice yields the same answer.
+        assert_eq!(a, g.biome_at(1, 100, 64, 100));
+        assert_eq!(b, g.biome_at(4, 100, 64, 100));
     }
 
     #[test]
