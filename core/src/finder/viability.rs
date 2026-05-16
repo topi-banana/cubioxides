@@ -361,15 +361,18 @@ fn viable_outpost_legacy(g: &Generator, x: i32, z: i32, chunk_x: i64, chunk_z: i
 ///     check over 29 radius with `g_monument_biomes1` (any ocean
 ///     or river).
 ///
-/// **Known divergence vs cubiomes**: cubiomes monkey-patches
-/// `mapViableBiome` and `mapViableShore` into the L_BIOME_256 /
-/// L_SHORE_16 layer slots. Those hooks return `err` (propagated as
-/// id `-1` to the final cell) when the requested area contains no
-/// oceanic biome at scale 256 / no viable biome at scale 16. Each
-/// chain call (corners + full-grid) installs the hook separately, so
-/// emulating it correctly requires per-sample early-exit integrated
-/// into `gen_biomes` / `biome_at`. Until that lands, the
-/// `viable_structure_pos` fixture excludes pre-1.18 Monument seeds.
+/// Cubiomes monkey-patches `mapViableBiome` and `mapViableShore`
+/// into `L_BIOME_256` and `L_SHORE_16`, which short-circuit the
+/// chain when the area requested at those layers contains no
+/// matching biome. For Monument:
+///   - `mapViableBiome` at `L_BIOME_256`: needs any oceanic.
+///   - `mapViableShore` at `L_SHORE_16`: needs any deep-ocean
+///     (Monument's `isViableFeatureBiome`).
+///
+/// We emulate the hooks by pre-sampling those layers over the
+/// upstream area the chain would request, computed via
+/// [`crate::layer::compute_upstream_area`]. Every chain call
+/// (4 corners + full-grid) gets its own hook fire.
 fn viable_monument_legacy(g: &Generator, chunk_x: i64, chunk_z: i64) -> bool {
     if g.mc.is_before(MCVersion::V1_8) {
         return false;
@@ -377,26 +380,157 @@ fn viable_monument_legacy(g: &Generator, chunk_x: i64, chunk_z: i64) -> bool {
     let sample_x = (chunk_x * 16 + 8) as i32;
     let sample_z = (chunk_z * 16 + 8) as i32;
     if g.mc == MCVersion::V1_8 {
-        // 1.8 path: single-sample pre-check at the chunk centre
-        // (block scale=1) — must be deep-ocean before the final
-        // radius-29 check runs.
-        let id = g.biome_at(1, sample_x, 0, sample_z).0;
+        let id = biome_at_with_monument_hooks(g, 1, sample_x, sample_z);
         if id < 0 || !Biome::is_deep_ocean_id(id) {
             return false;
         }
     } else {
-        // 1.9 - 1.17. Pre-check at scale-16 (Shore16 entry), then
-        // a 16-radius areBiomesViable over deep-ocean variants only.
-        let id = g.biome_at(16, chunk_x as i32, 0, chunk_z as i32).0;
+        let id = biome_at_with_monument_hooks(g, 16, chunk_x as i32, chunk_z as i32);
         if id < 0 || !Biome::is_deep_ocean_id(id) {
             return false;
         }
-        if !are_biomes_viable_legacy(g, sample_x, 63, sample_z, 16, G_MONUMENT_BIOMES2, 0) {
+        if !are_biomes_viable_monument(g, sample_x, 63, sample_z, 16, G_MONUMENT_BIOMES2) {
             return false;
         }
     }
-    // Always run the final 29-radius any-ocean / river check.
-    are_biomes_viable_legacy(g, sample_x, 63, sample_z, 29, G_MONUMENT_BIOMES1, 0)
+    are_biomes_viable_monument(g, sample_x, 63, sample_z, 29, G_MONUMENT_BIOMES1)
+}
+
+/// Sample `biome_at` with cubiomes' Monument hooks at `L_BIOME_256`
+/// (any oceanic) and `L_SHORE_16` (any deep-ocean) applied to the
+/// upstream area the layered chain would request. Returns `-1` if
+/// either hook would have errored out.
+fn biome_at_with_monument_hooks(g: &Generator, scale: i32, x: i32, z: i32) -> i32 {
+    let stack = match g.layer_stack.as_ref() {
+        Some(s) => s.as_ref(),
+        None => return g.biome_at(scale, x, 0, z).0,
+    };
+    let entry = match scale {
+        1 => stack.entry_1,
+        4 => stack.entry_4,
+        16 => stack.entry_16,
+        _ => return g.biome_at(scale, x, 0, z).0,
+    };
+    let Some(entry) = entry else {
+        return g.biome_at(scale, x, 0, z).0;
+    };
+    if !biome_256_area_has(stack, entry, x, z, 1, 1, Biome::is_oceanic_id) {
+        return -1;
+    }
+    if !shore_16_area_has(stack, entry, x, z, 1, 1, Biome::is_deep_ocean_id) {
+        return -1;
+    }
+    g.biome_at(scale, x, 0, z).0
+}
+
+fn biome_256_area_has(
+    stack: &crate::layer::LayerStack,
+    entry: crate::layer::LayerId,
+    x: i32,
+    z: i32,
+    w: usize,
+    h: usize,
+    pred: impl Fn(i32) -> bool,
+) -> bool {
+    use crate::layer::{LayerId, compute_upstream_area, gen_area};
+    let Some((bx, bz, bw, bh)) = compute_upstream_area(stack, entry, LayerId::Biome256, x, z, w, h)
+    else {
+        return true;
+    };
+    let mut cells = vec![Biome::NONE; bw * bh];
+    gen_area(stack, LayerId::Biome256, &mut cells, bx, bz, bw, bh);
+    cells.iter().any(|b| pred(b.0))
+}
+
+fn shore_16_area_has(
+    stack: &crate::layer::LayerStack,
+    entry: crate::layer::LayerId,
+    x: i32,
+    z: i32,
+    w: usize,
+    h: usize,
+    pred: impl Fn(i32) -> bool,
+) -> bool {
+    use crate::layer::{LayerId, compute_upstream_area, gen_area};
+    let Some((sx, sz, sw, sh)) = compute_upstream_area(stack, entry, LayerId::Shore16, x, z, w, h)
+    else {
+        return true;
+    };
+    let mut cells = vec![Biome::NONE; sw * sh];
+    gen_area(stack, LayerId::Shore16, &mut cells, sx, sz, sw, sh);
+    cells.iter().any(|b| pred(b.0))
+}
+
+/// Monument-flavoured `areBiomesViable` that applies the cubiomes
+/// `mapViableBiome` / `mapViableShore` hooks at every chain call
+/// (4 corners and the full grid).
+fn are_biomes_viable_monument(
+    g: &Generator,
+    x: i32,
+    y: i32,
+    z: i32,
+    rad: i32,
+    valid_b: u64,
+) -> bool {
+    let x1 = (x - rad) >> 2;
+    let x2 = (x + rad) >> 2;
+    let sx = (x2 - x1 + 1) as u32;
+    let z1 = (z - rad) >> 2;
+    let z2 = (z + rad) >> 2;
+    let sz = (z2 - z1 + 1) as u32;
+    let y4 = (y - rad) >> 2;
+
+    let corners = [(x1, z1), (x2, z2), (x1, z2), (x2, z1)];
+    for (cx, cz) in corners {
+        let id = biome_at_with_monument_hooks(g, 4, cx, cz);
+        if id < 0 || !crate::finder::locate_biome::id_matches(id, valid_b, 0) {
+            return false;
+        }
+    }
+
+    let Some(stack) = g.layer_stack.as_deref() else {
+        return true;
+    };
+    let Some(entry) = stack.entry_4 else {
+        return true;
+    };
+    if !biome_256_area_has(
+        stack,
+        entry,
+        x1,
+        z1,
+        sx as usize,
+        sz as usize,
+        Biome::is_oceanic_id,
+    ) {
+        return false;
+    }
+    if !shore_16_area_has(
+        stack,
+        entry,
+        x1,
+        z1,
+        sx as usize,
+        sz as usize,
+        Biome::is_deep_ocean_id,
+    ) {
+        return false;
+    }
+    let r = Range {
+        scale: 4,
+        x: x1,
+        z: z1,
+        sx,
+        sz,
+        y: y4,
+        sy: 1,
+    };
+    let mut cache = vec![Biome::default(); r.cell_count()];
+    g.gen_biomes(&mut cache, r);
+    cache.iter().take(r.cell_count()).all(|c| {
+        let id = c.0;
+        id >= 0 && crate::finder::locate_biome::id_matches(id, valid_b, 0)
+    })
 }
 
 /// Cubiomes' `g_monument_biomes2` — deep-ocean-only mask for the

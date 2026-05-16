@@ -2937,7 +2937,7 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
     // path for 1.18+), Ruined_Portal_N (1.16.1+).
     // End: End_City (1.9+), End_Gateway (1.13+).
     // Overworld 1.18+: L_feature path + Village + always-viable.
-    let combos: [(i32, i32, i32); 52] = [
+    let combos: [(i32, i32, i32); 56] = [
         // (mc, dim, structure_type)
         // Nether
         (10, -1, 18), // V1_7 Nether Fortress (returns true)
@@ -3000,11 +3000,14 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
         (21, 0, 16), // V1_17 OW Desert_Well
         // Pre-1.18 Monument: cubiomes installs mapViableBiome /
         // mapViableShore hooks at L_BIOME_256 / L_SHORE_16 that
-        // early-exit the chain when no oceanic biome is present at
-        // scale 256. Each `getBiomeAt` / `genBiomes` call triggers a
-        // separate hook fire, so per-sample emulation is required.
-        // Fixtures land in a follow-up after the per-sample hook
-        // integration into `gen_biomes` / `biome_at` is implemented.
+        // early-exit the chain when no oceanic biome (Biome256) or
+        // deep_ocean (Shore16) is in the requested area. We emulate
+        // those hooks per-call in `viable_monument_legacy` via
+        // `compute_upstream_area` (stage 14d-4).
+        (15, 0, 8), // V1_12 OW Monument
+        (17, 0, 8), // V1_14 OW Monument
+        (19, 0, 8), // V1_16_1 OW Monument
+        (21, 0, 8), // V1_17 OW Monument
         // Pre-1.18 Mansion: V1_14 + V1_17.
         (17, 0, 9), // V1_14 OW Mansion
         (21, 0, 9), // V1_17 OW Mansion
