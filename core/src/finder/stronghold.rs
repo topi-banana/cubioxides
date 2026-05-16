@@ -8,9 +8,40 @@
 
 #![allow(clippy::many_single_char_names)]
 
+use crate::biome::Biome;
 use crate::finder::Pos;
 use crate::mc_version::MCVersion;
 use crate::rng::JavaRng;
+
+/// `isStrongholdBiome(mc, id)` — does this biome allow stronghold
+/// generation on `mc`? Mirrors cubiomes' `isStrongholdBiome` from
+/// `finders.c`.
+#[must_use]
+pub fn is_stronghold_biome(mc: MCVersion, id: i32) -> bool {
+    if !Biome::is_overworld_id(mc, id) {
+        return false;
+    }
+    if Biome::is_oceanic_id(id) {
+        return false;
+    }
+    match id {
+        // plains, mushroom_fields, taiga_hills — 1.7+
+        1 | 14 | 19 => mc.is_at_least(MCVersion::V1_7),
+        // swamp — 1.6 and earlier
+        6 => !mc.is_at_least(MCVersion::V1_7),
+        // river, frozen_river, beach, snowy_beach, swamp_hills,
+        // mangrove_swamp, deep_dark — never
+        7 | 11 | 16 | 26 | 134 | 183 | 184 => false,
+        // mushroom_field_shore — 1.13+
+        15 => mc.is_at_least(MCVersion::V1_13),
+        // stone_shore — 1.17 and earlier
+        25 => !mc.is_at_least(MCVersion::V1_18),
+        // bamboo_jungle / bamboo_jungle_hills — emulates MC-199298:
+        //   1.15 and earlier or 1.18+
+        168 | 169 => !mc.is_at_least(MCVersion::V1_16_1) || mc.is_at_least(MCVersion::V1_18),
+        _ => true,
+    }
+}
 
 const PI: f64 = std::f64::consts::PI;
 

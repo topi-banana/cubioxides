@@ -124,6 +124,33 @@ impl Biome {
     /// `shrubland` (biome id 53; Alpha 1.2 – Beta 1.7 only).
     pub const SHRUBLAND: Self = Self(53);
 
+    /// `the_void` (biome id 127; 1.9+).
+    pub const THE_VOID: Self = Self(127);
+    /// `dripstone_caves` (biome id 174; 1.17+).
+    pub const DRIPSTONE_CAVES: Self = Self(174);
+    /// `lush_caves` (biome id 175; 1.17+).
+    pub const LUSH_CAVES: Self = Self(175);
+    /// `meadow` (biome id 177; 1.18+).
+    pub const MEADOW: Self = Self(177);
+    /// `grove` (biome id 178; 1.18+).
+    pub const GROVE: Self = Self(178);
+    /// `snowy_slopes` (biome id 179; 1.18+).
+    pub const SNOWY_SLOPES: Self = Self(179);
+    /// `jagged_peaks` (biome id 180; 1.18+).
+    pub const JAGGED_PEAKS: Self = Self(180);
+    /// `frozen_peaks` (biome id 181; 1.18+).
+    pub const FROZEN_PEAKS: Self = Self(181);
+    /// `stony_peaks` (biome id 182; 1.18+).
+    pub const STONY_PEAKS: Self = Self(182);
+    /// `deep_dark` (biome id 183; 1.19.2+).
+    pub const DEEP_DARK: Self = Self(183);
+    /// `mangrove_swamp` (biome id 184; 1.19.2+).
+    pub const MANGROVE_SWAMP: Self = Self(184);
+    /// `cherry_grove` (biome id 185; 1.20+).
+    pub const CHERRY_GROVE: Self = Self(185);
+    /// `pale_garden` (biome id 186; 1.21 WD+).
+    pub const PALE_GARDEN: Self = Self(186);
+
     /// Returns `true` if `id` is one of the five shallow-ocean variants
     /// (`ocean`, `frozen_ocean`, `cold_ocean`, `lukewarm_ocean`,
     /// `warm_ocean`). Mirrors cubiomes' `isShallowOcean` helper.
@@ -149,6 +176,160 @@ impl Biome {
     #[must_use]
     pub const fn is_oceanic_id(id: i32) -> bool {
         matches!(id, 0 | 10 | 24 | 44 | 45 | 46 | 47 | 48 | 49 | 50)
+    }
+
+    /// `biomeExists(mc, id)` — does this biome exist in the given
+    /// MC version? Bit-exact port of `cubiomes/biomes.c::biomeExists`.
+    /// Drives both `is_overworld_id` and the stronghold-biome mask.
+    #[must_use]
+    #[allow(clippy::too_many_lines)]
+    pub fn biome_exists(mc: crate::mc_version::MCVersion, id: i32) -> bool {
+        use crate::mc_version::MCVersion;
+        if mc.is_at_least(MCVersion::V1_18) {
+            // 1.18+: explicit allowlist plus Nether / End contiguous ranges.
+            if (170..=173).contains(&id) || (40..=43).contains(&id) {
+                return true;
+            }
+            if id == 186 {
+                return mc.is_at_least(MCVersion::V1_21);
+            }
+            if id == 185 {
+                return mc.is_at_least(MCVersion::V1_20);
+            }
+            if id == 183 || id == 184 {
+                return mc.is_at_least(MCVersion::V1_19_2);
+            }
+            return matches!(
+                id,
+                0 | 1
+                    | 2
+                    | 3
+                    | 4
+                    | 5
+                    | 6
+                    | 7
+                    | 8
+                    | 9
+                    | 10
+                    | 11
+                    | 12
+                    | 14
+                    | 16
+                    | 21
+                    | 23
+                    | 24
+                    | 25
+                    | 26
+                    | 27
+                    | 29
+                    | 30
+                    | 32
+                    | 34
+                    | 35
+                    | 36
+                    | 37
+                    | 38
+                    | 44
+                    | 45
+                    | 46
+                    | 47
+                    | 48
+                    | 49
+                    | 50
+                    | 129
+                    | 131
+                    | 132
+                    | 140
+                    | 155
+                    | 160
+                    | 163
+                    | 165
+                    | 168
+                    | 174
+                    | 175
+                    | 177
+                    | 178
+                    | 179
+                    | 180
+                    | 181
+                    | 182
+            );
+        }
+        if !mc.is_at_least(MCVersion::B1_8) {
+            // <= B1.7 — alpha/beta only.
+            return matches!(id, 0 | 1 | 2 | 4 | 5 | 6 | 10 | 12 | 35 | 51 | 52 | 53);
+        }
+        if !mc.is_at_least(MCVersion::V1_0) {
+            // B1.8: extra exclusions.
+            if matches!(id, 10 | 11 | 12 | 14 | 15 | 9) {
+                return false;
+            }
+        }
+        if !mc.is_at_least(MCVersion::V1_1) {
+            // 1.0 also excludes the_end (9), but it's already excluded above.
+            if matches!(id, 13 | 16 | 17 | 18 | 19 | 20) {
+                return false;
+            }
+        }
+
+        // General range checks.
+        // ocean..mountain_edge = 0..20: always (subject to above exclusions).
+        if (0..=20).contains(&id) {
+            return true;
+        }
+        // jungle..jungle_hills = 21..22: 1.2+
+        if (21..=22).contains(&id) {
+            return mc.is_at_least(MCVersion::V1_2);
+        }
+        // jungle_edge..badlands_plateau = 23..39: 1.7+
+        if (23..=39).contains(&id) {
+            return mc.is_at_least(MCVersion::V1_7);
+        }
+        // small_end_islands..end_barrens = 40..43: 1.9+
+        if (40..=43).contains(&id) {
+            return mc.is_at_least(MCVersion::V1_9);
+        }
+        // warm_ocean..deep_frozen_ocean = 44..50: 1.13+
+        if (44..=50).contains(&id) {
+            return mc.is_at_least(MCVersion::V1_13);
+        }
+
+        match id {
+            127 => mc.is_at_least(MCVersion::V1_9), // the_void
+            129 | 130 | 131 | 132 | 133 | 134 | 140 | 149 | 151 | 155 | 156 | 157 | 158 | 160
+            | 161 | 162 | 163 | 164 | 165 | 166 | 167 => {
+                // mutated variants — 1.7+
+                mc.is_at_least(MCVersion::V1_7)
+            }
+            168 | 169 => mc.is_at_least(MCVersion::V1_14),
+            170..=173 => mc.is_at_least(MCVersion::V1_16_1),
+            174 | 175 => mc.is_at_least(MCVersion::V1_17),
+            _ => false,
+        }
+    }
+
+    /// `isOverworld(mc, id)` — predicate `biomeExists && id is in
+    /// the Overworld dimension`. Bit-exact port of cubiomes'
+    /// `isOverworld`.
+    #[must_use]
+    pub fn is_overworld_id(mc: crate::mc_version::MCVersion, id: i32) -> bool {
+        use crate::mc_version::MCVersion;
+        if !Self::biome_exists(mc, id) {
+            return false;
+        }
+        // End + Nether ranges.
+        if (40..=43).contains(&id) || (170..=173).contains(&id) {
+            return false;
+        }
+        match id {
+            // nether_wastes / the_end / deep_warm_ocean / the_void
+            8 | 9 | 47 | 127 => false,
+            10 => !mc.is_at_least(MCVersion::V1_7) || mc.is_at_least(MCVersion::V1_13), // frozen_ocean
+            20 => !mc.is_at_least(MCVersion::V1_7), // mountain_edge
+            155 => !mc.is_at_least(MCVersion::V1_9) || mc.is_at_least(MCVersion::V1_11), // tall_birch_forest
+            174 | 175 => mc.is_at_least(MCVersion::V1_18), // dripstone/lush caves
+            _ => true,
+        }
     }
 
     /// Returns `true` if `id` is one of the nine "snowy" biomes.

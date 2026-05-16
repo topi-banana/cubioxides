@@ -25,7 +25,9 @@ pub use quadbase::{
     get_quad_hut_cst, is_quad_base_feature_24, is_quad_base_feature_24_classic,
 };
 pub use slime::is_slime_chunk;
-pub use stronghold::{StrongholdIter, init_first_stronghold, next_stronghold_no_biome};
+pub use stronghold::{
+    StrongholdIter, init_first_stronghold, is_stronghold_biome, next_stronghold_no_biome,
+};
 
 use crate::mc_version::MCVersion;
 use crate::rng::JavaRng;

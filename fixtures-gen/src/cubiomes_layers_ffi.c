@@ -63,8 +63,20 @@ int cubiomes_call_climate_to_biome(int mc, const uint64_t np[6]) {
 /* Initialise + seed a BiomeNoise in one call, sample at (x, y, z),
  * and write the (biome_id, np[6]) tuple back via the output
  * pointers. */
+#include "biomes.h"
 #include "finders.h"
 #include "quadbase.h"
+
+extern int isStrongholdBiome(int mc, int id);
+int cubiomes_call_is_stronghold_biome(int mc, int id) {
+    return isStrongholdBiome(mc, id);
+}
+int cubiomes_call_biome_exists(int mc, int id) {
+    return biomeExists(mc, id);
+}
+int cubiomes_call_is_overworld(int mc, int id) {
+    return isOverworld(mc, id);
+}
 
 int cubiomes_call_is_slime_chunk(uint64_t seed, int cx, int cz) {
     return isSlimeChunk(seed, cx, cz);

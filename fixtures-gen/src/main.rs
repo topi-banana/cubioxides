@@ -619,6 +619,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("mineshaft fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_biome_predicates_fixture(&fixtures_dir.join("biome_predicates.bin")) {
+        eprintln!("biome_predicates fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1911,6 +1915,45 @@ fn write_quadbase_fixture(path: &Path) -> std::io::Result<()> {
             low20,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// Biome predicate parity record (kind = 53). For each `(mc, id)`
+/// pair, stores cubiomes' `biomeExists`, `isOverworld`, and
+/// `isStrongholdBiome` outputs.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct BiomePredicateRecord {
+    pub mc: i32,
+    pub id: i32,
+    pub exists: i32,
+    pub is_overworld: i32,
+    pub is_stronghold: i32,
+    pub pad: i32,
+}
+
+fn write_biome_predicates_fixture(path: &Path) -> std::io::Result<()> {
+    let mc_pool: [i32; 11] = [1, 2, 3, 4, 9, 10, 15, 16, 22, 25, 28];
+    let total = mc_pool.len() as u64 * 256;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 53, total)?;
+
+    for &mc in &mc_pool {
+        for id in 0..256_i32 {
+            let exists = unsafe { ffi::cubiomes_call_biome_exists(mc, id) };
+            let is_overworld = unsafe { ffi::cubiomes_call_is_overworld(mc, id) };
+            let is_stronghold = unsafe { ffi::cubiomes_call_is_stronghold_biome(mc, id) };
+            let rec = BiomePredicateRecord {
+                mc,
+                id,
+                exists,
+                is_overworld,
+                is_stronghold,
+                pad: 0,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
     }
     file.flush()
 }
@@ -4017,6 +4060,9 @@ mod ffi {
             az: c_int,
         ) -> f32;
         pub fn cubiomes_call_get_quad_hut_cst(low20: u64) -> c_int;
+        pub fn cubiomes_call_is_stronghold_biome(mc: c_int, id: c_int) -> c_int;
+        pub fn cubiomes_call_biome_exists(mc: c_int, id: c_int) -> c_int;
+        pub fn cubiomes_call_is_overworld(mc: c_int, id: c_int) -> c_int;
         pub fn cubiomes_call_init_first_stronghold(
             mc: c_int,
             seed: u64,
