@@ -268,19 +268,31 @@ impl Generator {
         let en = self.end.as_ref().expect("End noise seeded");
         let mut out = [0i32; 1];
         match scale {
-            1 => {
-                // Voronoi → map_end at 1:4. cubiomes' pre-1.15 End
-                // path actually uses `mapVoronoi114` with the
-                // layer-salt-10 chunk seed, but matching that
-                // bit-exactly requires re-deriving the salt; we
-                // restrict scale=1 to MC ≥ 1.15 where the simpler
-                // SHA-driven `voronoi_access_3d` applies.
-                assert!(
-                    self.mc.is_at_least(MCVersion::V1_15),
-                    "Generator::biome_at: End scale=1 requires MC >= 1.15"
-                );
+            1 if self.mc.is_at_least(MCVersion::V1_15) => {
+                // 1.15+ End voronoi is SHA-driven (3D); single-cell
+                // fast path uses voronoi_access_3d + map_end at 1:4.
                 let (x4, _y4, z4) = voronoi_access_3d(self.sha, x, y, z);
                 en.map_end(&mut out, x4, z4, 1, 1);
+            }
+            1 => {
+                // Pre-1.15 End uses planar mapVoronoi114 with
+                // layerSalt(10) — defer to gen_biomes which handles
+                // it correctly. Avoids duplicating the salt-derivation
+                // logic at the single-cell call site.
+                let mut cache = [Biome(0); 1];
+                self.gen_biomes(
+                    &mut cache,
+                    Range {
+                        scale: 1,
+                        x,
+                        z,
+                        sx: 1,
+                        sz: 1,
+                        y,
+                        sy: 1,
+                    },
+                );
+                return cache[0];
             }
             4 => en.map_end(&mut out, x, z, 1, 1),
             16 => en.map_end_biome(&mut out, x, z, 1, 1),
@@ -788,6 +800,15 @@ mod tests {
         let g = Generator::new(MCVersion::V1_18, 0);
         assert_eq!(g.overworld_kind, OverworldKind::Modern);
         assert!(g.layer_stack.is_none());
+    }
+
+    #[test]
+    fn biome_at_end_scale1_pre_115_works() {
+        // Should not panic for End scale=1 on pre-1.15 MC — internally
+        // delegates to gen_biomes' planar voronoi path.
+        let mut g = Generator::new(MCVersion::V1_14, 0);
+        g.apply_seed(Dimension::End, 0xdead_beef);
+        let _ = g.biome_at(1, 100, 64, 100);
     }
 
     #[test]
