@@ -1260,6 +1260,12 @@ fn regenerate_layers() -> ExitCode {
         return ExitCode::FAILURE;
     }
     if let Err(err) =
+        write_check_for_biomes_layered_fixture(&fixtures_dir.join("check_for_biomes_layered.bin"))
+    {
+        eprintln!("check_for_biomes_layered fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
         eprintln!("viable_feature_biome fixture failed: {err}");
@@ -4541,6 +4547,234 @@ fn write_check_for_biomes_beta_fixture(path: &Path) -> std::io::Result<()> {
     let total = cases.len() as u64;
     let mut file = BufWriter::new(File::create(path)?);
     write_header(&mut file, 86, total)?;
+    for (mc, seed, dim, scale, rx, ry, rz, sx, sy, sz, flags, req, exc, any) in cases {
+        let mut req8 = [0_i32; 8];
+        let mut exc8 = [0_i32; 8];
+        let mut any8 = [0_i32; 8];
+        for (i, &v) in req.iter().enumerate() {
+            req8[i] = v;
+        }
+        for (i, &v) in exc.iter().enumerate() {
+            exc8[i] = v;
+        }
+        for (i, &v) in any.iter().enumerate() {
+            any8[i] = v;
+        }
+        let result = unsafe {
+            ffi::cubiomes_call_check_for_biomes(
+                mc,
+                seed,
+                dim,
+                scale,
+                rx,
+                ry,
+                rz,
+                sx,
+                sy,
+                sz,
+                flags,
+                req.as_ptr(),
+                req.len() as c_int,
+                exc.as_ptr(),
+                exc.len() as c_int,
+                any.as_ptr(),
+                any.len() as c_int,
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&dim.to_le_bytes())?;
+        file.write_all(&scale.to_le_bytes())?;
+        file.write_all(&rx.to_le_bytes())?;
+        file.write_all(&ry.to_le_bytes())?;
+        file.write_all(&rz.to_le_bytes())?;
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sy.to_le_bytes())?;
+        file.write_all(&sz.to_le_bytes())?;
+        file.write_all(&flags.to_le_bytes())?;
+        file.write_all(&(req.len() as i32).to_le_bytes())?;
+        file.write_all(&(exc.len() as i32).to_le_bytes())?;
+        file.write_all(&(any.len() as i32).to_le_bytes())?;
+        for v in req8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        for v in exc8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        for v in any8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        file.write_all(&result.to_le_bytes())?;
+    }
+    file.flush()
+}
+
+/// `checkForBiomes` Layered (MC 1.7-1.17) path fixture (kind = 106).
+/// Same record layout as `check_for_biomes_beta.bin`. Filter cases
+/// are restricted to single-mask filters (req-only / excl-only /
+/// any-only) to avoid cubiomes' `M_DONE`-return-2 quirk, which only
+/// triggers when both exclusion and required masks are present.
+fn write_check_for_biomes_layered_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (
+        i32,
+        u64,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        u32,
+        Vec<i32>,
+        Vec<i32>,
+        Vec<i32>,
+    );
+    // Modern biome ids (1.13+): 0=ocean, 1=plains, 4=forest,
+    // 27=birch_forest, 35=savanna, 21=jungle.
+    // MC ords: 12=V1_7, 16=V1_13, 17=V1_14, 19=V1_16_1, 21=V1_17.
+    let cases: Vec<Case> = vec![
+        // V1_16_1 scale=4 area, required plains.
+        (
+            19,
+            0xdead_beef,
+            0,
+            4,
+            0,
+            0,
+            0,
+            16,
+            1,
+            16,
+            0,
+            vec![1],
+            vec![],
+            vec![],
+        ),
+        // V1_16_1 scale=4, excluded ocean.
+        (
+            19,
+            0xdead_beef,
+            0,
+            4,
+            0,
+            0,
+            0,
+            16,
+            1,
+            16,
+            0,
+            vec![],
+            vec![0],
+            vec![],
+        ),
+        // V1_16_1 scale=4, matchany plains/forest.
+        (
+            19,
+            0xdead_beef,
+            0,
+            4,
+            0,
+            0,
+            0,
+            16,
+            1,
+            16,
+            0,
+            vec![],
+            vec![],
+            vec![1, 4],
+        ),
+        // V1_14 scale=16.
+        (
+            17,
+            0xcafe_babe,
+            0,
+            16,
+            0,
+            0,
+            0,
+            8,
+            1,
+            8,
+            0,
+            vec![4],
+            vec![],
+            vec![],
+        ),
+        // V1_13 scale=64.
+        (
+            16,
+            0xdead_beef,
+            0,
+            64,
+            0,
+            0,
+            0,
+            4,
+            1,
+            4,
+            0,
+            vec![],
+            vec![0],
+            vec![],
+        ),
+        // V1_17 scale=256.
+        (
+            21,
+            0xdead_beef,
+            0,
+            256,
+            0,
+            0,
+            0,
+            4,
+            1,
+            4,
+            0,
+            vec![],
+            vec![],
+            vec![1],
+        ),
+        // V1_7 scale=4 (pre-1.13).
+        (
+            12,
+            0xdead_beef,
+            0,
+            4,
+            0,
+            0,
+            0,
+            8,
+            1,
+            8,
+            0,
+            vec![1],
+            vec![],
+            vec![],
+        ),
+        // Empty filter — trivially passes.
+        (
+            19,
+            0xdead_beef,
+            0,
+            4,
+            0,
+            0,
+            0,
+            4,
+            1,
+            4,
+            0,
+            vec![],
+            vec![],
+            vec![],
+        ),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 106, total)?;
     for (mc, seed, dim, scale, rx, ry, rz, sx, sy, sz, flags, req, exc, any) in cases {
         let mut req8 = [0_i32; 8];
         let mut exc8 = [0_i32; 8];

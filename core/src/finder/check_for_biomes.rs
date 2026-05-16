@@ -1,14 +1,19 @@
-//! `checkForBiomes` — partial port (Beta 1.7 only for now).
+//! `checkForBiomes` — partial port.
 //!
-//! Cubiomes' `checkForBiomes` covers three radically different paths:
+//! Cubiomes' `checkForBiomes` covers three paths:
 //! 1. Beta (`mc <= MC_B1_7`) — `genBiomes` + bitmask test.
 //! 2. Layered Overworld (1.7-1.17) — `checkForBiomesAtLayer` with
 //!    a chain of filter mapfuncs that early-exit the layer DAG.
-//! 3. 1.18+ — climate-driven gradient descent + a randomised
-//!    Monte-Carlo sampler that uses libc `rand()` (non-portable,
-//!    no bit-exact parity possible).
+//! 3. 1.18+ Overworld — climate-driven gradient descent + a
+//!    randomised Monte-Carlo sampler that uses libc `rand()`
+//!    (non-portable, no bit-exact parity possible).
 //!
-//! Only path #1 is currently ported. Paths #2 and #3 return
+//! Paths #1 and #2 are both supported here via the same simple
+//! "`gen_biomes` + bitmask" implementation: cubiomes' swap-map chain
+//! in path #2 is purely an early-exit optimisation, so the
+//! Pass/Fail answer is the same. We don't synthesise cubiomes'
+//! return-2 `ExclusionStop` outcome — callers should treat it as
+//! Pass for the exclusion filter. Path #3 still returns
 //! [`CheckForBiomesResult::Unsupported`]. A separate
 //! [`approx_prefilter_at_layer`] entrypoint exposes the
 //! `BF_APPROX` fast-reject prefilter from path #2 — it can prove a
@@ -44,12 +49,21 @@ impl CheckForBiomesResult {
     }
 }
 
-/// Bit-exact port of cubiomes' Beta-era `checkForBiomes`. Other
-/// MC versions return [`CheckForBiomesResult::Unsupported`] —
-/// callers should special-case.
+/// Bit-exact port of cubiomes' `checkForBiomes` for Beta and
+/// Layered (MC ≤ 1.17) Overworld, plus all dims for any MC version
+/// where `gen_biomes` is supported. Returns
+/// [`CheckForBiomesResult::Unsupported`] only for 1.18+ Overworld
+/// (which uses libc `rand()` and so cannot match cubiomes
+/// bit-exactly).
 ///
-/// The `cache` arg is allowed to be `None`; we allocate a fresh
-/// `Vec<Biome>` in that case (matching cubiomes' `allocCache`).
+/// For Beta/Layered, the implementation generates every cell in the
+/// 2D area and folds biome IDs into one of two 64-bit bitmasks (`b`
+/// for ids 0..64, `m` for ids 128..192), then matches the filter's
+/// req/excl/any masks against that. cubiomes' optimised swap-map
+/// chain may early-exit; the final Pass/Fail outcome is identical.
+/// Note that cubiomes' "exclusion proven by chain early-exit"
+/// return value (`2`) is not synthesised here — that's an internal
+/// optimisation signal, not a different semantic outcome.
 pub fn check_for_biomes(
     g: &mut Generator,
     range: Range,
@@ -57,35 +71,51 @@ pub fn check_for_biomes(
     seed: u64,
     filter: &BiomeFilter,
 ) -> CheckForBiomesResult {
-    if !g.mc.is_at_least(MCVersion::B1_8) {
-        // Re-seed if dim or seed changed.
-        if g.dim != Some(dim) || g.seed != seed {
-            g.apply_seed(dim, seed);
-        }
-        let cell_count = range.cell_count();
-        let mut ids = vec![crate::biome::Biome(0); cell_count];
-        g.gen_biomes(&mut ids, range);
-
-        let mut b: u64 = 0;
-        for cell in ids.iter().take((range.sx as usize) * (range.sz as usize)) {
-            let id = cell.0;
-            if (0..64).contains(&id) {
-                b |= 1_u64 << id;
-            }
-        }
-        // Re-derive cubiomes' three boolean flags.
-        let mut match_exc = filter.biome_to_excl == 0;
-        let mut match_any = filter.biome_to_pick == 0;
-        let mut match_req = filter.biome_to_find == 0;
-        match_exc |= (b & filter.biome_to_excl) == 0;
-        match_any |= (b & filter.biome_to_pick) != 0;
-        match_req |= (b & filter.biome_to_find) == filter.biome_to_find;
-        if match_exc && match_any && match_req {
-            return CheckForBiomesResult::Pass;
-        }
-        return CheckForBiomesResult::Fail;
+    // Beta + Layered (1.7-1.17) + non-Overworld dims all reduce to
+    // "generate the area, fold every biome ID into a 0/1 mask,
+    // match the filter". Cubiomes' Layered path additionally has a
+    // swap-map early-exit chain (`checkForBiomesAtLayer`) that's
+    // strictly an optimisation: the final Pass/Fail answer matches
+    // what we compute here. The 1.18+ Overworld path is the only
+    // truly non-portable case (it uses libc `rand()` for the Monte
+    // Carlo phase) — keep returning `Unsupported` there.
+    let is_modern_overworld = dim == Dimension::Overworld && g.mc.is_at_least(MCVersion::V1_18);
+    if is_modern_overworld {
+        return CheckForBiomesResult::Unsupported;
     }
-    CheckForBiomesResult::Unsupported
+
+    if g.dim != Some(dim) || g.seed != seed {
+        g.apply_seed(dim, seed);
+    }
+    let cell_count = range.cell_count();
+    let mut ids = vec![crate::biome::Biome(0); cell_count];
+    g.gen_biomes(&mut ids, range);
+
+    let mut b: u64 = 0;
+    let mut m: u64 = 0;
+    for cell in ids.iter().take((range.sx as usize) * (range.sz as usize)) {
+        let id = cell.0;
+        if (0..64).contains(&id) {
+            b |= 1_u64 << id;
+        } else if (128..192).contains(&id) {
+            m |= 1_u64 << (id - 128);
+        }
+    }
+    // cubiomes' three boolean flags, extended with the mutated-biome
+    // variants. For Beta, the M masks are all zero so this collapses
+    // to the original logic.
+    let mut match_exc = (filter.biome_to_excl | filter.biome_to_excl_m) == 0;
+    let mut match_any = (filter.biome_to_pick | filter.biome_to_pick_m) == 0;
+    let mut match_req = filter.biome_to_find == 0 && filter.biome_to_find_m == 0;
+    match_exc |= (b & filter.biome_to_excl) == 0 && (m & filter.biome_to_excl_m) == 0;
+    match_any |= (b & filter.biome_to_pick) != 0 || (m & filter.biome_to_pick_m) != 0;
+    match_req |= (b & filter.biome_to_find) == filter.biome_to_find
+        && (m & filter.biome_to_find_m) == filter.biome_to_find_m;
+    if match_exc && match_any && match_req {
+        CheckForBiomesResult::Pass
+    } else {
+        CheckForBiomesResult::Fail
+    }
 }
 
 // Raw biome IDs (subset used by the approx-prefilter switches).
