@@ -34,6 +34,19 @@ use crate::rng::{JavaRng, Xoroshiro};
 /// ```
 /// The `int * uint64_t` C multiply sign-extends `chunkX` / `chunkZ`
 /// through `int64_t`, which Rust spells as `as i64 as u64`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::finder::chunk_generate_rng;
+///
+/// // 1.18+ Bastion placement and other 16×16-chunk decorators key
+/// // off this RNG. Calling it twice with the same arguments yields
+/// // bit-identical RNGs.
+/// let mut a = chunk_generate_rng(0xdead_beef, 0, 0);
+/// let mut b = chunk_generate_rng(0xdead_beef, 0, 0);
+/// assert_eq!(a.next_long(), b.next_long());
+/// ```
 #[must_use]
 pub fn chunk_generate_rng(world_seed: u64, chunk_x: i32, chunk_z: i32) -> JavaRng {
     let mut rng = JavaRng::new(world_seed);
@@ -46,6 +59,24 @@ pub fn chunk_generate_rng(world_seed: u64, chunk_x: i32, chunk_z: i32) -> JavaRn
 
 /// `getPopulationSeed(mc, ws, x, z)` — return the chunk-local
 /// decorator RNG seed for the chunk whose block-origin is `(x, z)`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::finder::get_population_seed;
+///
+/// // The chunk-local decorator seed is what every feature (Geode,
+/// // End Island, Desert Well, ...) keys its `JavaRng::new(seed)`
+/// // off of. Returns the same value across calls — same seed, same
+/// // chunk origin in.
+/// let ps_modern = get_population_seed(MCVersion::V1_18, 0xdead_beef, 16, 16);
+/// let ps_pre18 = get_population_seed(MCVersion::V1_17, 0xdead_beef, 16, 16);
+/// // 1.18+ switched the RNG used for the seed mix from JavaRng to
+/// // Xoroshiro128++, so the same inputs yield different population
+/// // seeds across the version boundary.
+/// assert_ne!(ps_modern, ps_pre18);
+/// ```
 #[must_use]
 pub fn get_population_seed(mc: MCVersion, ws: u64, x: i32, z: i32) -> u64 {
     let (mut a, mut b) = if mc.is_at_least(MCVersion::V1_18) {
