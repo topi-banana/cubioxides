@@ -172,6 +172,23 @@ impl Biome {
 
     /// Returns `true` if `id` is any ocean variant — shallow or deep.
     /// Mirrors cubiomes' `isOceanic`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::biome::Biome;
+    ///
+    /// // The 10 ocean variants (5 shallow + 5 deep) all qualify;
+    /// // river / beach / land biomes do not — note that the shallow
+    /// // and deep families remain individually addressable via
+    /// // [`Biome::is_shallow_ocean_id`] / [`Biome::is_deep_ocean_id`].
+    /// assert!(Biome::is_oceanic_id(Biome::OCEAN.id()));         // shallow
+    /// assert!(Biome::is_oceanic_id(Biome::DEEP_OCEAN.id()));    // deep
+    /// assert!(Biome::is_oceanic_id(Biome::WARM_OCEAN.id()));    // temperature variant
+    /// assert!(!Biome::is_oceanic_id(Biome::RIVER.id()));
+    /// assert!(!Biome::is_oceanic_id(Biome::BEACH.id()));
+    /// assert!(!Biome::is_oceanic_id(Biome::PLAINS.id()));
+    /// ```
     #[inline]
     #[must_use]
     pub const fn is_oceanic_id(id: i32) -> bool {
