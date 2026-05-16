@@ -1228,6 +1228,29 @@ uint64_t cubiomes_call_get_min_layer_cache_size(int mc, int entry, int sx, int s
     return (uint64_t) getMinLayerCacheSize(&ls.layers[entry], sx, sz);
 }
 
+/* getBiomeCenters wrapper. Returns the count `n`; pos and sizes
+ * are written into the caller's buffers (assumed nmax-sized). */
+int cubiomes_call_get_biome_centers(int mc, uint64_t seed,
+                                    int scale, int rx, int ry, int rz,
+                                    int sx, int sy, int sz,
+                                    int match_id, int minsiz, int tol, int nmax,
+                                    int *out_pos_xz, int *out_sizes) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, DIM_OVERWORLD, seed);
+    Range r;
+    r.scale = scale; r.x = rx; r.z = rz;
+    r.sx = sx; r.sz = sz; r.y = ry; r.sy = sy;
+    Pos *pos = (Pos*) malloc((size_t)nmax * sizeof(Pos));
+    int n = getBiomeCenters(pos, out_sizes, nmax, &g, r, match_id, minsiz, tol, NULL);
+    for (int i = 0; i < n; i++) {
+        out_pos_xz[i*2] = pos[i].x;
+        out_pos_xz[i*2+1] = pos[i].z;
+    }
+    free(pos);
+    return n;
+}
+
 /* genBiomeNoiseChunkSection wrapper. Returns 64 ints flat (xyz order). */
 void cubiomes_call_gen_biome_noise_chunk_section(int mc, uint64_t seed,
                                                  int cx, int cy, int cz,

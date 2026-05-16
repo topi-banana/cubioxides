@@ -15,6 +15,7 @@
 )]
 
 pub mod available_biomes;
+pub mod biome_centers;
 pub mod biome_filter;
 pub mod biome_para;
 pub mod can_biome_generate;

@@ -1205,6 +1205,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("chunk_section fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_biome_centers_fixture(&fixtures_dir.join("biome_centers.bin")) {
+        eprintln!("biome_centers fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -4582,6 +4586,92 @@ fn write_chunk_section_fixture(path: &Path) -> std::io::Result<()> {
         file.write_all(&cz.to_le_bytes())?;
         for id in ids {
             file.write_all(&id.to_le_bytes())?;
+        }
+    }
+    file.flush()
+}
+
+/// `getBiomeCenters` payload (kind = 84). Per-record:
+/// `mc i32, seed u64, scale i32, rx i32, ry i32, rz i32, sx i32,
+///  sy i32, sz i32, match_id i32, minsiz i32, tol i32, nmax i32,
+///  n i32, pos [i32; 2*32], sizes [i32; 32]`. `nmax <= 32`.
+fn write_biome_centers_fixture(path: &Path) -> std::io::Result<()> {
+    const MAX_N: usize = 32;
+    type Case = (
+        i32,
+        u64,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+    );
+    let cases: &[Case] = &[
+        // (mc, seed, scale, rx, ry, rz, sx, sy, sz, match_id, minsiz, tol, nmax)
+        // Look for plains (1) in a 64-cell area.
+        (22, 0xdead_beef, 4, 0, 0, 0, 64, 1, 64, 1, 1, 1, 8),
+        // Forest (4).
+        (22, 0xdead_beef, 4, 0, 0, 0, 64, 1, 64, 4, 1, 1, 8),
+        // Ocean (0) — wide region.
+        (22, 0xcafe_babe, 4, 0, 0, 0, 64, 1, 64, 0, 1, 1, 8),
+        // Snow biomes (snowy_taiga=30).
+        (22, 0x1234_5678, 4, -100, 0, -100, 64, 1, 64, 30, 1, 1, 4),
+        // Higher minsiz — filters out small regions.
+        (22, 0xdead_beef, 4, 0, 0, 0, 64, 1, 64, 1, 16, 1, 4),
+        // 1.21 jungle (21).
+        (28, 0xabcd_1234, 4, 0, 0, 0, 64, 1, 64, 21, 1, 1, 4),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 84, total)?;
+    for &(mc, seed, scale, rx, ry, rz, sx, sy, sz, match_id, minsiz, tol, nmax) in cases {
+        assert!(nmax as usize <= MAX_N);
+        let mut pos_xz = vec![0_i32; MAX_N * 2];
+        let mut sizes = vec![0_i32; MAX_N];
+        let n = unsafe {
+            ffi::cubiomes_call_get_biome_centers(
+                mc,
+                seed,
+                scale,
+                rx,
+                ry,
+                rz,
+                sx,
+                sy,
+                sz,
+                match_id,
+                minsiz,
+                tol,
+                nmax,
+                pos_xz.as_mut_ptr(),
+                sizes.as_mut_ptr(),
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&scale.to_le_bytes())?;
+        file.write_all(&rx.to_le_bytes())?;
+        file.write_all(&ry.to_le_bytes())?;
+        file.write_all(&rz.to_le_bytes())?;
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sy.to_le_bytes())?;
+        file.write_all(&sz.to_le_bytes())?;
+        file.write_all(&match_id.to_le_bytes())?;
+        file.write_all(&minsiz.to_le_bytes())?;
+        file.write_all(&tol.to_le_bytes())?;
+        file.write_all(&nmax.to_le_bytes())?;
+        file.write_all(&n.to_le_bytes())?;
+        for v in &pos_xz {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        for v in &sizes {
+            file.write_all(&v.to_le_bytes())?;
         }
     }
     file.flush()
@@ -8312,6 +8402,23 @@ mod ffi {
             cz: c_int,
             out64: *mut c_int,
         );
+        pub fn cubiomes_call_get_biome_centers(
+            mc: c_int,
+            seed: u64,
+            scale: c_int,
+            rx: c_int,
+            ry: c_int,
+            rz: c_int,
+            sx: c_int,
+            sy: c_int,
+            sz: c_int,
+            match_id: c_int,
+            minsiz: c_int,
+            tol: c_int,
+            nmax: c_int,
+            out_pos_xz: *mut c_int,
+            out_sizes: *mut c_int,
+        ) -> c_int;
         pub fn cubiomes_call_check_for_biomes(
             mc: c_int,
             seed: u64,
