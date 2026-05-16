@@ -542,6 +542,21 @@ fn gen_fat_tower(env: &mut PieceEnv<'_>, current: usize, depth: i32, my_scope: u
 /// Generate the End City piece tree for `(chunk_x, chunk_z)` in
 /// world `seed`. Returns the list of pieces in the order cubiomes
 /// emits them. Bit-exact port of `getEndCityPieces`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::finder::get_end_city_pieces;
+///
+/// // After locating a candidate End City chunk via `get_structure_pos`,
+/// // expand the piece tree to read back the geometry. The function
+/// // does no biome / terrain viability check; pair it with
+/// // `is_viable_end_city_terrain` if you need that.
+/// let pieces = get_end_city_pieces(0xdead_beef, 16, 16);
+/// // The output always starts with a base floor; iteration order
+/// // matches cubiomes' DFS traversal.
+/// assert!(!pieces.is_empty());
+/// ```
 #[must_use]
 pub fn get_end_city_pieces(seed: u64, chunk_x: i32, chunk_z: i32) -> Vec<Piece> {
     let mut rng = chunk_generate_rng(seed, chunk_x, chunk_z);
