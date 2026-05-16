@@ -202,7 +202,7 @@ pub fn is_viable_structure_pos(
 /// (early-exit during biome generation when an invalid biome is
 /// seen); we skip the hook and just do the final biome check at
 /// the cubiomes-specific sample point.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::match_same_arms)]
 fn viable_overworld_legacy(
     structure_type: StructureType,
     g: &Generator,
@@ -268,8 +268,12 @@ fn viable_overworld_legacy(
         Outpost => viable_outpost_legacy(g, x, z, chunk_x, chunk_z),
 
         Feature | EndCity | EndGateway | EndIsland | Fortress | Bastion => {
-            // Wrong-dim or shouldn't reach here.
-            unimplemented!("legacy Overworld is_viable_structure_pos: {structure_type:?}")
+            // Wrong dim or unsupported — cubiomes' default case
+            // prints an error to stderr and returns 0. Mirror that
+            // by returning false rather than panicking; this lets
+            // generic structure-search loops iterate every
+            // [`StructureType`] without special-casing dim.
+            false
         }
     }
 }
@@ -635,7 +639,7 @@ fn viable_village_legacy(g: &Generator, chunk_x: i64, chunk_z: i64) -> bool {
     true
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::match_same_arms)]
 fn viable_overworld_modern(
     structure_type: StructureType,
     g: &Generator,
@@ -730,14 +734,12 @@ fn viable_overworld_modern(
 
         Monument => return viable_monument_modern(g, chunk_x, chunk_z),
 
-        // Bastion / Fortress are Nether-only — should never reach
-        // here. Feature is pre-1.13 only. Defer EndCity / EndGateway
-        // / EndIsland to follow-up sub-stages.
-        Feature | EndCity | EndGateway | EndIsland | Fortress | Bastion => {
-            unimplemented!(
-                "Modern Overworld is_viable_structure_pos: {structure_type:?} not yet ported"
-            )
-        }
+        // Wrong-dim cases. Bastion / Fortress are Nether-only,
+        // EndCity / EndGateway / EndIsland are End-only, Feature is
+        // pre-1.13 only. cubiomes' default case prints stderr and
+        // returns 0; we just return false so generic search loops
+        // don't have to special-case dim.
+        Feature | EndCity | EndGateway | EndIsland | Fortress | Bastion => false,
     }
 }
 
