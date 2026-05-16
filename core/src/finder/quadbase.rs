@@ -6,7 +6,7 @@
 //! `searchAll48` to harvest quad-witch-hut candidates from 48-bit
 //! seed space.
 
-use super::StructureConfig;
+use super::{Pos, StructureConfig};
 
 /// Lower-20-bit "ideal" quad-structure constellations (cubiomes'
 /// `low20QuadIdeal`).
@@ -258,6 +258,220 @@ fn get_enclosing_radius(
     } else {
         0xffff as f32
     }
+}
+
+/// Cubiomes' static `blocksInRange`: count player-foot block cells
+/// at `(x..x+ax, z..z+az)` whose Euclidean distance² from any of
+/// `p`'s `ax × az` footprints fits in `rsq`.
+fn blocks_in_range(p: &[Pos], x: i64, z: i64, ax: i32, az: i32, rsq: f64) -> i32 {
+    let mut cnt = 0_i32;
+    for entry in p {
+        let dx = entry.x as f64 - x as f64;
+        let dz = entry.z as f64 - z as f64;
+        for px in 0..ax {
+            for pz in 0..az {
+                let ddx = px as f64 + dx;
+                let ddz = pz as f64 + dz;
+                if ddx * ddx + ddz * ddz <= rsq {
+                    cnt += 1;
+                }
+            }
+        }
+    }
+    cnt
+}
+
+/// Mutable per-flood-fill state. Mirrors cubiomes' `afk_meta_t`.
+struct AfkMeta<'a> {
+    p: &'a [Pos],
+    buf: Vec<i32>,
+    x0: i64,
+    z0: i64,
+    w: i64,
+    h: i64,
+    ax: i32,
+    az: i32,
+    rsq: f64,
+    best: i32,
+    sumn: i32,
+    sumx: i64,
+    sumz: i64,
+}
+
+/// Cubiomes' static recursive `checkAfkDist`. 8-way flood fill over
+/// the `(w, h)` grid that updates `best`/`sumn`/`sumx`/`sumz` for
+/// every cell whose `blocks_in_range` count matches `best`.
+fn check_afk_dist(d: &mut AfkMeta<'_>, x: i64, z: i64) {
+    if x < 0 || z < 0 || x >= d.w || z >= d.h {
+        return;
+    }
+    let idx = (z * d.w + x) as usize;
+    if d.buf[idx] != 0 {
+        return;
+    }
+    let q = blocks_in_range(d.p, x + d.x0, z + d.z0, d.ax, d.az, d.rsq);
+    d.buf[idx] = q;
+    if q >= d.best {
+        if q > d.best {
+            d.best = q;
+            d.sumn = 1;
+            d.sumx = d.x0 + x;
+            d.sumz = d.z0 + z;
+        } else {
+            d.sumn += 1;
+            d.sumx += d.x0 + x;
+            d.sumz += d.z0 + z;
+        }
+        check_afk_dist(d, x, z - 1);
+        check_afk_dist(d, x, z + 1);
+        check_afk_dist(d, x - 1, z);
+        check_afk_dist(d, x + 1, z);
+        check_afk_dist(d, x - 1, z - 1);
+        check_afk_dist(d, x - 1, z + 1);
+        check_afk_dist(d, x + 1, z - 1);
+        check_afk_dist(d, x + 1, z + 1);
+    }
+}
+
+/// `getOptimalAfk(p, ax, ay, az, spcnt)` — find the AFK position
+/// inside a quad-structure footprint that maximises the number of
+/// blocks within the 128-block player-spawn sphere.
+///
+/// Bit-exact port of cubiomes' `getOptimalAfk`. Returns the optimal
+/// `(x, z)` AFK block position; when `spcnt` is `Some`, writes the
+/// achieved in-range block count into it.
+#[must_use]
+#[allow(clippy::too_many_lines, clippy::needless_range_loop)]
+pub fn get_optimal_afk(p: &[Pos; 4], ax: i32, ay: i32, az: i32, spcnt: Option<&mut i32>) -> Pos {
+    let mut min_x: i64 = i64::MAX;
+    let mut min_z: i64 = i64::MAX;
+    let mut max_x: i64 = i64::MIN;
+    let mut max_z: i64 = i64::MIN;
+    for entry in p {
+        let x = entry.x as i64;
+        let z = entry.z as i64;
+        if x < min_x {
+            min_x = x;
+        }
+        if z < min_z {
+            min_z = z;
+        }
+        if x > max_x {
+            max_x = x;
+        }
+        if z > max_z {
+            max_z = z;
+        }
+    }
+    min_x += i64::from(ax / 2);
+    min_z += i64::from(az / 2);
+    max_x += i64::from(ax / 2);
+    max_z += i64::from(az / 2);
+
+    let rsq = 128.0_f64 * 128.0 - (ay as f64) * (ay as f64) / 4.0;
+    let w = max_x - min_x;
+    let h = max_z - min_z;
+    let mut afk = Pos {
+        x: p[0].x + ax / 2,
+        z: p[0].z + az / 2,
+    };
+    let mut cnt = ax * az;
+
+    let mut d = AfkMeta {
+        p,
+        buf: vec![0_i32; (w * h) as usize],
+        x0: min_x,
+        z0: min_z,
+        w,
+        h,
+        ax,
+        az,
+        rsq,
+        best: 0,
+        sumn: 0,
+        sumx: 0,
+        sumz: 0,
+    };
+
+    // 6 starting midpoints (the 4 quad-pair midpoints plus the two
+    // diagonal midpoints).
+    let dsp: [Pos; 6] = [
+        Pos {
+            x: (p[0].x + p[2].x) / 2,
+            z: (p[0].z + p[2].z) / 2,
+        },
+        Pos {
+            x: (p[1].x + p[3].x) / 2,
+            z: (p[1].z + p[3].z) / 2,
+        },
+        Pos {
+            x: (p[0].x + p[1].x) / 2,
+            z: (p[0].z + p[1].z) / 2,
+        },
+        Pos {
+            x: (p[2].x + p[3].x) / 2,
+            z: (p[2].z + p[3].z) / 2,
+        },
+        Pos {
+            x: (p[0].x + p[3].x) / 2,
+            z: (p[0].z + p[3].z) / 2,
+        },
+        Pos {
+            x: (p[1].x + p[2].x) / 2,
+            z: (p[1].z + p[2].z) / 2,
+        },
+    ];
+    let mut v = [0_i32; 6];
+    for (i, midp) in dsp.iter().enumerate() {
+        v[i] = blocks_in_range(p, midp.x as i64, midp.z as i64, ax, az, rsq);
+    }
+
+    for _ in 0..6 {
+        let mut jmax = 0_usize;
+        let mut vmax = 0_i32;
+        for j in 0..6 {
+            if v[j] > vmax {
+                jmax = j;
+                vmax = v[j];
+            }
+        }
+        if vmax <= ax * az {
+            break;
+        }
+        d.best = vmax;
+        d.sumn = 0;
+        d.sumx = 0;
+        d.sumz = 0;
+        let start_x = dsp[jmax].x as i64 - d.x0;
+        let start_z = dsp[jmax].z as i64 - d.z0;
+        check_afk_dist(&mut d, start_x, start_z);
+        if d.best > cnt {
+            cnt = d.best;
+            if d.sumn == 0 {
+                // cubiomes hits `(int) round(0.0 / 0.0)` here when
+                // the starting midpoint is OOB of the `+ax/2`-shifted
+                // bounding box (common: it happens whenever two
+                // anchor points share an x or z coordinate that
+                // equals min/max). x86 `cvttsd2si NaN` returns
+                // `INT_MIN`; mirror that bit-pattern so our output
+                // matches cubiomes on x86.
+                afk.x = i32::MIN;
+                afk.z = i32::MIN;
+            } else {
+                afk.x = (d.sumx as f64 / d.sumn as f64).round() as i32;
+                afk.z = (d.sumz as f64 / d.sumn as f64).round() as i32;
+            }
+            if cnt >= 3 * ax * az {
+                break;
+            }
+        }
+        v[jmax] = 0;
+    }
+
+    if let Some(out) = spcnt {
+        *out = cnt;
+    }
+    afk
 }
 
 #[cfg(test)]

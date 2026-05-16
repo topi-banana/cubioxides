@@ -176,6 +176,21 @@ int cubiomes_call_get_biome_depth_and_scale(int id, double *depth,
     return getBiomeDepthAndScale(id, depth, scale, grass);
 }
 
+#include "quadbase.h"
+
+void cubiomes_call_get_optimal_afk(int *px, int *pz, int *spcnt, int p0x,
+                                   int p0z, int p1x, int p1z, int p2x, int p2z,
+                                   int p3x, int p3z, int ax, int ay, int az) {
+    Pos p[4] = {
+        {p0x, p0z}, {p1x, p1z}, {p2x, p2z}, {p3x, p3z},
+    };
+    int count = 0;
+    Pos afk = getOptimalAfk(p, ax, ay, az, &count);
+    *px = afk.x;
+    *pz = afk.z;
+    if (spcnt) *spcnt = count;
+}
+
 
 void cubiomes_call_nth_strongholds(int mc, uint64_t seed, int n_steps,
                                    int *out_xz) {

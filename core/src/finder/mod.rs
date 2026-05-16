@@ -29,7 +29,7 @@ pub use mineshaft::get_mineshafts;
 pub use population_seed::{chunk_generate_rng, get_population_seed};
 pub use quadbase::{
     LOW20_QUAD_CLASSIC, LOW20_QUAD_HUT_BARELY, LOW20_QUAD_HUT_NORMAL, LOW20_QUAD_IDEAL, QuadHutCst,
-    get_quad_hut_cst, is_quad_base_feature_24, is_quad_base_feature_24_classic,
+    get_optimal_afk, get_quad_hut_cst, is_quad_base_feature_24, is_quad_base_feature_24_classic,
 };
 pub use slime::is_slime_chunk;
 pub use spawn::estimate_spawn;

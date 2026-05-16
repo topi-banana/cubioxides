@@ -660,6 +660,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("biome_depth_scale fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_optimal_afk_fixture(&fixtures_dir.join("optimal_afk.bin")) {
+        eprintln!("optimal_afk fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2142,6 +2146,104 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `getOptimalAfk` parity record (kind = 63). Captures the optimal
+/// AFK `(x, z)` and the achieved block-in-range count for a random
+/// 4-witch-hut footprint.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct OptimalAfkRecord {
+    pub p0x: i32,
+    pub p0z: i32,
+    pub p1x: i32,
+    pub p1z: i32,
+    pub p2x: i32,
+    pub p2z: i32,
+    pub p3x: i32,
+    pub p3z: i32,
+    pub ax: i32,
+    pub ay: i32,
+    pub az: i32,
+    pub spcnt: i32,
+    pub afk_x: i32,
+    pub afk_z: i32,
+}
+
+fn write_optimal_afk_fixture(path: &Path) -> std::io::Result<()> {
+    // ax/ay/az from cubiomes' witch hut footprint constants
+    // (the most common quad-base use). Use 7x9x7 (witch hut).
+    let total: u64 = 256;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 63, total)?;
+
+    let mut rng_state: u64 = 0x12af_b00b_0000_face;
+    for _ in 0..total {
+        // Place each point in its own quadrant so that no two share
+        // an x or z. This avoids cubiomes' OOB-midpoint UB
+        // (`(int)NaN = INT_MIN` on x86) which fires when two
+        // anchor points share a coordinate, making a midpoint land
+        // outside the `(ax/2)`-shifted bounding box.
+        let quadrants = [
+            (-40, -10, -40, -10),
+            (10, 40, -40, -10),
+            (-40, -10, 10, 40),
+            (10, 40, 10, 40),
+        ];
+        let mut pts = [(0_i32, 0_i32); 4];
+        for (i, q) in quadrants.iter().enumerate() {
+            rng_state = lcg_step(rng_state);
+            let span_x = q.1 - q.0;
+            let x = q.0 + ((rng_state >> 32) as u32 % span_x as u32) as i32;
+            rng_state = lcg_step(rng_state);
+            let span_z = q.3 - q.2;
+            let z = q.2 + ((rng_state >> 32) as u32 % span_z as u32) as i32;
+            pts[i] = (x, z);
+        }
+
+        let ax = 7_i32;
+        let ay = 9_i32;
+        let az = 7_i32;
+        let mut px: c_int = 0;
+        let mut pz: c_int = 0;
+        let mut spcnt: c_int = 0;
+        unsafe {
+            ffi::cubiomes_call_get_optimal_afk(
+                std::ptr::from_mut(&mut px),
+                std::ptr::from_mut(&mut pz),
+                std::ptr::from_mut(&mut spcnt),
+                pts[0].0,
+                pts[0].1,
+                pts[1].0,
+                pts[1].1,
+                pts[2].0,
+                pts[2].1,
+                pts[3].0,
+                pts[3].1,
+                ax,
+                ay,
+                az,
+            );
+        }
+        let rec = OptimalAfkRecord {
+            p0x: pts[0].0,
+            p0z: pts[0].1,
+            p1x: pts[1].0,
+            p1z: pts[1].1,
+            p2x: pts[2].0,
+            p2z: pts[2].1,
+            p3x: pts[3].0,
+            p3z: pts[3].1,
+            ax,
+            ay,
+            az,
+            spcnt,
+            afk_x: px,
+            afk_z: pz,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
 }
 
 /// `getBiomeDepthAndScale` parity record (kind = 62). Exercises
@@ -4692,6 +4794,22 @@ mod ffi {
             scale: *mut f64,
             grass: *mut c_int,
         ) -> c_int;
+        pub fn cubiomes_call_get_optimal_afk(
+            px: *mut c_int,
+            pz: *mut c_int,
+            spcnt: *mut c_int,
+            p0x: c_int,
+            p0z: c_int,
+            p1x: c_int,
+            p1z: c_int,
+            p2x: c_int,
+            p2z: c_int,
+            p3x: c_int,
+            p3z: c_int,
+            ax: c_int,
+            ay: c_int,
+            az: c_int,
+        );
         pub fn cubiomes_call_get_mineshafts(
             mc: c_int,
             seed: u64,
