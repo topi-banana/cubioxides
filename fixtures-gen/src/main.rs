@@ -643,6 +643,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("end_island_height fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_end_height_noise_fixture(&fixtures_dir.join("end_height_noise.bin")) {
+        eprintln!("end_height_noise fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2125,6 +2129,58 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `getEndHeightNoise` parity record (kind = 59). Single height
+/// sample per `(mc, seed, x, z, range)`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct EndHeightNoiseRecord {
+    pub mc: i32,
+    pub x: i32,
+    pub z: i32,
+    pub range: i32,
+    pub seed: u64,
+    pub height_bits: u32,
+    pub pad: u32,
+}
+
+fn write_end_height_noise_fixture(path: &Path) -> std::io::Result<()> {
+    let mc_pool: [i32; 4] = [17, 20, 22, 28];
+    let per_mc: u64 = 500;
+    let total = mc_pool.len() as u64 * per_mc;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 59, total)?;
+
+    let mut rng_state: u64 = 0xa53e_face_b00b_5eed;
+    for &mc in &mc_pool {
+        for _ in 0..per_mc {
+            rng_state = lcg_step(rng_state);
+            let seed = rng_state;
+            rng_state = lcg_step(rng_state);
+            // Use 8-block-per-cell coordinates: range -256..256 → block coords -2048..2048.
+            let x = ((rng_state >> 32) as i32) % 512 - 256;
+            rng_state = lcg_step(rng_state);
+            let z = ((rng_state >> 32) as i32) % 512 - 256;
+            rng_state = lcg_step(rng_state);
+            // range in {0, 4, 12, 16} — exercise both the default
+            // (0 → 12) branch and explicit overrides.
+            let range_pool = [0_i32, 4, 12, 16];
+            let range = range_pool[(rng_state as usize) % range_pool.len()];
+            let h = unsafe { ffi::cubiomes_call_end_height_noise(mc, seed, x, z, range) };
+            let rec = EndHeightNoiseRecord {
+                mc,
+                x,
+                z,
+                range,
+                seed,
+                height_bits: h.to_bits(),
+                pad: 0,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
 }
 
 fn write_end_island_height_fixture(path: &Path) -> std::io::Result<()> {
@@ -4415,6 +4471,13 @@ mod ffi {
             scale: c_int,
             y: *mut f32,
         ) -> c_int;
+        pub fn cubiomes_call_end_height_noise(
+            mc: c_int,
+            seed: u64,
+            x: c_int,
+            z: c_int,
+            range: c_int,
+        ) -> f32;
         pub fn cubiomes_call_get_mineshafts(
             mc: c_int,
             seed: u64,

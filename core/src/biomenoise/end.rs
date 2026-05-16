@@ -132,6 +132,48 @@ impl EndNoise {
             }
         }
     }
+
+    /// `getEndHeightNoise(en, x, z, range)` — sample the End surface
+    /// height. `(x, z)` are in 8-block-per-cell coordinates (cubiomes'
+    /// "noise space"). `range = 0` defaults to 12 cells around the
+    /// sample point. Returns a height clamped to `[-100, 80]`.
+    #[must_use]
+    pub fn end_height_noise(&self, x: i32, z: i32, range: i32) -> f32 {
+        let hx = x / 2;
+        let hz = z / 2;
+        let oddx = (x % 2) as i64;
+        let oddz = (z % 2) as i64;
+
+        let mut h: i64 = 64 * ((x as i64) * (x as i64) + (z as i64) * (z as i64));
+        let range = if range == 0 { 12 } else { range };
+
+        for j in -range..=range {
+            for i in -range..=range {
+                let rx = (hx + i) as i64;
+                let rz = (hz + j) as i64;
+                let rsq = (rx * rx + rz * rz) as u64;
+                if rsq > 4096
+                    && (self.perlin.sample_simplex_2d(rx as f64, rz as f64) as f32) < -0.9_f32
+                {
+                    let v = (((rx as f32).abs() * 3439.0_f32 + (rz as f32).abs() * 147.0_f32)
+                        as u32
+                        % 13
+                        + 9) as i64;
+                    let rx2 = oddx - (i as i64) * 2;
+                    let rz2 = oddz - (j as i64) * 2;
+                    let rsq2 = rx2 * rx2 + rz2 * rz2;
+                    let noise = rsq2 * v * v;
+                    if noise < h {
+                        h = noise;
+                    }
+                }
+            }
+        }
+
+        // cubiomes uses two separate `if` checks; `.clamp()` is bit-
+        // exact equivalent for both finite and NaN inputs.
+        (100.0_f32 - (h as f32).sqrt()).clamp(-100.0, 80.0)
+    }
 }
 
 /// Closest-non-zero-elevation lookup over a 25×25 window starting

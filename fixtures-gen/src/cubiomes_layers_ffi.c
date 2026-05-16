@@ -143,6 +143,15 @@ int cubiomes_call_map_end_island_height(int mc, uint64_t seed, int x, int z,
     return mapEndIslandHeight(y, &en, seed, x, z, w, h, scale);
 }
 
+extern float getEndHeightNoise(const EndNoise *en, int x, int z, int range);
+
+float cubiomes_call_end_height_noise(int mc, uint64_t seed, int x, int z,
+                                     int range) {
+    EndNoise en;
+    setEndSeed(&en, mc, seed);
+    return getEndHeightNoise(&en, x, z, range);
+}
+
 void cubiomes_call_nth_strongholds(int mc, uint64_t seed, int n_steps,
                                    int *out_xz) {
     Generator g;
