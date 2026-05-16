@@ -265,11 +265,7 @@ fn viable_overworld_legacy(
 
         Mansion => viable_mansion_legacy(g, chunk_x, chunk_z),
 
-        // Outpost pre-1.18 needs a recursive Village viability check
-        // for mc < 1.16.1; defer to a follow-up.
-        Outpost => {
-            unimplemented!("Pre-1.18 Outpost viability needs recursive Village check (follow-up)")
-        }
+        Outpost => viable_outpost_legacy(g, x, z, chunk_x, chunk_z),
 
         Feature | EndCity | EndGateway | EndIsland | Fortress | Bastion => {
             // Wrong-dim or shouldn't reach here.
@@ -288,6 +284,71 @@ fn legacy_feature_sample(mc: MCVersion, chunk_x: i64, chunk_z: i64) -> (i32, i32
         // 1.16-1.17: sample at chunk*4+2 via L_RIVER_MIX_4.
         ((chunk_x * 4 + 2) as i32, (chunk_z * 4 + 2) as i32, 4)
     }
+}
+
+/// Pre-1.18 Outpost viability. Cubiomes runs three gates:
+///   1. `setAttemptSeed` + `nextInt(5) == 0` per-chunk roll.
+///   2. No Village placed within ±10 chunks. For MC < 1.16.1 the
+///      proximity check additionally requires the would-be Village
+///      position to pass `isViableStructurePos(Village, …)` — for
+///      1.16.1+ any region-grid hit short-circuits without the
+///      recursive check.
+///   3. Biome at the chunk-centre sample point matches the Outpost
+///      biome mask. Pre-1.16 samples via L_VORONOI_1 (`scale=1` at
+///      `chunkX*16+9`); 1.16.1-1.17 samples via L_RIVER_MIX_4
+///      (`scale=4` at `chunkX*4+2`).
+fn viable_outpost_legacy(g: &Generator, x: i32, z: i32, chunk_x: i64, chunk_z: i64) -> bool {
+    if g.mc.is_before(MCVersion::V1_14) {
+        return false;
+    }
+    let mut rng = set_attempt_seed(g.seed, x >> 4, z >> 4);
+    if rng.next_int(5) != 0 {
+        return false;
+    }
+    let Some(vilconf) = get_structure_config(StructureType::Village, g.mc) else {
+        return false;
+    };
+    let cx0 = chunk_x - 10;
+    let cx1 = chunk_x + 10;
+    let cz0 = chunk_z - 10;
+    let cz1 = chunk_z + 10;
+    let region = i32::from(vilconf.region_size);
+    let rx0 = floordiv(cx0 as i32, region);
+    let rx1 = floordiv(cx1 as i32, region);
+    let rz0 = floordiv(cz0 as i32, region);
+    let rz1 = floordiv(cz1 as i32, region);
+    let is_pre_1_16_1 = g.mc.is_before(MCVersion::V1_16_1);
+    for rz in rz0..=rz1 {
+        for rx in rx0..=rx1 {
+            let p = crate::finder::get_feature_pos(vilconf, g.seed, rx, rz);
+            let pc_x = (p.x >> 4) as i64;
+            let pc_z = (p.z >> 4) as i64;
+            if pc_x >= cx0 && pc_x <= cx1 && pc_z >= cz0 && pc_z <= cz1 {
+                if is_pre_1_16_1 {
+                    // Recursive Village viability check — only
+                    // viable villages disqualify the Outpost.
+                    if is_viable_structure_pos(StructureType::Village, g, p.x, p.z, 0) {
+                        return false;
+                    }
+                } else {
+                    // 1.16.1+: short-circuit on any region-grid hit.
+                    return false;
+                }
+            }
+        }
+    }
+    // Biome sample at the chunk-centre point with per-MC sample
+    // pattern (matches the L_feature path).
+    let (sample_x, sample_z, scale) = if g.mc.is_before(MCVersion::V1_16_1) {
+        ((chunk_x * 16 + 9) as i32, (chunk_z * 16 + 9) as i32, 1)
+    } else {
+        ((chunk_x * 4 + 2) as i32, (chunk_z * 4 + 2) as i32, 4)
+    };
+    let id = g.biome_at(scale, sample_x, 319 >> 2, sample_z).0;
+    if id < 0 {
+        return false;
+    }
+    is_viable_feature_biome(g.mc, StructureType::Outpost, id)
 }
 
 /// Pre-1.18 Monument viability. Three sub-paths:

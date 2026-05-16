@@ -2638,7 +2638,7 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
     // path for 1.18+), Ruined_Portal_N (1.16.1+).
     // End: End_City (1.9+), End_Gateway (1.13+).
     // Overworld 1.18+: L_feature path + Village + always-viable.
-    let combos: [(i32, i32, i32); 48] = [
+    let combos: [(i32, i32, i32); 52] = [
         // (mc, dim, structure_type)
         // Nether
         (10, -1, 18), // V1_7 Nether Fortress (returns true)
@@ -2707,6 +2707,12 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
         // Pre-1.18 Mansion: V1_14 + V1_17.
         (17, 0, 9), // V1_14 OW Mansion
         (21, 0, 9), // V1_17 OW Mansion
+        // Pre-1.18 Outpost: V1_14 + V1_15 (recursive Village viability
+        // path); V1_16_1 + V1_17 (1.16.1+ short-circuit path).
+        (17, 0, 10), // V1_14 OW Outpost (recursive Village check)
+        (18, 0, 10), // V1_15 OW Outpost (recursive, voronoi sample)
+        (19, 0, 10), // V1_16_1 OW Outpost (short-circuit)
+        (21, 0, 10), // V1_17 OW Outpost
     ];
     let per_combo: u64 = 64;
     let total = combos.len() as u64 * per_combo;
