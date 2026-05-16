@@ -700,6 +700,21 @@ pub fn get_optimal_afk(p: &[Pos; 4], ax: i32, ay: i32, az: i32, spcnt: Option<&m
 /// `Monument` (uses `isQuadBaseLarge` with `(58, 23, 58)` bbox).
 /// Panics for any other structure type — cubiomes prints an error
 /// and `exit()`s.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::finder::{StructureType, get_structure_config, is_quad_base};
+///
+/// // Probe an arbitrary world seed for a swamp-hut quad-base
+/// // candidate. A `Some(sqrad)` return means the four region-seeds
+/// // align tightly enough that all four huts can co-spawn within
+/// // `sqrad` blocks² of a common AFK point.
+/// let sconf = get_structure_config(StructureType::SwampHut, MCVersion::V1_18)
+///     .expect("SwampHut config exists for 1.18");
+/// let _maybe_quad = is_quad_base(sconf, 0xdead_beef, 128);
+/// ```
 #[must_use]
 pub fn is_quad_base(sconf: StructureConfig, seed: u64, radius: i32) -> Option<f32> {
     use crate::finder::StructureType;
