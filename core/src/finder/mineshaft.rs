@@ -16,6 +16,24 @@ use crate::rng::JavaRng;
 /// Returns up to `n_max` mineshaft chunk positions (in block
 /// coordinates) within the inclusive chunk-coordinate rectangle
 /// `[(cx0, cz0), (cx1, cz1)]`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::finder::get_mineshafts;
+///
+/// // Scan an 80×80 chunk window for mineshafts on a 1.18 seed.
+/// // Each chunk has a ~0.4% spawn rate so the expected count is
+/// // about 25 across the window. Results are bit-identical to
+/// // cubiomes for the same (mc, seed, region).
+/// let positions = get_mineshafts(MCVersion::V1_18, 0xdead_beef, -40, -40, 40, 40, 256);
+/// // Positions are block-coordinates (chunk_x * 16, chunk_z * 16).
+/// for p in &positions {
+///     assert_eq!(p.x.rem_euclid(16), 0);
+///     assert_eq!(p.z.rem_euclid(16), 0);
+/// }
+/// ```
 #[must_use]
 pub fn get_mineshafts(
     mc: MCVersion,
