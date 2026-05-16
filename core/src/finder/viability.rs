@@ -154,18 +154,30 @@ pub fn is_viable_feature_biome(
 /// `true` when the block-coordinate `(x, z)` position is allowed
 /// to host the given structure given the world state in `g`.
 ///
-/// **Partial port**: this commit ships the Nether and End branches
-/// of cubiomes' `isViableStructurePos`. The Overworld branch
-/// requires the `mapViableBiome` / `mapViableShore` layer-hook
-/// machinery (cubiomes monkey-patches `getMap` on two layers and
-/// relies on early-return out of layer evaluation), plus
-/// `getVariant` for 1.18+ Bastion / Village placement. Those land
-/// in a follow-up stage; calling this function with an Overworld
-/// `Generator` panics.
+/// Dispatches per dimension and MC version: Nether / End branches
+/// go through their dedicated samplers, the 1.18+ Overworld path
+/// uses BiomeNoise sampling directly, and the pre-1.18 Overworld
+/// path mirrors cubiomes' biome check at the canonical sample
+/// point (skipping the `mapViableBiome` / `mapViableShore` layer
+/// hook optimisation — the final result is bit-identical).
 ///
 /// Returns `true`/`false`. Cubiomes returns the biome id for some
 /// Village arms ("for further analysis") but we model that as a
 /// boolean; callers needing the biome can sample directly.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::finder::{StructureType, is_viable_structure_pos};
+/// use cubioxides::{Dimension, Generator, MCVersion};
+///
+/// // After locating a structure candidate via `get_structure_pos`,
+/// // confirm the biome at that position can actually host the
+/// // structure. The Generator must be apply_seed'd first.
+/// let mut g = Generator::new(MCVersion::V1_16_1, 0);
+/// g.apply_seed(Dimension::Overworld, 0xdead_beef);
+/// let _ok = is_viable_structure_pos(StructureType::Village, &g, 0, 0, 0);
+/// ```
 #[must_use]
 pub fn is_viable_structure_pos(
     structure_type: StructureType,
