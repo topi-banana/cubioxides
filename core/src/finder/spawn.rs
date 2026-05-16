@@ -181,6 +181,20 @@ fn calc_fitness(g: &Generator, x: i32, z: i32) -> u64 {
 /// - MC ≥ 1.18: 11×11 chunk spiral; per cell, accept if
 ///   `y > 63` OR biome is frozen ocean / deep frozen ocean / frozen
 ///   river. Falls back to the chunk centre if no match.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::finder::get_spawn;
+/// use cubioxides::{Dimension, Generator, MCVersion};
+///
+/// // Block-level spawn for an arbitrary 1.17 world. The Generator
+/// // must be `apply_seed`'d before calling — `get_spawn` does not
+/// // re-seed it.
+/// let mut g = Generator::new(MCVersion::V1_17, 0);
+/// g.apply_seed(Dimension::Overworld, 0xdead_beef);
+/// let _spawn = get_spawn(&g);
+/// ```
 #[must_use]
 pub fn get_spawn(g: &Generator) -> Pos {
     let mut rng = JavaRng::new(0);
