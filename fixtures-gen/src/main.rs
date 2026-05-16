@@ -684,6 +684,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("viable_structure_pos fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_get_variant_fixture(&fixtures_dir.join("get_variant.bin")) {
+        eprintln!("get_variant fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2168,6 +2172,86 @@ pub struct EndIslandHeightRecord {
     pub pad: u32,
 }
 
+/// `getVariant` parity record (kind = 68). Captures the 11
+/// integer-encoded fields of `StructureVariant` plus the `getVariant`
+/// return code.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct GetVariantRecord {
+    pub structure_type: i32,
+    pub mc: i32,
+    pub biome_id: i32,
+    pub rc: i32,
+    pub seed: u64,
+    pub x: i32,
+    pub z: i32,
+    /// (`abandoned`, `cracked`, `start`, `biome`, `rotation`, `x`, `y`, `z`, `sx`, `sy`, `sz`).
+    pub fields: [i32; 11],
+    pub pad: i32,
+}
+
+fn write_get_variant_fixture(path: &Path) -> std::io::Result<()> {
+    // (structure_type, mc, biome_id) probes Village + Bastion across
+    // the supported biome variants. -1 sentinel means "unused" (Bastion).
+    // V1_14 (ord 17) and V1_18 (ord 22) cover the legacy and modern
+    // rotation formulas, plus V1_16_1 for the start/rotation swap.
+    #[allow(clippy::type_complexity)]
+    let probes: &[(i32, i32, i32)] = &[
+        // Village: 5 biomes × 3 MC versions.
+        (5, 17, 1),   // Village V1_14 plains
+        (5, 17, 2),   // Village V1_14 desert
+        (5, 17, 35),  // Village V1_14 savanna
+        (5, 17, 5),   // Village V1_14 taiga
+        (5, 17, 12),  // Village V1_14 snowy_tundra
+        (5, 17, 177), // Village V1_14 meadow (falls through to plains; pre-1.18 rejects)
+        (5, 22, 1),   // Village V1_18 plains
+        (5, 22, 2),   // Village V1_18 desert
+        (5, 22, 35),  // Village V1_18 savanna
+        (5, 22, 5),   // Village V1_18 taiga
+        (5, 22, 12),  // Village V1_18 snowy_tundra
+        (5, 22, 177), // Village V1_18 meadow
+        (5, 28, 1),   // Village V1_21 plains
+        // Bastion: biome_id ignored.
+        (19, 19, -1), // Bastion V1_16_1 (start/rotation swap)
+        (19, 21, -1), // Bastion V1_17
+        (19, 22, -1), // Bastion V1_18
+        (19, 28, -1), // Bastion V1_21 WD
+    ];
+    let per_combo: u64 = 64;
+    let total = probes.len() as u64 * per_combo;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 68, total)?;
+
+    let mut rng_state: u64 = 0xface_b00b_5eed_face;
+    for &(sty, mc, biome) in probes {
+        for _ in 0..per_combo {
+            rng_state = lcg_step(rng_state);
+            let seed = rng_state;
+            rng_state = lcg_step(rng_state);
+            let x = ((rng_state >> 32) as i32) % 2048 - 1024;
+            rng_state = lcg_step(rng_state);
+            let z = ((rng_state >> 32) as i32) % 2048 - 1024;
+            let mut out = [0_i32; 11];
+            let rc = unsafe {
+                ffi::cubiomes_call_get_variant(sty, mc, seed, x, z, biome, out.as_mut_ptr())
+            };
+            let rec = GetVariantRecord {
+                structure_type: sty,
+                mc,
+                biome_id: biome,
+                rc,
+                seed,
+                x,
+                z,
+                fields: out,
+                pad: 0,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
+}
+
 /// `isViableStructurePos` parity record (kind = 67). Covers only
 /// the Nether and End branches in this fixture; the Overworld
 /// branch needs the `mapViableBiome` layer hook (follow-up).
@@ -2187,17 +2271,20 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
     // Nether: Fortress (1.0+), Bastion 1.16.1-1.17 only (1.18+
     // needs getVariant), Ruined_Portal_N (1.16.1+).
     // End: End_City (1.9+), End_Gateway (1.13+).
-    let combos: [(i32, i32, i32); 9] = [
+    let combos: [(i32, i32, i32); 12] = [
         // (mc, dim, structure_type)
         (10, -1, 18), // V1_7 Nether Fortress (returns true)
         (17, -1, 18), // V1_14 Nether Fortress
         (19, -1, 18), // V1_16_1 Nether Fortress 1.18- (returns true)
         (19, -1, 19), // V1_16_1 Nether Bastion
         (21, -1, 19), // V1_17 Nether Bastion
+        (22, -1, 19), // V1_18 Nether Bastion (getVariant path)
+        (23, -1, 19), // V1_19_2 Nether Bastion (sampleY=33>>2)
+        (28, -1, 19), // V1_21 Nether Bastion
+        (22, -1, 18), // V1_18 Nether Fortress (bastion-exclusion check)
         (19, -1, 12), // V1_16_1 Nether Ruined_Portal_N
         (15, 1, 20),  // V1_12 End EndCity
         (22, 1, 20),  // V1_18 End EndCity
-        (22, 1, 21),  // V1_18 End EndGateway
     ];
     let per_combo: u64 = 64;
     let total = combos.len() as u64 * per_combo;
@@ -5101,6 +5188,15 @@ mod ffi {
             x: c_int,
             z: c_int,
             flags: u32,
+        ) -> c_int;
+        pub fn cubiomes_call_get_variant(
+            structure_type: c_int,
+            mc: c_int,
+            seed: u64,
+            x: c_int,
+            z: c_int,
+            biome_id: c_int,
+            out: *mut c_int,
         ) -> c_int;
         pub fn cubiomes_call_get_optimal_afk(
             px: *mut c_int,

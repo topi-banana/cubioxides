@@ -209,6 +209,24 @@ int cubiomes_call_is_viable_structure_pos(int mc, int dim, int structure_type,
     return isViableStructurePos(structure_type, &g, x, z, flags);
 }
 
+int cubiomes_call_get_variant(int structure_type, int mc, uint64_t seed, int x,
+                              int z, int biome_id, int *out) {
+    StructureVariant sv;
+    int rc = getVariant(&sv, structure_type, mc, seed, x, z, biome_id);
+    out[0] = sv.abandoned;
+    out[1] = sv.cracked;
+    out[2] = sv.start;
+    out[3] = sv.biome;
+    out[4] = sv.rotation;
+    out[5] = sv.x;
+    out[6] = sv.y;
+    out[7] = sv.z;
+    out[8] = sv.sx;
+    out[9] = sv.sy;
+    out[10] = sv.sz;
+    return rc;
+}
+
 #include "quadbase.h"
 
 void cubiomes_call_get_optimal_afk(int *px, int *pz, int *spcnt, int p0x,

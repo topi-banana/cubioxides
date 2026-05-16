@@ -7,6 +7,7 @@
 //! candidate point) lands in a follow-up.
 
 use crate::biome::Biome;
+use crate::finder::variant::get_variant;
 use crate::finder::{StructureType, get_structure_config, get_structure_pos};
 use crate::generator::Generator;
 use crate::math::floordiv;
@@ -213,13 +214,24 @@ fn viable_nether(
         }
         return !is_viable_structure_pos(Bastion, g, x, z, 0);
     }
-    // Bastion 1.18+ needs getVariant; defer.
+    // Bastion 1.18+: sample at the variant centroid.
+    let (sample_x, sample_z, sample_y);
     if g.mc.is_at_least(MCVersion::V1_18) && structure_type == Bastion {
-        unimplemented!("Bastion 1.18+ viability needs getVariant (follow-up)");
+        let sv = get_variant(Bastion, g.mc, g.seed, x, z, -1)
+            .expect("Bastion 1.18+ getVariant must succeed");
+        sample_x = (((chunk_x * 32 + 2 * sv.x as i64 + sv.sx as i64 - 1) / 2) >> 2) as i32;
+        sample_z = (((chunk_z * 32 + 2 * sv.z as i64 + sv.sz as i64 - 1) / 2) >> 2) as i32;
+        sample_y = if g.mc.is_at_least(MCVersion::V1_19_2) {
+            33 >> 2
+        } else {
+            0
+        };
+    } else {
+        sample_x = (chunk_x as i32) * 4 + 2;
+        sample_z = (chunk_z as i32) * 4 + 2;
+        sample_y = 0;
     }
-    let sample_x = (chunk_x as i32) * 4 + 2;
-    let sample_z = (chunk_z as i32) * 4 + 2;
-    let id = g.biome_at(4, sample_x, 0, sample_z).0;
+    let id = g.biome_at(4, sample_x, sample_y, sample_z).0;
     is_viable_feature_biome(g.mc, structure_type, id)
 }
 
