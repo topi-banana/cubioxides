@@ -75,6 +75,24 @@ const FREEZING: i32 = 4;
 /// until reaching the voronoi cell, OR-ing every final biome ID
 /// it touches. Bits 0..=127 land in `mL`, bits 128..=255 in `mM`
 /// (offset by 128, matching cubiomes).
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::finder::gen_potential;
+/// use cubioxides::layer::LayerId;
+///
+/// // Walk forward from L_BIOME_256 with the plains id (1). The
+/// // reachable-biome envelope feeds setup_biome_filter so callers
+/// // know which final biomes can ever appear downstream — useful
+/// // for pre-screening masks before kicking off a full scan.
+/// let mut m_l = 0u64;
+/// let mut m_m = 0u64;
+/// gen_potential(MCVersion::V1_16_1, 0, LayerId::Biome256, 1, &mut m_l, &mut m_m);
+/// // Plains itself is one of the reachable terminal biomes.
+/// assert_ne!(m_l & (1u64 << 1), 0);
+/// ```
 pub fn gen_potential(
     mc: MCVersion,
     flags: u32,
