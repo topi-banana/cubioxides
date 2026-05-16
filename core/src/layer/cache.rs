@@ -17,7 +17,7 @@ fn get_max_area(
     mut area_z: i32,
     max_x: &mut i32,
     max_z: &mut i32,
-    siz: &mut usize,
+    bufsize: &mut usize,
 ) {
     let Some(layer_id) = layer else { return };
     let node = &stack.layers[layer_id as usize];
@@ -27,7 +27,7 @@ fn get_max_area(
 
     // multi-layers and zoom-layers use a temporary copy of their parent area
     if node.p2.is_some() || node.zoom != 1 {
-        *siz += (area_x as usize) * (area_z as usize);
+        *bufsize += (area_x as usize) * (area_z as usize);
     }
 
     if area_x > *max_x {
@@ -45,9 +45,9 @@ fn get_max_area(
         area_z >>= 2;
     }
 
-    get_max_area(stack, node.p, area_x, area_z, max_x, max_z, siz);
+    get_max_area(stack, node.p, area_x, area_z, max_x, max_z, bufsize);
     if node.p2.is_some() {
-        get_max_area(stack, node.p2, area_x, area_z, max_x, max_z, siz);
+        get_max_area(stack, node.p2, area_x, area_z, max_x, max_z, bufsize);
     }
 }
 
@@ -64,7 +64,7 @@ pub fn get_min_layer_cache_size(
 ) -> usize {
     let mut max_x = size_x;
     let mut max_z = size_z;
-    let mut bufsiz: usize = 0;
+    let mut bufsize: usize = 0;
     get_max_area(
         stack,
         Some(entry),
@@ -72,7 +72,7 @@ pub fn get_min_layer_cache_size(
         size_z,
         &mut max_x,
         &mut max_z,
-        &mut bufsiz,
+        &mut bufsize,
     );
-    bufsiz + (max_x as usize) * (max_z as usize)
+    bufsize + (max_x as usize) * (max_z as usize)
 }
