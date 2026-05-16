@@ -1142,6 +1142,12 @@ fn regenerate_layers() -> ExitCode {
         return ExitCode::FAILURE;
     }
     if let Err(err) =
+        write_biome_para_extremes_fixture(&fixtures_dir.join("biome_para_extremes.bin"))
+    {
+        eprintln!("biome_para_extremes fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
         eprintln!("viable_feature_biome fixture failed: {err}");
@@ -3695,6 +3701,26 @@ fn write_monte_carlo_fixture(path: &Path) -> std::io::Result<()> {
         file.write_all(&samples.to_le_bytes())?;
         file.write_all(&successes.to_le_bytes())?;
         file.write_all(&rng_after.to_le_bytes())?;
+    }
+    file.flush()
+}
+
+/// `getBiomeParaExtremes` payload (kind = 99). Per-record:
+/// `mc_ord i32`, `has i32` (1 if cubiomes returned non-NULL),
+/// `extremes [i32; 12]` (T `lo`/`hi`, H `lo`/`hi`, … W `lo`/`hi`).
+fn write_biome_para_extremes_fixture(path: &Path) -> std::io::Result<()> {
+    let mc_ords: &[i32] = &[1, 2, 5, 13, 17, 22, 24, 26, 27, 28];
+    let total = mc_ords.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 99, total)?;
+    for &mc in mc_ords {
+        let mut out = [0_i32; 12];
+        let has = unsafe { ffi::cubiomes_call_get_biome_para_extremes(mc, out.as_mut_ptr()) };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&has.to_le_bytes())?;
+        for v in out {
+            file.write_all(&v.to_le_bytes())?;
+        }
     }
     file.flush()
 }
@@ -7361,6 +7387,7 @@ mod ffi {
         ) -> c_int;
         pub fn cubiomes_call_seed_zero_nextint4() -> c_int;
         pub fn cubiomes_call_get_shadow(seed: u64) -> u64;
+        pub fn cubiomes_call_get_biome_para_extremes(mc: c_int, out12: *mut c_int) -> c_int;
         pub fn cubiomes_call_id_set_add(out_m_l: *mut u64, out_m_m: *mut u64, id: c_int);
         pub fn cubiomes_call_id_set_test(m_l: u64, m_m: u64, id: c_int) -> c_int;
         pub fn cubiomes_call_get_dimension(id: c_int) -> c_int;

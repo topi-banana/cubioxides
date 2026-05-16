@@ -1189,6 +1189,15 @@ int cubiomes_call_seed_zero_nextint4(void) {
 
 uint64_t cubiomes_call_get_shadow(uint64_t seed) { return getShadow(seed); }
 
+/* Copies getBiomeParaExtremes output into a fixed 12-int buffer. Returns
+ * 1 if cubiomes returned a non-NULL pointer, 0 otherwise. */
+int cubiomes_call_get_biome_para_extremes(int mc, int *out12) {
+    const int *p = getBiomeParaExtremes(mc);
+    if (!p) return 0;
+    for (int i = 0; i < 12; i++) out12[i] = p[i];
+    return 1;
+}
+
 int cubiomes_call_get_largest_rec(int target, const int *ids, int sx, int sz,
                                   int *p0x, int *p0z, int *p1x, int *p1z) {
     Pos p0 = {0, 0};
