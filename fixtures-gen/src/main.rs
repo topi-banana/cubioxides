@@ -5043,8 +5043,9 @@ fn write_end_voronoi_fixture(path: &Path) -> std::io::Result<()> {
 
 /// `FORCE_OCEAN_VARIANTS` parity fixture (kind = 105). Same record
 /// layout as `end_voronoi.bin` (mc/seed/scale/rxryrz/sxsysz/err +
-/// biome ids). Exercises 1.13+ scales 16, 64, 256 where the
-/// `mapOceanMixMod` injection actually fires.
+/// biome ids). Exercises 1.13+ scales 4 (no `OceanMixMod` injection
+/// — regression check), 16, 64, 256 (injected wrappers fire), plus
+/// scale=1 (voronoi over entry_1 — unchanged).
 fn write_force_ocean_variants_fixture(path: &Path) -> std::io::Result<()> {
     type Case = (i32, u64, i32, i32, i32, i32, i32, i32, i32);
     let cases: &[Case] = &[
@@ -5058,6 +5059,14 @@ fn write_force_ocean_variants_fixture(path: &Path) -> std::io::Result<()> {
         (19, 0xdead_beef, 256, -2, 0, -2, 4, 1, 4),
         // 1.17 scale 16, vertical (planar replication).
         (21, 0xdead_beef, 16, 0, 0, 0, 4, 2, 4),
+        // Scale 4 — wrappers don't apply (entry_4 unchanged); ensure
+        // the rest of the stack still matches cubiomes when the flag
+        // is set.
+        (19, 0xdead_beef, 4, 0, 0, 0, 8, 1, 8),
+        // Scale 1 — voronoi over entry_1 (which is also unchanged);
+        // confirms FORCE_OCEAN_VARIANTS doesn't accidentally break
+        // the voronoi path.
+        (19, 0xdead_beef, 1, 0, 64, 0, 4, 1, 4),
     ];
     let total = cases.len() as u64;
     let mut file = BufWriter::new(File::create(path)?);
