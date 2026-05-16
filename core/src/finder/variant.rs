@@ -17,11 +17,12 @@
     clippy::doc_markdown
 )]
 
+use crate::finder::StructureConfig;
 use crate::finder::StructureType;
 use crate::finder::population_seed::{chunk_generate_rng, get_population_seed};
 use crate::finder::viability::is_viable_feature_biome;
 use crate::mc_version::MCVersion;
-use crate::rng::JavaRng;
+use crate::rng::{JavaRng, Xoroshiro};
 
 /// Mirrors cubiomes' `STRUCT(StructureVariant)`. Fields not used
 /// by a given arm default to `false`/`0`.
@@ -100,9 +101,80 @@ pub fn get_variant(
             Some(get_variant_temple(&mut r, &mut rng, mc, structure_type))
         }
         Igloo => Some(get_variant_igloo(&mut r, &mut rng, mc, seed, x, z)),
+        Geode => get_variant_geode(&mut r, mc, seed, x, z),
         _ => None,
     }
     .map(|()| r)
+}
+
+fn get_variant_geode(
+    r: &mut StructureVariant,
+    mc: MCVersion,
+    seed: u64,
+    x: i32,
+    z: i32,
+) -> Option<()> {
+    // Cubiomes' `getVariant` for Geode reads the `StructureConfig`
+    // but ignores `getStructureConfig`'s "supported" return value,
+    // so we must populate the variant even for MC versions where
+    // Geode officially doesn't generate (cubiomes selects
+    // `s_geode_117` for `mc <= MC_1_17`).
+    let sc: StructureConfig = if mc.is_at_least(MCVersion::V1_18) {
+        // s_geode = { 20002, 1, 1, Geode, 0, 1.f/24 }
+        StructureConfig {
+            salt: 20002,
+            region_size: 1,
+            chunk_range: 1,
+            struct_type: StructureType::Geode as u8,
+            dim: 0,
+            rarity: 1.0_f32 / 24.0,
+        }
+    } else {
+        // s_geode_117 = { 20000, 1, 1, Geode, 0, 1.f/24 }
+        StructureConfig {
+            salt: 20000,
+            region_size: 1,
+            chunk_range: 1,
+            struct_type: StructureType::Geode as u8,
+            dim: 0,
+            rarity: 1.0_f32 / 24.0,
+        }
+    };
+    let salt_u = sc.salt as i64 as u64;
+    let pop = get_population_seed(mc, seed, x & !15, z & !15);
+    if mc.is_at_least(MCVersion::V1_18) {
+        let mut xr = Xoroshiro::new(pop.wrapping_add(salt_u));
+        if xr.next_float() >= sc.rarity {
+            return None;
+        }
+        let ox = xr.next_int_j(16);
+        let oz = xr.next_int_j(16);
+        r.x = (ox - (x & 15)) as i16;
+        r.z = (oz - (z & 15)) as i16;
+        r.y = (xr.next_int_j(1 + 30 + 58) - 58) as i16;
+        r.size = (xr.next_int_j(2) + 3) as u8;
+        xr.skip_n(2);
+        r.cracked = xr.next_float() < 0.95;
+    } else {
+        let mut rng = JavaRng::new(pop.wrapping_add(salt_u));
+        if rng.next_float() >= sc.rarity {
+            return None;
+        }
+        let ox = rng.next_int(16);
+        let oz = rng.next_int(16);
+        r.x = (ox - (x & 15)) as i16;
+        r.z = (oz - (z & 15)) as i16;
+        r.y = (rng.next_int(1 + 46 - 6) + 6) as i16;
+        r.size = (rng.next_int(2) + 3) as u8;
+        rng.skip_n(2);
+        r.cracked = rng.next_float() < 0.95;
+    }
+    // Cubiomes' final offset: geodes generate around a set of points
+    // with offsets 4-6 on each coord.
+    r.x += 5;
+    r.y += 5;
+    r.z += 5;
+    Some(())
 }
 
 fn get_variant_monument(r: &mut StructureVariant) {

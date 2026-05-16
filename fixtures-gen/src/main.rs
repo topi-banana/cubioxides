@@ -2291,6 +2291,10 @@ fn write_get_variant_fixture(path: &Path) -> std::io::Result<()> {
         (4, 15, -1), // Igloo V1_12 (population-seed re-seed)
         (4, 22, -1), // Igloo V1_18
         (4, 28, -1), // Igloo V1_21 WD
+        // Geode: 1.17 (JavaRng) vs 1.18+ (Xoroshiro). biome_id ignored.
+        (17, 20, -1), // Geode V1_17 (JavaRng path)
+        (17, 22, -1), // Geode V1_18 (Xoroshiro path)
+        (17, 28, -1), // Geode V1_21 WD
     ];
     let per_combo: u64 = 64;
     let total = probes.len() as u64 * per_combo;

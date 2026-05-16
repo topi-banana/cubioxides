@@ -57,6 +57,7 @@ fn mc_from_ord(ord: i32) -> MCVersion {
         15 => MCVersion::V1_12,
         17 => MCVersion::V1_14,
         19 => MCVersion::V1_16_1,
+        20 => MCVersion::V1_16,
         21 => MCVersion::V1_17,
         22 => MCVersion::V1_18,
         23 => MCVersion::V1_19_2,
