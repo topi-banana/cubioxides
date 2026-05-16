@@ -1187,6 +1187,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("parse_biome_colors fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_para_descent_fixture(&fixtures_dir.join("para_descent.bin")) {
+        eprintln!("para_descent fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -4163,6 +4167,82 @@ fn write_parse_biome_colors_fixture(path: &Path) -> std::io::Result<()> {
         file.write_all(input.as_bytes())?;
         file.write_all(&result.to_le_bytes())?;
         file.write_all(&palette)?;
+    }
+    file.flush()
+}
+
+/// `getParaDescent` payload (kind = 88). Per-record:
+/// `mc i32, seed u64, npara i32, x i32, z i32, w i32, h i32,
+///  i0 i32, j0 i32, maxrad i32, maxiter i32, factor f64, alpha f64,
+///  result_bits u64`.
+fn write_para_descent_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (
+        i32,
+        u64,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        f64,
+        f64,
+    );
+    let cases: &[Case] = &[
+        // (mc, seed, npara, x, z, w, h, i0, j0, maxrad, maxiter, factor, alpha)
+        // Temperature axis, small area, descent from middle.
+        (22, 0xdead_beef, 0, 0, 0, 16, 16, 8, 8, 32, 64, 1.0, 2.5),
+        // Humidity axis, factor=-1 to search for maximum.
+        (22, 0xdead_beef, 1, 0, 0, 16, 16, 8, 8, 32, 64, -1.0, 2.5),
+        // Continentalness axis, off-origin area.
+        (
+            22,
+            0xcafe_babe,
+            2,
+            100,
+            100,
+            32,
+            32,
+            16,
+            16,
+            64,
+            128,
+            1.0,
+            5.0,
+        ),
+        // Erosion axis with small maxiter.
+        (22, 0x1234_5678, 3, -64, -64, 8, 8, 4, 4, 16, 16, 1.0, 1.0),
+        // Weirdness axis.
+        (22, 0xfeed_face, 5, 0, 0, 16, 16, 0, 0, 32, 64, 1.0, 2.5),
+        // 1.21 weirdness.
+        (28, 0xabcd_1234, 5, 50, 50, 16, 16, 8, 8, 32, 100, 1.0, 3.0),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 88, total)?;
+    for &(mc, seed, npara, x, z, w, h, i0, j0, maxrad, maxiter, factor, alpha) in cases {
+        let result = unsafe {
+            ffi::cubiomes_call_get_para_descent(
+                mc, seed, npara, factor, x, z, w, h, i0, j0, maxrad, maxiter, alpha,
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&npara.to_le_bytes())?;
+        file.write_all(&x.to_le_bytes())?;
+        file.write_all(&z.to_le_bytes())?;
+        file.write_all(&w.to_le_bytes())?;
+        file.write_all(&h.to_le_bytes())?;
+        file.write_all(&i0.to_le_bytes())?;
+        file.write_all(&j0.to_le_bytes())?;
+        file.write_all(&maxrad.to_le_bytes())?;
+        file.write_all(&maxiter.to_le_bytes())?;
+        file.write_all(&factor.to_le_bytes())?;
+        file.write_all(&alpha.to_le_bytes())?;
+        file.write_all(&result.to_bits().to_le_bytes())?;
     }
     file.flush()
 }
@@ -7869,6 +7949,21 @@ mod ffi {
             palette768: *mut u8,
             buf: *const std::ffi::c_char,
         ) -> c_int;
+        pub fn cubiomes_call_get_para_descent(
+            mc: c_int,
+            seed: u64,
+            npara: c_int,
+            factor: f64,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+            i0: c_int,
+            j0: c_int,
+            maxrad: c_int,
+            maxiter: c_int,
+            alpha: f64,
+        ) -> f64;
         pub fn cubiomes_call_setup_biome_filter(
             mc: c_int,
             flags: u32,

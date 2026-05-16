@@ -27,6 +27,7 @@ pub mod largest_rec;
 pub mod locate_biome;
 pub mod mineshaft;
 pub mod monte_carlo;
+pub mod para_descent;
 pub mod population_seed;
 pub mod quadbase;
 pub mod slime;

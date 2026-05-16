@@ -1227,6 +1227,21 @@ uint64_t cubiomes_call_get_min_layer_cache_size(int mc, int entry, int sx, int s
     return (uint64_t) getMinLayerCacheSize(&ls.layers[entry], sx, sz);
 }
 
+/* getParaDescent wrapper (no callback). Initialises a Generator at
+ * `mc`, applies `seed` for the overworld, then descends climate axis
+ * `npara` (0=temperature, 1=humidity, 2=continentalness, 3=erosion,
+ * 4=depth, 5=weirdness). Returns the f64 minimum value. */
+double cubiomes_call_get_para_descent(int mc, uint64_t seed, int npara,
+                                      double factor, int x, int z, int w, int h,
+                                      int i0, int j0, int maxrad, int maxiter,
+                                      double alpha) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, DIM_OVERWORLD, seed);
+    return getParaDescent(&g.bn.climate[npara], factor, x, z, w, h,
+                          i0, j0, maxrad, maxiter, alpha, NULL, NULL);
+}
+
 /* parseBiomeColors wrapper. Caller supplies an empty 256*3 byte palette
  * (cubiomes does NOT zero-init for the user) and a null-terminated text. */
 extern int parseBiomeColors(unsigned char biomeColors[256][3], const char *buf);
