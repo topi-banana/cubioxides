@@ -18,6 +18,21 @@ use crate::rng::JavaRng;
 /// `isStrongholdBiome(mc, id)` — does this biome allow stronghold
 /// generation on `mc`? Mirrors cubiomes' `isStrongholdBiome` from
 /// `finders.c`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::biome::Biome;
+/// use cubioxides::finder::is_stronghold_biome;
+///
+/// // Plains is a valid stronghold biome on 1.7+ but not on 1.6,
+/// // which used a different biome whitelist for the 128-stronghold
+/// // ring. River and ocean biomes are never valid on any version.
+/// assert!(is_stronghold_biome(MCVersion::V1_16_1, Biome::PLAINS.id()));
+/// assert!(!is_stronghold_biome(MCVersion::V1_6, Biome::PLAINS.id()));
+/// assert!(!is_stronghold_biome(MCVersion::V1_16_1, Biome::RIVER.id()));
+/// ```
 #[must_use]
 pub fn is_stronghold_biome(mc: MCVersion, id: i32) -> bool {
     if !Biome::is_overworld_id(mc, id) {
