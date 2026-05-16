@@ -541,10 +541,11 @@ impl Generator {
         match r.scale {
             4 => en.map_end(&mut buf, r.x, r.z, r.sx as usize, r.sz as usize),
             16 => en.map_end_biome(&mut buf, r.x, r.z, r.sx as usize, r.sz as usize),
-            scale if scale > 16 => self.gen_end_large_scale(en, &mut buf, r),
-            other => {
-                panic!("Generator::gen_biomes: End scale={other} unsupported")
-            }
+            // Cubiomes' else branch: any scale not in {1, 4, 16}
+            // falls into the radial-distance pseudo-biome path. The
+            // `scale / 8.0` formula handles arbitrary positive
+            // scales, so 2/3/8/32/64/256/... all work.
+            _ => self.gen_end_large_scale(en, &mut buf, r),
         }
         for k in 0..r.sy as usize {
             for (i, &v) in buf.iter().enumerate() {

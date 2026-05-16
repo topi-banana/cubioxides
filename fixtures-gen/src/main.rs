@@ -5057,9 +5057,15 @@ fn write_end_large_scale_fixture(path: &Path) -> std::io::Result<()> {
         (28, 0xabcd_1234, 0, 0, 0, 4, 2, 4),
         // Scale 1024 — exercises the radial formula extremes.
         (22, 0xdead_beef, 0, 0, 0, 4, 1, 4),
+        // Non-power-of-2 / unusual scales — cubiomes' else branch
+        // accepts these; the Rust port must follow.
+        (22, 0xdead_beef, 0, 0, 0, 4, 1, 4), // scale=2
+        (22, 0xdead_beef, 0, 0, 0, 4, 1, 4), // scale=3
+        (22, 0xdead_beef, 0, 0, 0, 4, 1, 4), // scale=8
+        (22, 0xdead_beef, 0, 0, 0, 4, 1, 4), // scale=32
     ];
     // Scales paired with cases above (parallel array).
-    let scales: &[i32] = &[64, 64, 64, 64, 256, 256, 64, 256, 64, 1024];
+    let scales: &[i32] = &[64, 64, 64, 64, 256, 256, 64, 256, 64, 1024, 2, 3, 8, 32];
     let total = cases.len() as u64;
     let mut file = BufWriter::new(File::create(path)?);
     write_header(&mut file, 104, total)?;
