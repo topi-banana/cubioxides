@@ -7,6 +7,25 @@
 //! matches the reference C implementation when given the same seed and
 //! coordinates.
 //!
+//! # Example
+//!
+//! ```
+//! use cubioxides::{Biome, Dimension, Generator, MCVersion, Range};
+//!
+//! let mut g = Generator::new(MCVersion::V1_21, 0);
+//! g.apply_seed(Dimension::Overworld, 0xdead_beef);
+//!
+//! // Single-cell biome lookup at the 1:4 grid.
+//! let _biome = g.biome_at(4, 0, 64, 0);
+//!
+//! // Bulk fill a 16×16 area at scale=4 in one call.
+//! let mut cache = vec![Biome::NONE; 16 * 16];
+//! g.gen_biomes(
+//!     &mut cache,
+//!     Range { scale: 4, x: 0, z: 0, sx: 16, sz: 16, y: 64, sy: 1 },
+//! );
+//! ```
+//!
 //! # wasm32 compatibility
 //!
 //! This crate is intended to build and run on `wasm32-unknown-unknown`. It
