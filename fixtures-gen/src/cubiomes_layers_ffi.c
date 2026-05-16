@@ -1076,3 +1076,37 @@ uint64_t cubiomes_call_get_house_list(uint64_t seed, int chunk_x, int chunk_z,
                                       int *out_houses) {
     return getHouseList(out_houses, seed, chunk_x, chunk_z);
 }
+
+/* Generate the Nether-Fortress piece tree for the given seed/chunk.
+ * Writes the piece count to *out_count and serialises each piece's
+ * bounding box into out_records. Mirrors cubiomes' getFortressPieces. */
+typedef struct {
+    int32_t bb0_x, bb0_y, bb0_z;
+    int32_t bb1_x, bb1_y, bb1_z;
+    int32_t pos_x, pos_y, pos_z;
+    int32_t rot;
+    int32_t type;
+} FortressBBRecord;
+
+void cubiomes_call_get_fortress_pieces(int mc, uint64_t seed, int chunk_x,
+                                       int chunk_z, int max_pieces,
+                                       int *out_count,
+                                       FortressBBRecord *out_records) {
+    Piece *pieces = (Piece *)malloc(sizeof(Piece) * (size_t)max_pieces);
+    int n = getFortressPieces(pieces, max_pieces, mc, seed, chunk_x, chunk_z);
+    *out_count = n;
+    for (int i = 0; i < n && i < max_pieces; i++) {
+        out_records[i].bb0_x = pieces[i].bb0.x;
+        out_records[i].bb0_y = pieces[i].bb0.y;
+        out_records[i].bb0_z = pieces[i].bb0.z;
+        out_records[i].bb1_x = pieces[i].bb1.x;
+        out_records[i].bb1_y = pieces[i].bb1.y;
+        out_records[i].bb1_z = pieces[i].bb1.z;
+        out_records[i].pos_x = pieces[i].pos.x;
+        out_records[i].pos_y = pieces[i].pos.y;
+        out_records[i].pos_z = pieces[i].pos.z;
+        out_records[i].rot = pieces[i].rot;
+        out_records[i].type = pieces[i].type;
+    }
+    free(pieces);
+}

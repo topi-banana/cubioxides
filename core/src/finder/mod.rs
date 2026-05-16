@@ -16,6 +16,7 @@
 
 pub mod end;
 pub mod end_city;
+pub mod fortress;
 pub mod locate_biome;
 pub mod mineshaft;
 pub mod population_seed;

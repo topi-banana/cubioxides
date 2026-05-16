@@ -7,11 +7,7 @@
 //! It also returns the post-call RNG state so callers can chain it
 //! with subsequent draws.
 
-#![allow(
-    clippy::missing_panics_doc,
-    clippy::identity_op,
-    clippy::erasing_op
-)]
+#![allow(clippy::missing_panics_doc, clippy::identity_op, clippy::erasing_op)]
 
 use crate::finder::population_seed::chunk_generate_rng;
 
