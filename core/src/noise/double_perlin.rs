@@ -43,6 +43,19 @@ impl DoublePerlinNoise {
     /// Initialise from a Java RNG (`doublePerlinInit`).
     ///
     /// `len` must be at least 1 and `omin + len <= 0`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::{DoublePerlinNoise, JavaRng};
+    ///
+    /// // Two-stack Perlin used for 1.13+ surface noise:
+    /// // a primary octave stack plus an offset twin at a 337/331
+    /// // frequency multiplier — combined to suppress visible tiling.
+    /// let mut rng = JavaRng::new(0xdead_beef);
+    /// let noise = DoublePerlinNoise::from_java(&mut rng, -3, 4);
+    /// let _y = noise.sample(1.0, 2.0, 3.0);
+    /// ```
     #[must_use]
     pub fn from_java(rng: &mut JavaRng, omin: i32, len: i32) -> Self {
         assert!(len >= 1, "double perlin len must be at least 1");
