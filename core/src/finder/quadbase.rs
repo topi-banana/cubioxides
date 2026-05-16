@@ -850,6 +850,45 @@ pub fn scan_for_quads(
     cnt
 }
 
+/// Parallel variant of [`search_all_48`]. Splits the seed range
+/// evenly into `n_chunks` sub-ranges and runs them on the rayon
+/// thread pool. Returns the merged result (output order is
+/// chunk-major, NOT cubiomes' sequential mid-major order — sort
+/// the result if order-stability matters).
+///
+/// Available only when the `parallel` feature is enabled and
+/// the target architecture is not `wasm32`.
+#[cfg(all(feature = "parallel", not(target_arch = "wasm32")))]
+pub fn search_all_48_parallel<F>(
+    range: core::ops::RangeInclusive<u64>,
+    low_bits: &[u64],
+    lbitn: u32,
+    n_chunks: usize,
+    check: F,
+) -> Vec<u64>
+where
+    F: Fn(u64) -> bool + Sync + Send,
+{
+    use rayon::prelude::*;
+    let start = *range.start();
+    let end = *range.end();
+    if n_chunks <= 1 || end <= start {
+        return search_all_48(range, low_bits, lbitn, &check);
+    }
+    let total = end - start + 1;
+    let sub_ranges: Vec<_> = (0..n_chunks)
+        .map(|i| {
+            let s = start.wrapping_add(total.wrapping_mul(i as u64) / n_chunks as u64);
+            let e = start.wrapping_add(total.wrapping_mul((i + 1) as u64) / n_chunks as u64) - 1;
+            s..=e
+        })
+        .collect();
+    sub_ranges
+        .par_iter()
+        .flat_map_iter(|r| search_all_48(r.clone(), low_bits, lbitn, &check).into_iter())
+        .collect()
+}
+
 /// `searchAll48(range, low_bits, lbitn, check)` — enumerate 48-bit
 /// seeds in `range` whose lower `lbitn` bits match one of
 /// `low_bits`, invoking `check` for each candidate. Returns the
@@ -964,5 +1003,22 @@ mod tests {
         // Same as above but only seeds > 30 pass.
         let seeds = super::search_all_48(0..=63, &[5, 11], 4, |s| s > 30);
         assert_eq!(seeds, vec![37, 43, 53, 59]);
+    }
+
+    #[cfg(all(feature = "parallel", not(target_arch = "wasm32")))]
+    #[test]
+    fn search_all_48_parallel_matches_sequential() {
+        // Use a small enough range that we can sort and compare
+        // against the sequential variant. The parallel output is
+        // chunk-major, so we sort both before comparison.
+        let range = 0..=(1u64 << 16) - 1;
+        let low_bits = [0x5_u64, 0x11_u64];
+        let lbitn = 8;
+        let check = |s: u64| s % 7 == 0;
+        let mut seq = super::search_all_48(range.clone(), &low_bits, lbitn, check);
+        let mut par = super::search_all_48_parallel(range, &low_bits, lbitn, 4, check);
+        seq.sort_unstable();
+        par.sort_unstable();
+        assert_eq!(seq, par);
     }
 }

@@ -32,6 +32,8 @@ pub use end::{
 pub use locate_biome::{id_matches, locate_biome};
 pub use mineshaft::get_mineshafts;
 pub use population_seed::{chunk_generate_rng, get_population_seed};
+#[cfg(all(feature = "parallel", not(target_arch = "wasm32")))]
+pub use quadbase::search_all_48_parallel;
 pub use quadbase::{
     LOW20_QUAD_CLASSIC, LOW20_QUAD_HUT_BARELY, LOW20_QUAD_HUT_NORMAL, LOW20_QUAD_IDEAL, QuadHutCst,
     get_optimal_afk, get_quad_hut_cst, is_quad_base, is_quad_base_feature, is_quad_base_feature_24,
