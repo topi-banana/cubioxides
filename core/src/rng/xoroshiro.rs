@@ -30,6 +30,18 @@ pub struct Xoroshiro {
 
 impl Xoroshiro {
     /// Construct from a seed value via the Stafford-13 mixing routine.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::Xoroshiro;
+    ///
+    /// // Mirrors Mojang's `Xoroshiro128++` initialisation used since 1.18:
+    /// // a Stafford-mix-13 (not a plain splitmix64) bootstraps the 128-bit
+    /// // state, then `next_long` produces the same stream as the JVM.
+    /// let mut rng = Xoroshiro::new(0);
+    /// let _first_draw = rng.next_long();
+    /// ```
     #[inline]
     #[must_use]
     pub const fn new(value: u64) -> Self {

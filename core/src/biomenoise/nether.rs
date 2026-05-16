@@ -47,6 +47,18 @@ const NPOINTS: [(f32, f32, f32, i32); 5] = [
 impl NetherNoise {
     /// `setNetherSeed(nn, seed)` — re-init temperature + humidity
     /// from a Java RNG keyed by `seed` and `seed + 1` respectively.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::biomenoise::NetherNoise;
+    ///
+    /// // The 1.16+ Nether biomes are Voronoi-classified by two
+    /// // f32 axes; `set_seed` initialises the climate noise that
+    /// // feeds those axes.
+    /// let nn = NetherNoise::set_seed(0xdead_beef);
+    /// let (_biome, _ndel) = nn.get_nether_biome(0, 64, 0);
+    /// ```
     #[must_use]
     pub fn set_seed(seed: u64) -> Self {
         let mut rng = JavaRng::new(seed);

@@ -45,6 +45,21 @@ pub struct PerlinNoise {
 
 impl PerlinNoise {
     /// Initialise from a Java RNG (legacy biome generation).
+    ///
+    /// Used by every overworld noise stack from MC 1.0 through 1.17,
+    /// and by the surface noise on all dimensions. The RNG is advanced
+    /// by 3 `nextDouble` calls and 256 `nextInt` calls — the full
+    /// Fisher-Yates shuffle of the permutation table.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::{JavaRng, PerlinNoise};
+    ///
+    /// let mut rng = JavaRng::new(0xdead_beef);
+    /// let noise = PerlinNoise::from_java(&mut rng);
+    /// let _y = noise.sample(1.0, 2.0, 3.0, 0.0, 0.0);
+    /// ```
     #[must_use]
     pub fn from_java(rng: &mut JavaRng) -> Self {
         let a = rng.next_double() * 256.0;
