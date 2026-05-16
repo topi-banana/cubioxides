@@ -80,6 +80,24 @@ pub struct StrongholdIter {
 /// Approximate location of the first stronghold, plus an
 /// optionally-initialised iterator for the rest. Mirrors cubiomes'
 /// `initFirstStronghold(sh, mc, s48)`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::finder::{init_first_stronghold, next_stronghold_no_biome};
+///
+/// // First stronghold ring (1.9+): 1..=3 strongholds at ~1280 blocks
+/// // out. `next_stronghold_no_biome` walks them in cubiomes order
+/// // without performing the biome-snap check (cheap; use
+/// // `next_stronghold` for the full check). This biome-skip path
+/// // is 1.19.4+ only; on older MCs `next_stronghold(&g)` is the
+/// // equivalent.
+/// let (_first_approx, mut iter) = init_first_stronghold(MCVersion::V1_21, 0xdead_beef);
+/// while next_stronghold_no_biome(&mut iter) > 0 {
+///     let _ = iter.pos;
+/// }
+/// ```
 #[must_use]
 pub fn init_first_stronghold(mc: MCVersion, s48: u64) -> (Pos, StrongholdIter) {
     let mut rnds = JavaRng::new(s48);
