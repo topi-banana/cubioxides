@@ -1,12 +1,22 @@
 //! Structure locators — bit-exact ports of cubiomes' `finders.c` /
 //! `finders.h`.
 //!
-//! This first M6 commit ships the structure-position layer: given a
-//! world seed and region coordinates, find the in-region attempt
-//! position for each structure type. The biome-viability checks
-//! (`isViableStructurePos`) live in subsequent commits, as do
-//! `Mineshaft`, `Bastion` (1.18+), and the decorator-feature
-//! structures (`End_Gateway`, `End_Island`, `Desert_Well`, `Geode`).
+//! Each submodule corresponds to one cubiomes capability group:
+//! position generation ([`get_structure_pos`], [`get_feature_pos`],
+//! [`get_large_structure_pos`]), viability checks ([`viability`],
+//! [`can_biome_generate`]), structure pieces ([`end_city`],
+//! [`fortress`], [`village_houses`]), biome filtering
+//! ([`biome_filter`], [`check_for_biomes`], [`check_for_temps`],
+//! [`biome_para`]), area analysis ([`biome_centers`],
+//! [`largest_rec`], [`locate_biome`], [`monte_carlo`]),
+//! climate-driven scans ([`para_descent`], [`para_range`]),
+//! End-dim helpers ([`end`]), Strongholds ([`stronghold`]), spawn
+//! estimation ([`spawn`]), quad-base search ([`quadbase`]), and the
+//! per-structure variant decoder ([`variant`]).
+//!
+//! Most public APIs are re-exported at the module root for
+//! discoverability; the submodule paths are still available for
+//! callers that want to scope their imports tightly.
 
 #![allow(
     clippy::many_single_char_names,
