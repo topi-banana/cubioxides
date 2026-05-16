@@ -94,6 +94,17 @@ impl MCVersion {
     /// Returns `true` if `self` is the same as or newer than `other`.
     ///
     /// Mirrors the `mc >= MC_1_X` checks scattered throughout cubiomes.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::MCVersion;
+    ///
+    /// assert!(MCVersion::V1_18.is_at_least(MCVersion::V1_13));
+    /// assert!(!MCVersion::V1_12.is_at_least(MCVersion::V1_18));
+    /// // `1.21 WD` (V1_21) is the newest; everything else qualifies.
+    /// assert!(MCVersion::V1_21.is_at_least(MCVersion::B1_7));
+    /// ```
     #[inline]
     #[must_use]
     pub const fn is_at_least(self, other: Self) -> bool {
