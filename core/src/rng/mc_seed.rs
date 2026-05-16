@@ -19,6 +19,22 @@ const STEP_ADD: u64 = 1_442_695_040_888_963_407;
 /// Step the world-seed LCG by one round, salted with `salt`.
 ///
 /// `s * (s * mul + add) + salt`, all wrapping.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::rng::mc_seed::mc_step_seed;
+///
+/// // The 1-round LCG used to fold layer salts into the world seed.
+/// // It is the building block of `get_chunk_seed` and `get_layer_salt`
+/// // — three rounds of `mc_step_seed` produce a layer-specific salt.
+/// // Same inputs always yield the same output; changing only the
+/// // salt is enough to decorrelate the result.
+/// let a = mc_step_seed(123, 456);
+/// let b = mc_step_seed(123, 456);
+/// assert_eq!(a, b);
+/// assert_ne!(a, mc_step_seed(123, 457));
+/// ```
 #[inline]
 #[must_use]
 pub const fn mc_step_seed(s: u64, salt: u64) -> u64 {
