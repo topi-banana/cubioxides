@@ -20,6 +20,24 @@ use crate::noise::double_perlin::DoublePerlinNoise;
 /// `factor` is multiplied into the sample value — pass `-1.0` to
 /// search for a maximum instead. `alpha` is the jump-size scaler
 /// (cubiomes uses 0–~10 depending on the climate axis).
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::biomenoise::BiomeNoise;
+/// use cubioxides::biomenoise::biome_noise::NP_TEMPERATURE;
+/// use cubioxides::finder::get_para_descent;
+/// use cubioxides::MCVersion;
+///
+/// // Hill-climbing variant — `factor = 1.0` searches for a minimum;
+/// // pass `-1.0` to flip the sign and find a maximum instead. The
+/// // turbofish keeps type inference happy on the None-callback path.
+/// let bn = BiomeNoise::new(MCVersion::V1_21, 0xdead_beef, false);
+/// let temp = &bn.climate[NP_TEMPERATURE];
+/// let _min_v = get_para_descent::<fn(i32, i32, f64) -> bool>(
+///     temp, 1.0, 0, 0, 64, 64, 0, 0, 4, 32, 1.0, None,
+/// );
+/// ```
 #[must_use]
 pub fn get_para_descent<F>(
     para: &DoublePerlinNoise,
