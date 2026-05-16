@@ -1101,6 +1101,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("id_set fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_get_dimension_fixture(&fixtures_dir.join("get_dimension.bin")) {
+        eprintln!("get_dimension fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3469,6 +3473,27 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
             p1z,
             ids: ids_arr,
         };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `getDimension` parity record (kind = 89). One record per biome id.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct GetDimensionRecord {
+    pub id: i32,
+    pub dim: i32,
+}
+
+fn write_get_dimension_fixture(path: &Path) -> std::io::Result<()> {
+    // Cover every biome id 0..256 — getDimension is purely numeric.
+    let total: u64 = 256;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 89, total)?;
+    for id in 0_i32..256 {
+        let dim = unsafe { ffi::cubiomes_call_get_dimension(id) };
+        let rec = GetDimensionRecord { id, dim };
         file.write_all(bytemuck::bytes_of(&rec))?;
     }
     file.flush()
@@ -6770,6 +6795,7 @@ mod ffi {
         pub fn cubiomes_call_get_shadow(seed: u64) -> u64;
         pub fn cubiomes_call_id_set_add(out_m_l: *mut u64, out_m_m: *mut u64, id: c_int);
         pub fn cubiomes_call_id_set_test(m_l: u64, m_m: u64, id: c_int) -> c_int;
+        pub fn cubiomes_call_get_dimension(id: c_int) -> c_int;
         pub fn cubiomes_call_can_biome_generate(
             layer_id: c_int,
             mc: c_int,

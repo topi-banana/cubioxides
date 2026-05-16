@@ -178,6 +178,33 @@ impl Biome {
         matches!(id, 0 | 10 | 24 | 44 | 45 | 46 | 47 | 48 | 49 | 50)
     }
 
+    /// `getDimension(id)` — return the dimension a biome belongs to.
+    /// Bit-exact port of `cubiomes/biomes.c::getDimension`.
+    ///
+    /// - `[40, 43]` (`small_end_islands` ..= `end_barrens`) → End
+    /// - `[170, 173]` (`soul_sand_valley` ..= `basalt_deltas`) → Nether
+    /// - `9` (`the_end`) → End
+    /// - `8` (`nether_wastes`) → Nether
+    /// - else → Overworld (including `none = -1`).
+    #[inline]
+    #[must_use]
+    pub const fn dimension_id(id: i32) -> crate::mc_version::Dimension {
+        use crate::mc_version::Dimension;
+        if id >= 40 && id <= 43 {
+            return Dimension::End;
+        }
+        if id >= 170 && id <= 173 {
+            return Dimension::Nether;
+        }
+        if id == 9 {
+            return Dimension::End;
+        }
+        if id == 8 {
+            return Dimension::Nether;
+        }
+        Dimension::Overworld
+    }
+
     /// `biomeExists(mc, id)` — does this biome exist in the given
     /// MC version? Bit-exact port of `cubiomes/biomes.c::biomeExists`.
     /// Drives both `is_overworld_id` and the stronghold-biome mask.

@@ -1212,3 +1212,5 @@ void cubiomes_call_id_set_add(uint64_t *out_mL, uint64_t *out_mM, int id) {
 int cubiomes_call_id_set_test(uint64_t mL, uint64_t mM, int id) {
     return idSetTest(mL, mM, id);
 }
+
+int cubiomes_call_get_dimension(int id) { return getDimension(id); }
