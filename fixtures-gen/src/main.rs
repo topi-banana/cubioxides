@@ -1121,6 +1121,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("str2mc fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_biome_colors_fixture(&fixtures_dir.join("biome_colors.bin")) {
+        eprintln!("biome_colors fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3491,6 +3495,23 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
     }
+    file.flush()
+}
+
+/// `initBiomeColors` / `initBiomeTypeColors` parity payload
+/// (kind = 94). Body is two 768-byte palettes written contiguously.
+/// Reader splits the body into `colors[768] + type_colors[768]`.
+fn write_biome_colors_fixture(path: &Path) -> std::io::Result<()> {
+    let mut colors = [0u8; 768];
+    let mut type_colors = [0u8; 768];
+    unsafe {
+        ffi::cubiomes_call_init_biome_colors(colors.as_mut_ptr());
+        ffi::cubiomes_call_init_biome_type_colors(type_colors.as_mut_ptr());
+    }
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 94, 1)?;
+    file.write_all(&colors)?;
+    file.write_all(&type_colors)?;
     file.flush()
 }
 
@@ -6995,6 +7016,8 @@ mod ffi {
         pub fn cubiomes_call_biome2str(mc: c_int, id: c_int) -> *const std::ffi::c_char;
         pub fn cubiomes_call_struct2str(stype: c_int) -> *const std::ffi::c_char;
         pub fn cubiomes_call_str2mc(s: *const std::ffi::c_char) -> c_int;
+        pub fn cubiomes_call_init_biome_colors(colors: *mut u8);
+        pub fn cubiomes_call_init_biome_type_colors(colors: *mut u8);
         pub fn cubiomes_call_can_biome_generate(
             layer_id: c_int,
             mc: c_int,

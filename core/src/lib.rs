@@ -20,6 +20,7 @@
 pub mod biome;
 pub mod biome_set;
 pub mod biomenoise;
+pub mod colors;
 pub mod finder;
 pub mod generator;
 pub mod layer;

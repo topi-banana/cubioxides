@@ -1223,3 +1223,12 @@ const char *cubiomes_call_struct2str(int stype) { return struct2str(stype); }
 
 extern int str2mc(const char *s);
 int cubiomes_call_str2mc(const char *s) { return str2mc(s); }
+
+extern void initBiomeColors(unsigned char colors[256][3]);
+extern void initBiomeTypeColors(unsigned char colors[256][3]);
+void cubiomes_call_init_biome_colors(unsigned char colors[256][3]) {
+    initBiomeColors(colors);
+}
+void cubiomes_call_init_biome_type_colors(unsigned char colors[256][3]) {
+    initBiomeTypeColors(colors);
+}
