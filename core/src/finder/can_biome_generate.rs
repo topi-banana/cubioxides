@@ -3,9 +3,10 @@
 //! the given MC version. Bit-exact port of cubiomes' helper of the
 //! same name.
 //!
-//! Used by [`crate::finder::biome_filter`] (and cubiomes' upstream
-//! `setupBiomeFilter` / `getAvailableBiomes`) to decide which biomes
-//! a layer can possibly output. Cubiomes prints a warning and
+//! Used by cubiomes' upstream `setupBiomeFilter` /
+//! `getAvailableBiomes` to decide which biomes a layer can possibly
+//! output. The cubioxides port of those functions is a follow-up.
+//! Cubiomes prints a warning and
 //! returns 0 for unsupported layers; we panic instead to surface
 //! the misuse earlier.
 
