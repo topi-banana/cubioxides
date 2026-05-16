@@ -53,6 +53,29 @@ fn fixture_path() -> PathBuf {
 }
 
 #[test]
+fn map_approx_height_beta_branch_runs() {
+    use cubioxides::biome::Biome;
+    use cubioxides::biomenoise::surface::SurfaceNoise;
+    use cubioxides::generator::{Generator, map_approx_height};
+    use cubioxides::mc_version::{Dimension, MCVersion};
+    // Beta 1.7 generator. mapApproxHeight should use approx_surface_beta
+    // internally per-cell. We don't bit-exact compare to cubiomes
+    // (see this file's doc-comment) — just verify it produces finite
+    // heights in a reasonable range over a small grid.
+    let mut g = Generator::new(MCVersion::B1_7, 0);
+    g.apply_seed(Dimension::Overworld, 0xdead_beef);
+    let sn = SurfaceNoise::init(Dimension::Overworld, 0xdead_beef);
+    let (w, h) = (4_i32, 4_i32);
+    let mut y = vec![0.0_f32; (w * h) as usize];
+    let mut ids = vec![Biome::default(); (w * h) as usize];
+    let rc = map_approx_height(&mut y, Some(&mut ids), &g, &sn, 0, 0, w, h);
+    assert_eq!(rc, 0, "Beta map_approx_height should return 0");
+    for v in &y {
+        assert!(v.is_finite() && (-64.0..=192.0).contains(v));
+    }
+}
+
+#[test]
 fn approx_surface_beta_runs_and_returns_finite_height() {
     let path = fixture_path();
     let mut file = File::open(&path).unwrap_or_else(|e| panic!("opening {}: {e}", path.display()));

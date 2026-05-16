@@ -141,9 +141,26 @@ pub fn map_approx_height(
     }
 
     if g.mc.is_before(MCVersion::B1_8) {
-        // `approxSurfaceBeta` + `SurfaceNoiseBeta` — deferred to a
-        // follow-up stage that ports the Beta surface generator.
-        unimplemented!("Beta mapApproxHeight (approxSurfaceBeta) not yet ported");
+        // Beta: per-cell `approx_surface_beta` sampling at
+        // (cell_x*4+2, cell_z*4+2) block coords. Cubiomes uses a
+        // fresh SurfaceNoiseBeta inside mapApproxHeight (not the
+        // one cached on the Generator), matching the C code.
+        let bnb = g
+            .biome_noise_beta
+            .as_ref()
+            .expect("Beta map_approx_height: Generator must have biome_noise_beta");
+        let snb = crate::biomenoise::surface_beta::SurfaceNoiseBeta::init(g.seed);
+        for j in 0..h {
+            for i in 0..w {
+                let sample_x = (x + i) * 4 + 2;
+                let sample_z = (z + j) * 4 + 2;
+                let h_val = crate::biomenoise::surface_beta::approx_surface_beta(
+                    bnb, &snb, sample_x, sample_z,
+                );
+                y[(j * w + i) as usize] = h_val as f32;
+            }
+        }
+        return 0;
     }
 
     // 1.0 – 1.17 Overworld: 5×5 weighted kernel for depth/scale,
