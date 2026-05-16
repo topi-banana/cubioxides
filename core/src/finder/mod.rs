@@ -184,6 +184,25 @@ impl StructureType {
     /// `pillager_outpost`, `Treasure` → `buried_treasure`,
     /// `Bastion` → `bastion_remnant`, `Geode` → `amethyst_geode`,
     /// `JungleTemple` → `jungle_pyramid`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::finder::StructureType;
+    ///
+    /// // Straightforward mapping for most variants...
+    /// assert_eq!(StructureType::Village.name(), Some("village"));
+    ///
+    /// // ...but several rename non-trivially to match cubiomes' /
+    /// // Mojang's canonical strings:
+    /// assert_eq!(StructureType::Bastion.name(), Some("bastion_remnant"));
+    /// assert_eq!(StructureType::Geode.name(), Some("amethyst_geode"));
+    /// assert_eq!(StructureType::JungleTemple.name(), Some("jungle_pyramid"));
+    ///
+    /// // Internal helpers return None.
+    /// assert_eq!(StructureType::Feature.name(), None);
+    /// assert_eq!(StructureType::EndIsland.name(), None);
+    /// ```
     #[must_use]
     pub const fn name(self) -> Option<&'static str> {
         Some(match self {
