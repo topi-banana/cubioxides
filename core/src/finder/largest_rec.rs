@@ -42,6 +42,25 @@ struct Entry {
 /// (area, p0, p1) tuple matches cubiomes. Callers that need a
 /// "true" largest-rectangle should pad the input with a non-match
 /// border on the high-j and high-i sides.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::finder::get_largest_rec;
+///
+/// // A 4×3 grid with a 2×2 block of `target = 1` in the lower-left,
+/// // padded with a non-match border on the high-j edge so the
+/// // cubiomes-parity quirk doesn't elide the commit.
+/// let ids = [
+///     1, 1, 0, 0,
+///     1, 1, 0, 0,
+///     0, 0, 0, 0,
+/// ];
+/// let rec = get_largest_rec(1, &ids, 4, 3);
+/// assert_eq!(rec.area, 4);
+/// assert_eq!(rec.p0, (0, 0));
+/// assert_eq!(rec.p1, (1, 1));
+/// ```
 #[must_use]
 pub fn get_largest_rec(target: i32, ids: &[i32], sx: i32, sz: i32) -> LargestRec {
     let sx_u = sx as usize;
