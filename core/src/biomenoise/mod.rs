@@ -1,10 +1,20 @@
-//! 1.13+ noise-based biome generation primitives.
+//! Noise-based biome generation primitives.
 //!
-//! Mirrors cubiomes' `biomenoise.{h,c}`. Modules land in order of
-//! dependency: [`surface`] (`SurfaceNoise`, the 60-octave Perlin
-//! stack) is the first to ship; `NetherNoise`, `EndNoise`, the
-//! 1.18+ `BiomeNoise` (climate sampling + spline stack + `BiomeTree`
-//! decision), and `BiomeNoiseBeta` follow in subsequent commits.
+//! Mirrors cubiomes' `biomenoise.{h,c}`:
+//! - [`surface`] — `SurfaceNoise`, the 60-octave Perlin stack used
+//!   by 1.13+ surface-height sampling.
+//! - [`surface_beta`] — `SurfaceNoiseBeta` plus the sea-level
+//!   column-noise helpers used by Beta 1.7/1.8 ocean override.
+//! - [`nether`] — `NetherNoise` (the 1.16+ 3D climate sampler).
+//! - [`end`] — `EndNoise` (the 1.9+ End-dim biome sampler).
+//! - [`biome_noise`] — `BiomeNoise` (1.18+ climate noise + spline
+//!   stack + `BiomeTree` decision).
+//! - [`beta`] — `BiomeNoiseBeta` plus the Beta sea-level oceans
+//!   bridge into `gen_biome_noise_beta_scaled`.
+//! - [`climate`] — `climate_to_biome` decision-tree lookup (1.18+).
+//! - [`spline`] — depth-spline builder + sampler.
+//! - [`end_surface`] — End surface-height sampler (`mapEndSurfaceHeight`
+//!   + `getEndSurfaceHeight`).
 
 pub mod beta;
 pub mod biome_noise;
