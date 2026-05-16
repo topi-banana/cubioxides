@@ -1220,3 +1220,6 @@ const char *cubiomes_call_biome2str(int mc, int id) { return biome2str(mc, id); 
 
 extern const char *struct2str(int stype);
 const char *cubiomes_call_struct2str(int stype) { return struct2str(stype); }
+
+extern int str2mc(const char *s);
+int cubiomes_call_str2mc(const char *s) { return str2mc(s); }

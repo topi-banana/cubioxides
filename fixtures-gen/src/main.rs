@@ -1117,6 +1117,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("mc2str fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_str2mc_fixture(&fixtures_dir.join("str2mc.bin")) {
+        eprintln!("str2mc fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3484,6 +3488,44 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
             p1x,
             p1z,
             ids: ids_arr,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `str2mc` parity record (kind = 93). For each test name, stores
+/// cubiomes' returned MC ord.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct Str2McRecord {
+    pub name_len: i32,
+    pub mc: i32,
+    pub name: [u8; 32],
+}
+
+fn write_str2mc_fixture(path: &Path) -> std::io::Result<()> {
+    let names: &[&str] = &[
+        "1.21", "1.21 WD", "1.21.3", "1.21.2", "1.21.1", "1.20", "1.20.6", "1.19", "1.19.4",
+        "1.19.2", "1.18", "1.18.2", "1.17", "1.17.1", "1.16", "1.16.5", "1.16.1", "1.15", "1.15.2",
+        "1.14", "1.14.4", "1.13", "1.13.2", "1.12", "1.12.2", "1.11", "1.11.2", "1.10", "1.10.2",
+        "1.9", "1.9.4", "1.8", "1.8.9", "1.7", "1.7.10", "1.6", "1.6.4", "1.5", "1.5.2", "1.4",
+        "1.4.7", "1.3", "1.3.2", "1.2", "1.2.5", "1.1", "1.1.0", "1.0", "1.0.0", "Beta 1.8",
+        "Beta 1.7", "garbage", "", "1.999",
+    ];
+    let total = names.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 93, total)?;
+    for &n in names {
+        assert!(n.len() < 32, "name fits in fixed buffer");
+        let cstr = std::ffi::CString::new(n).expect("no interior NUL");
+        let mc = unsafe { ffi::cubiomes_call_str2mc(cstr.as_ptr()) };
+        let mut name = [0u8; 32];
+        name[..n.len()].copy_from_slice(n.as_bytes());
+        let rec = Str2McRecord {
+            name_len: n.len() as i32,
+            mc,
+            name,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
     }
@@ -6952,6 +6994,7 @@ mod ffi {
         pub fn cubiomes_call_get_dimension(id: c_int) -> c_int;
         pub fn cubiomes_call_biome2str(mc: c_int, id: c_int) -> *const std::ffi::c_char;
         pub fn cubiomes_call_struct2str(stype: c_int) -> *const std::ffi::c_char;
+        pub fn cubiomes_call_str2mc(s: *const std::ffi::c_char) -> c_int;
         pub fn cubiomes_call_can_biome_generate(
             layer_id: c_int,
             mc: c_int,
