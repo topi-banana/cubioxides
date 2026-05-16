@@ -32,6 +32,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         "verify" => verify_ffi(),
+        "debug-monument-cache" => debug_monument_cache(),
         "rng" => regenerate_rng(),
         "noise" => regenerate_noise(),
         "layers" => regenerate_layers(),
@@ -59,11 +60,71 @@ fn print_help() {
     eprintln!();
     eprintln!("Subcommands:");
     eprintln!("  verify           FFI smoke-test against cubiomes (must print \"1.18\")");
+    eprintln!(
+        "  debug-monument-cache  Dump cubiomes gen_biomes cells for the failing Monument seed"
+    );
     eprintln!("  rng              Generate RNG fixtures (java / xoroshiro / mc_seed)");
     eprintln!("  noise            Generate noise fixtures (perlin / octave / double_perlin)");
     eprintln!("  layers           Generate layer fixtures (continent)");
     eprintln!("  regenerate-all   Regenerate every fixture under fixtures/");
     eprintln!("  help             Show this help");
+}
+
+/// Dump cubiomes' gen_biomes output for the exact Range that the
+/// failing Monument pre-1.18 viability check uses. The matching
+/// Rust test reads this fixture and compares cell-by-cell.
+fn debug_monument_cache() -> ExitCode {
+    // Failing case: V1_12 Monument at (x=-3884, z=653), seed below.
+    // The `areBiomesViable` radius-29 check sets up Range
+    // {scale=4, x=-978, z=154, sx=16, sz=16, y=8, sy=1}.
+    let mc: c_int = 15; // cubiomes MC_1_12
+    let seed: u64 = 0x72fdd558873e067e;
+    let (x, z, sx, sz, y, sy) = (-978_i32, 154_i32, 16_i32, 16_i32, 8_i32, 1_i32);
+    let mut cache = vec![0_i32; (sx * sz * sy) as usize];
+    let err = unsafe {
+        ffi::cubiomes_call_gen_biomes(
+            mc,
+            0,
+            0, // DIM_OVERWORLD
+            seed,
+            4,
+            x,
+            z,
+            sx,
+            sz,
+            y,
+            sy,
+            cache.as_mut_ptr(),
+        )
+    };
+    if err != 0 {
+        eprintln!("cubiomes gen_biomes returned err={err}");
+        return ExitCode::FAILURE;
+    }
+    let out_path = workspace_root()
+        .join("fixtures")
+        .join("layers")
+        .join("debug_monument_cache.bin");
+    if let Some(parent) = out_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let mut file = match File::create(&out_path) {
+        Ok(f) => BufWriter::new(f),
+        Err(e) => {
+            eprintln!("creating {}: {e}", out_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(e) = file.write_all(bytemuck::cast_slice(&cache)) {
+        eprintln!("writing {}: {e}", out_path.display());
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "Wrote {} (256 i32 biome ids) to {}",
+        cache.len(),
+        out_path.display()
+    );
+    ExitCode::SUCCESS
 }
 
 fn verify_ffi() -> ExitCode {
