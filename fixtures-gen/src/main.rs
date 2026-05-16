@@ -1235,6 +1235,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("set_climate_para_seed fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_min_cache_size_fixture(&fixtures_dir.join("min_cache_size.bin")) {
+        eprintln!("min_cache_size fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -5087,6 +5091,57 @@ fn write_set_climate_para_seed_fixture(path: &Path) -> std::io::Result<()> {
     file.flush()
 }
 
+/// `getMinCacheSize` parity fixture (kind = 101). Each record:
+/// `mc(i32) dim(i32) seed(u64) flags(u32) scale(i32) sx(i32) sy(i32)
+/// sz(i32) result(u64)`. Layout = 4 + 4 + 8 + 4 + 4 + 4 + 4 + 4 + 8 =
+/// 44 bytes per record.
+fn write_min_cache_size_fixture(path: &Path) -> std::io::Result<()> {
+    // (mc, dim, seed, flags, scale, sx, sy, sz)
+    type Case = (i32, i32, u64, u32, i32, i32, i32, i32);
+    let cases: &[Case] = &[
+        // Layered Overworld (1.16.1, scale=4).
+        (19, 0, 0xdead_beef, 0, 4, 16, 1, 16),
+        (19, 0, 0xdead_beef, 0, 16, 8, 1, 8),
+        (19, 0, 0xdead_beef, 0, 64, 4, 1, 4),
+        (19, 0, 0xdead_beef, 0, 256, 2, 1, 2),
+        // Layered Overworld vertical (sy>1, replicated).
+        (19, 0, 0xdead_beef, 0, 4, 8, 4, 8),
+        // 1.18 Modern Overworld — voronoi only triggers at scale=1.
+        (22, 0, 0xdead_beef, 0, 1, 16, 1, 16),
+        (22, 0, 0xdead_beef, 0, 4, 16, 1, 16),
+        (22, 0, 0xdead_beef, 0, 16, 8, 4, 8),
+        // Nether voronoi.
+        (22, 1, 0xdead_beef, 0, 1, 8, 1, 8),
+        (22, 1, 0xdead_beef, 0, 4, 8, 1, 8),
+        // End voronoi.
+        (22, 2, 0xdead_beef, 0, 1, 8, 1, 8),
+        (19, 2, 0xdead_beef, 0, 4, 8, 1, 8),
+        // Beta (B1.7) - small scale with snb (oct beta path).
+        (1, 0, 0xdead_beef, 0, 1, 8, 1, 8),
+        (1, 0, 0xdead_beef, 0, 4, 8, 1, 8),
+        // Beta with NO_BETA_OCEAN flag (skips snb path).
+        (1, 0, 0xdead_beef, 0x2, 1, 8, 1, 8),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 101, total)?;
+    for &(mc, dim, seed, flags, scale, sx, sy, sz) in cases {
+        let result = unsafe {
+            ffi::cubiomes_call_get_min_cache_size(mc, dim, seed, flags, scale, sx, sy, sz)
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&dim.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&flags.to_le_bytes())?;
+        file.write_all(&scale.to_le_bytes())?;
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sy.to_le_bytes())?;
+        file.write_all(&sz.to_le_bytes())?;
+        file.write_all(&result.to_le_bytes())?;
+    }
+    file.flush()
+}
+
 /// `inverf` parity record (kind = 97). Stored as f64 bits.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -8774,6 +8829,16 @@ mod ffi {
             mc: c_int,
             entry: c_int,
             sx: c_int,
+            sz: c_int,
+        ) -> u64;
+        pub fn cubiomes_call_get_min_cache_size(
+            mc: c_int,
+            dim: c_int,
+            seed: u64,
+            flags: u32,
+            scale: c_int,
+            sx: c_int,
+            sy: c_int,
             sz: c_int,
         ) -> u64;
         pub fn cubiomes_call_check_for_temps(

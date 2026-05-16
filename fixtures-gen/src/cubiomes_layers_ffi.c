@@ -1266,6 +1266,17 @@ int cubiomes_call_gen_nether_voronoi(int mc, uint64_t seed,
     return err;
 }
 
+/* getMinCacheSize wrapper. Builds a Generator at (mc, flags),
+ * applies seed for dim, then queries the min cache size. */
+uint64_t cubiomes_call_get_min_cache_size(int mc, int dim, uint64_t seed,
+                                          uint32_t flags, int scale,
+                                          int sx, int sy, int sz) {
+    Generator g;
+    setupGenerator(&g, mc, flags);
+    applySeed(&g, dim, seed);
+    return (uint64_t) getMinCacheSize(&g, scale, sx, sy, sz);
+}
+
 /* End scale=1 gen_biomes wrapper. */
 int cubiomes_call_gen_end_voronoi(int mc, uint64_t seed,
                                   int rx, int ry, int rz,

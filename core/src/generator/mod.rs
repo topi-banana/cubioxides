@@ -289,6 +289,60 @@ impl Generator {
         Biome(out[0])
     }
 
+    /// Cubiomes' `getMinCacheSize(g, scale, sx, sy, sz)` — minimum
+    /// length in `Biome` units required for a [`Self::gen_biomes`]
+    /// cache. Bit-exact port: returns the same number cubiomes does
+    /// (which over-counts the Beta sea-level scratch and the 1.18+
+    /// voronoi source — both safely larger than what the Rust port
+    /// actually needs internally).
+    ///
+    /// `sy == 0` is normalised to `1`. Returns `0` when the Generator
+    /// state cannot service the request (e.g. layered scale without a
+    /// matching entry).
+    #[must_use]
+    pub fn min_cache_size(&self, scale: i32, sx: u32, sy: u32, sz: u32) -> usize {
+        // Cubiomes adds raw `sizeof(SeaLevelColumnNoiseBeta)` (= 64
+        // bytes) per slen entry to a count that is later used as the
+        // `nmemb` argument of `calloc(len, sizeof(int))`. That is a
+        // small over-count bug in cubiomes (slen entries get 4× more
+        // bytes than needed), but it's stable across cubiomes
+        // versions, so the parity port reproduces the same number.
+        const SEA_LEVEL_COLUMN_BYTES: usize = 64;
+        let sy = if sy == 0 { 1 } else { sy };
+        let mut len = sx as usize * sz as usize * sy as usize;
+        let beta_path = !self.mc.is_at_least(MCVersion::B1_8)
+            && scale <= 4
+            && (self.flags & NO_BETA_OCEAN) == 0;
+        let layered_overworld_path = self.mc.is_at_least(MCVersion::B1_8)
+            && !self.mc.is_at_least(MCVersion::V1_18)
+            && self.dim == Some(Dimension::Overworld);
+        let voronoi_path = (self.mc.is_at_least(MCVersion::V1_18)
+            || self.dim != Some(Dimension::Overworld))
+            && scale <= 1;
+        if beta_path {
+            let cellwidth = scale >> 1;
+            let smin = sx.min(sz) as i32;
+            let slen = ((smin >> (2 >> cellwidth)) + 1) * 2 + 1;
+            len += slen as usize * SEA_LEVEL_COLUMN_BYTES;
+        } else if layered_overworld_path {
+            let Some(stack) = self.layer_stack.as_ref() else {
+                return 0;
+            };
+            let Some(entry) = layered_entry_for_scale(stack, scale) else {
+                return 0;
+            };
+            let len_2d =
+                crate::layer::cache::get_min_layer_cache_size(stack, entry, sx as i32, sz as i32);
+            len += len_2d.saturating_sub(sx as usize * sz as usize);
+        } else if voronoi_path {
+            let sx4 = ((sx as i32 + 3) >> 2) + 2;
+            let sy4 = ((sy as i32 + 3) >> 2) + 2;
+            let sz4 = ((sz as i32 + 3) >> 2) + 2;
+            len += (sx4 * sy4 * sz4) as usize;
+        }
+        len
+    }
+
     /// Cubiomes' `genBiomes(g, cache, r)` — fill `cache` with biome
     /// ids over the requested 3D range.
     ///
