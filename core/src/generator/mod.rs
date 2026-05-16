@@ -1,17 +1,27 @@
 //! The unified MC-version + dimension biome generator.
 //!
 //! Bit-exact Rust port of cubiomes' `Generator` API:
-//! `setupGenerator(mc, flags)` → [`Generator::new`],
-//! `applySeed(dim, seed)` → [`Generator::apply_seed`], and
-//! `getBiomeAt(scale, x, y, z)` → [`Generator::biome_at`]. The C
-//! `union` over `(LayerStack, BiomeNoise, BiomeNoiseBeta)` is
+//! - `setupGenerator(mc, flags)` → [`Generator::new`]
+//! - `applySeed(dim, seed)` → [`Generator::apply_seed`]
+//! - `getBiomeAt(scale, x, y, z)` → [`Generator::biome_at`]
+//! - `genBiomes(g, cache, r)` → [`Generator::gen_biomes`]
+//! - `getMinCacheSize(g, scale, sx, sy, sz)` → [`Generator::min_cache_size`]
+//! - `getLayerForScale(g, scale)` → [`Generator::layer_for_scale`]
+//!
+//! The C `union` over `(LayerStack, BiomeNoise, BiomeNoiseBeta)` is
 //! replaced by three nullable boxed fields plus an
 //! [`OverworldKind`] tag — the active variant is chosen at
 //! construction time and never changes.
 //!
-//! This commit ships the single-cell `biome_at` API. The full
-//! 3D-range `gen_biomes` (cubiomes' `genBiomes(cache, range)`) lands
-//! in a follow-up.
+//! Most callers should reach for [`Generator::gen_biomes`] (or
+//! [`Generator::biome_at`] for single cells). The lower-level
+//! `gen_*_scaled` free functions in this module (e.g.
+//! [`gen_biome_noise_scaled`], [`gen_nether_scaled`],
+//! [`gen_end_scaled`]) bypass the [`Generator`] and let callers
+//! work directly with [`BiomeNoise`] / [`NetherNoise`] / [`EndNoise`]
+//! — useful when a single noise field is being re-used across
+//! many `apply_seed`-equivalent re-seedings, or when implementing
+//! a thinner wrapper.
 
 pub mod height;
 
