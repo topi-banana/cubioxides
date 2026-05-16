@@ -364,17 +364,21 @@ impl Generator {
     ///
     /// Currently supported combinations:
     ///
-    /// - Overworld + Layered (Beta 1.8 – 1.17): all scales (1, 4,
-    ///   16, 64, 256) at the corresponding entry layer.
-    /// - Overworld + Modern (1.18+): scales ≥ 4 only (the 1.18+
-    ///   Voronoi 1:1 path lands in a follow-up).
-    /// - Nether (MC ≥ 1.16.1): scales ≥ 4.
-    /// - End (MC ≥ 1.9): scales 4 and 16.
+    /// - Overworld + Layered (Beta 1.8 – 1.17): scales {1, 4, 16,
+    ///   64, 256} at the corresponding entry layer.
+    /// - Overworld + Modern (1.18+): scale=1 via voronoi access,
+    ///   any other scale via `genBiomeNoise3D` (`opt=true` when
+    ///   `scale > 4`).
+    /// - Overworld + Beta (≤ Beta 1.7): all scales via the Beta
+    ///   biome-noise table + optional sea-level oceans.
+    /// - Nether (MC ≥ 1.16.1): scale=1 voronoi, any other scale via
+    ///   `mapNether3D`.
+    /// - End (MC ≥ 1.9): scale=1 voronoi (planar pre-1.15, 3D
+    ///   thereafter), scale=4 via `mapEnd`, scale=16 via
+    ///   `mapEndBiome`, any other scale via the radial pseudo-biome
+    ///   formula.
     /// - Pre-1.16.1 Nether and pre-1.9 End fill with the
     ///   `nether_wastes` / `the_end` fallback.
-    ///
-    /// Panics on unsupported scale combinations — the parity matrix
-    /// only exercises the supported set.
     pub fn gen_biomes(&self, cache: &mut [Biome], r: Range) {
         let r = Range {
             sy: r.sy.max(1),
