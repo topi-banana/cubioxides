@@ -4771,6 +4771,44 @@ fn write_check_for_biomes_layered_fixture(path: &Path) -> std::io::Result<()> {
             vec![],
             vec![],
         ),
+        // 1.16.1 Nether dim=1 scale=4. cubiomes uses gdt+MC even for
+        // pre-1.18 Nether/End (the early `if (mc<=MC_1_17 && dim==OW)`
+        // condition skips them), so the result here can be a false
+        // negative; we cap MC at pre-1.18 to keep things deterministic
+        // enough but expect the result anyway.
+        (
+            19,
+            0xdead_beef,
+            1,
+            4,
+            0,
+            60,
+            0,
+            4,
+            1,
+            4,
+            0,
+            vec![],
+            vec![],
+            vec![],
+        ),
+        // 1.16.1 End dim=2 scale=4 — empty filter trivially passes.
+        (
+            19,
+            0xdead_beef,
+            2,
+            4,
+            0,
+            0,
+            0,
+            4,
+            1,
+            4,
+            0,
+            vec![],
+            vec![],
+            vec![],
+        ),
     ];
     let total = cases.len() as u64;
     let mut file = BufWriter::new(File::create(path)?);

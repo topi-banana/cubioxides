@@ -50,7 +50,19 @@ fn mc_from_ord(o: i32) -> MCVersion {
         17 => MCVersion::V1_14,
         19 => MCVersion::V1_16_1,
         21 => MCVersion::V1_17,
+        22 => MCVersion::V1_18,
         _ => panic!("unsupported mc ord {o}"),
+    }
+}
+
+fn dim_from_ord(d: i32) -> Dimension {
+    // cubiomes uses -1 for Nether (legacy) and the Generator DIM_*
+    // enum where DIM_NETHER=1 and DIM_END=2. Map both Nether tags.
+    match d {
+        -1 | 1 => Dimension::Nether,
+        0 => Dimension::Overworld,
+        2 => Dimension::End,
+        _ => panic!("unsupported dim {d}"),
     }
 }
 
@@ -76,7 +88,7 @@ fn check_for_biomes_layered_matches_cubiomes() {
         let r = &body[i * REC_LEN..(i + 1) * REC_LEN];
         let mc = mc_from_ord(read_i32(r, 0));
         let seed = read_u64(r, 4);
-        let _dim_ord = read_i32(r, 12); // always 0 (Overworld)
+        let dim = dim_from_ord(read_i32(r, 12));
         let scale = read_i32(r, 16);
         let rx = read_i32(r, 20);
         let ry = read_i32(r, 24);
@@ -111,7 +123,7 @@ fn check_for_biomes_layered_matches_cubiomes() {
             y: ry,
             sy: sy as u32,
         };
-        let res = check_for_biomes(&mut g, range, Dimension::Overworld, seed, &filter);
+        let res = check_for_biomes(&mut g, range, dim, seed, &filter);
         // Cubiomes returns 0/1/2; map 1 and 2 both to Pass. Our
         // simple-path implementation only ever returns Pass or Fail.
         let cubiomes_pass = expected_result != 0;

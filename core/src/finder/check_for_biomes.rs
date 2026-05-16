@@ -76,9 +76,18 @@ pub fn check_for_biomes(
     // match the filter". Cubiomes' Layered path additionally has a
     // swap-map early-exit chain (`checkForBiomesAtLayer`) that's
     // strictly an optimisation: the final Pass/Fail answer matches
-    // what we compute here. The 1.18+ Overworld path is the only
-    // truly non-portable case (it uses libc `rand()` for the Monte
-    // Carlo phase) — keep returning `Unsupported` there.
+    // what we compute here.
+    //
+    // The 1.18+ Overworld path is the only truly non-portable case
+    // (libc `rand()` in the Monte Carlo phase) — keep returning
+    // `Unsupported` there. Note: cubiomes also uses the Monte Carlo
+    // path for 1.18+ Nether/End and for pre-1.18 Nether/End, so the
+    // simple exhaustive approach here can disagree on Pass/Fail
+    // with cubiomes (cubiomes' MC can have false negatives because
+    // it samples a random subset of cells, not every cell). The
+    // exhaustive answer is the *correct* one; callers who need
+    // cubiomes-bit-exact behaviour for those dim/MC combinations
+    // need to special-case them.
     let is_modern_overworld = dim == Dimension::Overworld && g.mc.is_at_least(MCVersion::V1_18);
     if is_modern_overworld {
         return CheckForBiomesResult::Unsupported;
