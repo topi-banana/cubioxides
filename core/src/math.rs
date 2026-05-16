@@ -139,6 +139,36 @@ pub fn simplex_grad(idx: u8, x: f64, y: f64, z: f64, d: f64) -> f64 {
     con * con * indexed_lerp(idx, x, y, z)
 }
 
+/// Inverse error function via Newton's method on `erf(t) = x`.
+/// Mirrors cubiomes' `inverf` from `finders.c`:
+///
+/// ```text
+/// t = x
+/// while |dt| > FLT_EPSILON:
+///     dt = 0.5 * sqrt(PI) * (erf(t) - x) / exp(-t*t)
+///     t -= dt
+/// return t
+/// ```
+///
+/// Uses `libm::erf` and `libm::exp` to match cubiomes' use of C
+/// `<math.h>`. Results agree to within ~1 ulp on glibc-based hosts;
+/// other libm implementations may differ in the last few bits.
+///
+/// Used by `monteCarloBiomes` to convert a confidence level into a
+/// z-score (`z = sqrt(2) * inverf(confidence)`).
+#[inline]
+#[must_use]
+pub fn inverf(x: f64) -> f64 {
+    let mut t = x;
+    let mut dt: f64 = 1.0;
+    let sqrt_pi = core::f64::consts::PI.sqrt();
+    while dt.abs() > f64::from(f32::EPSILON) {
+        dt = 0.5 * sqrt_pi * (libm::erf(t) - x) / libm::exp(-t * t);
+        t -= dt;
+    }
+    t
+}
+
 /// Wilson score interval for a binomial proportion. Returns
 /// `(lo, hi)` where `n` is the total trial count, `p` is the
 /// observed success ratio (`successes / n`), and `z` is the
@@ -261,6 +291,26 @@ mod tests {
         // yield zero contribution.
         assert_eq!(simplex_grad(0, 1.0, 1.0, 1.0, 0.5), 0.0);
         assert_eq!(simplex_grad(0, 5.0, 0.0, 0.0, 0.5), 0.0);
+    }
+
+    #[test]
+    fn inverf_known_values() {
+        // inverf(0) = 0
+        assert!(inverf(0.0).abs() < 1e-10);
+        // inverf(0.5) ≈ 0.4769
+        assert!((inverf(0.5) - 0.4769).abs() < 1e-3);
+        // inverf(0.95) ≈ 1.3859
+        assert!((inverf(0.95) - 1.3859).abs() < 1e-3);
+    }
+
+    #[test]
+    fn inverf_round_trip_via_erf() {
+        // erf(inverf(x)) should equal x.
+        for &x in &[-0.5, -0.1, 0.0, 0.3, 0.7, 0.9] {
+            let t = inverf(x);
+            let back = libm::erf(t);
+            assert!((back - x).abs() < 1e-7, "x={x}, inverf={t}, erf(t)={back}");
+        }
     }
 
     #[test]

@@ -1133,6 +1133,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("wilson fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_inverf_fixture(&fixtures_dir.join("inverf.bin")) {
+        eprintln!("inverf fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3500,6 +3504,32 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
             p1x,
             p1z,
             ids: ids_arr,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `inverf` parity record (kind = 97). Stored as f64 bits.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct InverfRecord {
+    pub x: f64,
+    pub result_bits: u64,
+}
+
+fn write_inverf_fixture(path: &Path) -> std::io::Result<()> {
+    let xs: &[f64] = &[
+        0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99, -0.1, -0.5, -0.9, 0.001, -0.001,
+    ];
+    let total = xs.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 97, total)?;
+    for &x in xs {
+        let r = unsafe { ffi::cubiomes_call_inverf(x) };
+        let rec = InverfRecord {
+            x,
+            result_bits: r.to_bits(),
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
     }
@@ -7160,6 +7190,7 @@ mod ffi {
             flip: c_int,
         ) -> c_int;
         pub fn cubiomes_call_wilson(n: f64, p: f64, z: f64, lo: *mut f64, hi: *mut f64);
+        pub fn cubiomes_call_inverf(x: f64) -> f64;
         pub fn cubiomes_call_can_biome_generate(
             layer_id: c_int,
             mc: c_int,

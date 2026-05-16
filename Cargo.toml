@@ -16,6 +16,7 @@ bindgen = "0.72"
 bitflags = "2.6"
 bytemuck = { version = "1.21", features = ["derive"] }
 cc = "1.2"
+libm = "0.2"
 pretty_assertions = "1.4"
 proptest = "1.5"
 rayon = "1.10"

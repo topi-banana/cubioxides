@@ -1246,3 +1246,6 @@ extern void wilson(double n, double p, double z, double *lo, double *hi);
 void cubiomes_call_wilson(double n, double p, double z, double *lo, double *hi) {
     wilson(n, p, z, lo, hi);
 }
+
+extern double inverf(double x);
+double cubiomes_call_inverf(double x) { return inverf(x); }
