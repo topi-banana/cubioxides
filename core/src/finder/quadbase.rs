@@ -302,6 +302,118 @@ pub fn is_quad_base_feature(
     }
 }
 
+/// `isQuadBaseLarge(sconf, seed, ax, ay, az, radius)` — quad-base
+/// filter for large structures (Monument). Each region's chunk
+/// offset is the average of two `nextInt(C)` rolls (matching
+/// `getLargeStructureChunkInRegion`), so each quadrant consumes 4
+/// `nextInt` calls instead of 2.
+///
+/// Bit-exact port of cubiomes' static inline.
+#[must_use]
+#[allow(clippy::many_single_char_names)]
+pub fn is_quad_base_large(
+    sconf: StructureConfig,
+    seed: u64,
+    ax: i32,
+    ay: i32,
+    az: i32,
+    radius: i32,
+) -> Option<f32> {
+    const M: u64 = (1u64 << 48) - 1;
+    const B: u64 = 0xb;
+
+    let seed = seed.wrapping_add(sconf.salt as i64 as u64);
+    let s00 = seed;
+    let s01 = 341_873_128_712_u64.wrapping_add(seed);
+    let s10 = 132_897_987_541_u64.wrapping_add(seed);
+    let s11 = 341_873_128_712_u64
+        .wrapping_add(132_897_987_541)
+        .wrapping_add(seed);
+
+    let r = i32::from(sconf.region_size);
+    let c = i32::from(sconf.chunk_range);
+    // Cubiomes: `rm = 2*R + (min(ax, az) - 2*radius + 7) / 8`.
+    let rm = 2 * r + (ax.min(az) - 2 * radius + 7) / 8;
+
+    // Each quadrant draws 2 nextInt(C) values and sums them.
+    let pair = |s: &mut u64| -> i32 {
+        *s = s.wrapping_mul(K).wrapping_add(B) & M;
+        let p1 = ((*s >> 17) as i32) % c;
+        *s = s.wrapping_mul(K).wrapping_add(B) & M;
+        let p2 = ((*s >> 17) as i32) % c;
+        p1 + p2
+    };
+
+    let mut s = s00 ^ K;
+    let x0 = pair(&mut s);
+    if x0 <= rm {
+        return None;
+    }
+    let z0 = pair(&mut s);
+    if z0 <= rm {
+        return None;
+    }
+
+    let mut s = s11 ^ K;
+    let x1 = pair(&mut s);
+    if x1 > x0 - rm {
+        return None;
+    }
+    let z1 = pair(&mut s);
+    if z1 > z0 - rm {
+        return None;
+    }
+
+    // Pre-check: half-differences² ≤ 4 * radius².
+    let dx = (x1 - x0) >> 1;
+    let dz = (z1 - z0) >> 1;
+    let dist_sq = (dx as i64) * (dx as i64) + (dz as i64) * (dz as i64);
+    if dist_sq > (4 * radius * radius) as i64 {
+        return None;
+    }
+
+    let mut s = s01 ^ K;
+    let x2 = pair(&mut s);
+    if x2 > x0 - rm {
+        return None;
+    }
+    let z2 = pair(&mut s);
+    if z2 <= rm {
+        return None;
+    }
+
+    let mut s = s10 ^ K;
+    let x3 = pair(&mut s);
+    if x3 <= rm {
+        return None;
+    }
+    let z3 = pair(&mut s);
+    if z3 > z0 - rm {
+        return None;
+    }
+
+    let sqrad = get_enclosing_radius(
+        x0 >> 1,
+        z0 >> 1,
+        x1 >> 1,
+        z1 >> 1,
+        x2 >> 1,
+        z2 >> 1,
+        x3 >> 1,
+        z3 >> 1,
+        ax,
+        ay,
+        az,
+        r,
+        radius,
+    );
+    if sqrad < radius as f32 {
+        Some(sqrad)
+    } else {
+        None
+    }
+}
+
 /// Cubiomes' static `getEnclosingRadius` — brute-force the optimal
 /// AFK position for the four corner structures and return the
 /// enclosing-sphere radius in blocks.
@@ -613,6 +725,10 @@ pub fn is_quad_base(sconf: StructureConfig, seed: u64, radius: i32) -> Option<f3
         }
         StructureType::OceanRuin | StructureType::Shipwreck | StructureType::RuinedPortal => {
             is_quad_base_feature(sconf, seed, 0, 0, 0, radius)
+        }
+        StructureType::Monument => {
+            // Cubiomes' isQuadBaseLarge with (58, 23, 58) Monument bbox.
+            is_quad_base_large(sconf, seed, 58, 23, 58, radius)
         }
         _ => {
             panic!(

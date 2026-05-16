@@ -2223,6 +2223,8 @@ fn write_is_quad_base_fixture(path: &Path) -> std::io::Result<()> {
         (22, 10, 160), // V1_18 Outpost r=160
         (22, 1, 128),  // V1_18 Desert_Pyramid r=128
         (22, 6, 128),  // V1_18 Ocean_Ruin r=128
+        (22, 8, 128),  // V1_18 Monument r=128 (isQuadBaseLarge)
+        (22, 8, 200),  // V1_18 Monument r=200 (isQuadBaseLarge, wider)
     ];
     let per_combo: u64 = 32;
     let total = probes.len() as u64 * per_combo;
