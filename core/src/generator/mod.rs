@@ -737,13 +737,31 @@ fn get_voronoi_src_range(r: Range) -> Range {
     }
 }
 
+/// `genBiomeNoiseScaled(bn, out, r, sha)` — fill `cache` with biome
+/// ids over the requested 3D `Range`. Bit-exact port of cubiomes'
+/// `genBiomeNoiseScaled`: at `r.scale == 1` it uses voronoi access
+/// over a scale-4 source range (see [`gen_biome_noise_voronoi`]);
+/// otherwise it samples [`BiomeNoise`] directly with the `r.scale > 4`
+/// path enabling cubiomes' `SAMPLE_NO_SHIFT` optimisation.
+///
+/// Most callers should use [`Generator::gen_biomes`] instead; this
+/// lower-level helper is for code that has a [`BiomeNoise`] without
+/// going through a [`Generator`].
+pub fn gen_biome_noise_scaled(bn: &BiomeNoise, cache: &mut [Biome], r: Range, sha: u64) {
+    if r.scale == 1 {
+        gen_biome_noise_voronoi(bn, cache, r, sha);
+    } else {
+        gen_biome_noise_3d(bn, cache, r, r.scale > 4);
+    }
+}
+
 /// `genBiomeNoiseScaled(bn, out, r, sha)` for `r.scale == 1` —
 /// voronoi-access at block scale. When the requested cell count
 /// is greater than 1, we pre-compute the scale-4 source via
 /// [`gen_biome_noise_3d`] so each voronoi sample becomes a single
 /// cache lookup; otherwise each cell is sampled directly via
 /// [`BiomeNoise::sample`].
-fn gen_biome_noise_voronoi(bn: &BiomeNoise, cache: &mut [Biome], r: Range, sha: u64) {
+pub fn gen_biome_noise_voronoi(bn: &BiomeNoise, cache: &mut [Biome], r: Range, sha: u64) {
     let sx = r.sx as usize;
     let sy = r.sy as usize;
     let sz = r.sz as usize;
@@ -792,7 +810,14 @@ fn gen_biome_noise_voronoi(bn: &BiomeNoise, cache: &mut [Biome], r: Range, sha: 
     }
 }
 
-fn gen_biome_noise_3d(bn: &BiomeNoise, cache: &mut [Biome], r: Range, opt: bool) {
+/// `genBiomeNoise3D(bn, out, r, opt)` — fill `cache` by sampling
+/// [`BiomeNoise`] once per cell at the centre of each scaled cell.
+/// `opt` toggles the `SAMPLE_NO_SHIFT` flag (cubiomes' optimisation
+/// when the requested scale is coarser than `1:4`). Public for the
+/// same reason as [`gen_biome_noise_voronoi`]: callers with a bare
+/// [`BiomeNoise`] can target a specific scale without building a
+/// full [`Generator`].
+pub fn gen_biome_noise_3d(bn: &BiomeNoise, cache: &mut [Biome], r: Range, opt: bool) {
     let scale = if r.scale > 4 { r.scale / 4 } else { 1 };
     let mid = scale / 2;
     let flags = if opt { SAMPLE_NO_SHIFT } else { 0 };
