@@ -11,6 +11,7 @@
 #include "generator.h"
 #include "layers.h"
 #include "noise.h"
+#include <float.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -1225,6 +1226,27 @@ uint64_t cubiomes_call_get_min_layer_cache_size(int mc, int entry, int sx, int s
     LayerStack ls;
     setupLayerStack(&ls, mc, 0);
     return (uint64_t) getMinLayerCacheSize(&ls.layers[entry], sx, sz);
+}
+
+/* getParaRange wrapper (no callback). Initialises a Generator at
+ * `mc`, applies `seed`, then runs the range probe on climate axis
+ * `npara`. `pmin_mask`/`pmax_mask` are 0 (disabled) or 1 (enabled).
+ * Returns the (pmin, pmax) pair and the error code. */
+int cubiomes_call_get_para_range(int mc, uint64_t seed, int npara,
+                                 int pmin_enabled, int pmax_enabled,
+                                 int x, int z, int w, int h,
+                                 double *out_pmin, double *out_pmax) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, DIM_OVERWORLD, seed);
+    double pmin = DBL_MAX, pmax = -DBL_MAX;
+    int err = getParaRange(&g.bn.climate[npara],
+                           pmin_enabled ? &pmin : NULL,
+                           pmax_enabled ? &pmax : NULL,
+                           x, z, w, h, NULL, NULL);
+    *out_pmin = pmin;
+    *out_pmax = pmax;
+    return err;
 }
 
 /* getParaDescent wrapper (no callback). Initialises a Generator at

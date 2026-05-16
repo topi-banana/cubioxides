@@ -28,6 +28,7 @@ pub mod locate_biome;
 pub mod mineshaft;
 pub mod monte_carlo;
 pub mod para_descent;
+pub mod para_range;
 pub mod population_seed;
 pub mod quadbase;
 pub mod slime;

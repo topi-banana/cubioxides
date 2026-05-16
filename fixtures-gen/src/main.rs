@@ -1191,6 +1191,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("para_descent fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_para_range_fixture(&fixtures_dir.join("para_range.bin")) {
+        eprintln!("para_range fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -4243,6 +4247,62 @@ fn write_para_descent_fixture(path: &Path) -> std::io::Result<()> {
         file.write_all(&factor.to_le_bytes())?;
         file.write_all(&alpha.to_le_bytes())?;
         file.write_all(&result.to_bits().to_le_bytes())?;
+    }
+    file.flush()
+}
+
+/// `getParaRange` payload (kind = 87). Per-record:
+/// `mc i32, seed u64, npara i32, pmin_en i32, pmax_en i32,
+///  x i32, z i32, w i32, h i32, err i32, pmin_bits u64, pmax_bits u64`.
+fn write_para_range_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (i32, u64, i32, bool, bool, i32, i32, i32, i32);
+    let cases: &[Case] = &[
+        // Small-regime path: 4×4 area triggers the brute scan.
+        (22, 0xdead_beef, 0, true, true, 0, 0, 4, 4),
+        // Larger area, both bounds.
+        (22, 0xdead_beef, 0, true, true, 0, 0, 64, 64),
+        // Min only.
+        (22, 0xdead_beef, 1, true, false, 0, 0, 64, 64),
+        // Max only.
+        (22, 0xdead_beef, 2, false, true, 0, 0, 64, 64),
+        // Off-origin large area.
+        (22, 0xcafe_babe, 3, true, true, -100, -100, 96, 96),
+        // 1.21 weirdness axis.
+        (28, 0xabcd_1234, 5, true, true, 0, 0, 64, 64),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 87, total)?;
+    for &(mc, seed, npara, pmin_en, pmax_en, x, z, w, h) in cases {
+        let mut pmin = 0.0_f64;
+        let mut pmax = 0.0_f64;
+        let err = unsafe {
+            ffi::cubiomes_call_get_para_range(
+                mc,
+                seed,
+                npara,
+                pmin_en.into(),
+                pmax_en.into(),
+                x,
+                z,
+                w,
+                h,
+                std::ptr::from_mut(&mut pmin),
+                std::ptr::from_mut(&mut pmax),
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&npara.to_le_bytes())?;
+        file.write_all(&i32::from(pmin_en).to_le_bytes())?;
+        file.write_all(&i32::from(pmax_en).to_le_bytes())?;
+        file.write_all(&x.to_le_bytes())?;
+        file.write_all(&z.to_le_bytes())?;
+        file.write_all(&w.to_le_bytes())?;
+        file.write_all(&h.to_le_bytes())?;
+        file.write_all(&err.to_le_bytes())?;
+        file.write_all(&pmin.to_bits().to_le_bytes())?;
+        file.write_all(&pmax.to_bits().to_le_bytes())?;
     }
     file.flush()
 }
@@ -7964,6 +8024,19 @@ mod ffi {
             maxiter: c_int,
             alpha: f64,
         ) -> f64;
+        pub fn cubiomes_call_get_para_range(
+            mc: c_int,
+            seed: u64,
+            npara: c_int,
+            pmin_enabled: c_int,
+            pmax_enabled: c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+            out_pmin: *mut f64,
+            out_pmax: *mut f64,
+        ) -> c_int;
         pub fn cubiomes_call_setup_biome_filter(
             mc: c_int,
             flags: u32,
