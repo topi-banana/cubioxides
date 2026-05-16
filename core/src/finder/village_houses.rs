@@ -39,6 +39,20 @@ pub const HOUSE_NUM: usize = 9;
 /// Bit-exact port of cubiomes' `getHouseList`. Note the per-type
 /// `(min, max)` bounds (inclusive) — cubiomes uses
 /// `nextInt(rng, max - min + 1) + min`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::finder::get_house_list;
+/// use cubioxides::finder::village_houses::HouseType;
+///
+/// // House-count distribution for a 1.10-1.13 Village at chunk
+/// // (0, 0). Each type's count obeys the per-type (min, max) bounds
+/// // — e.g. small houses are always 2..=4.
+/// let (houses, _post_rng_seed) = get_house_list(0xdead_beef, 0, 0);
+/// assert!((2..=4).contains(&houses[HouseType::HouseSmall as usize]));
+/// assert!((0..=1).contains(&houses[HouseType::Church as usize]));
+/// ```
 pub fn get_house_list(seed: u64, chunk_x: i32, chunk_z: i32) -> ([i32; HOUSE_NUM], u64) {
     let mut rng = chunk_generate_rng(seed, chunk_x, chunk_z);
     rng.skip_n(1);
