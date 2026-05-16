@@ -493,6 +493,24 @@ int cubiomes_call_sample_biome_noise(int mc, uint64_t seed, int large_biomes,
     return id;
 }
 
+/* setClimateParaSeed parity wrapper. Initialises BiomeNoise with
+ * setBiomeSeed, then calls setClimateParaSeed which re-seeds only
+ * the named axis (or all 3 depth-feeding axes for NP_DEPTH). Returns
+ * a sample of the named axis at (x,z) as raw f64 bits in *out_bits. */
+void cubiomes_call_set_climate_para_seed(int mc, uint64_t init_seed,
+                                         uint64_t para_seed,
+                                         int large, int nptype,
+                                         int x, int z, uint64_t *out_bits) {
+    BiomeNoise bn;
+    memset(&bn, 0, sizeof(bn));
+    initBiomeNoise(&bn, mc);
+    setBiomeSeed(&bn, init_seed, large);
+    setClimateParaSeed(&bn, para_seed, large, nptype, -1);
+    int sample_axis = (nptype == NP_DEPTH) ? NP_CONTINENTALNESS : nptype;
+    double v = sampleDoublePerlin(&bn.climate[sample_axis], (double)x, 0.0, (double)z);
+    memcpy(out_bits, &v, sizeof(v));
+}
+
 void cubiomes_call_map_continent(uint64_t start_seed, int *out, int x, int z,
                                  int w, int h) {
     Layer l;

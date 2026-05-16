@@ -94,6 +94,33 @@ impl BiomeNoise {
         }
     }
 
+    /// Re-seed only specific climate axes — mirrors cubiomes'
+    /// `setClimateParaSeed`. When `nptype == NP_DEPTH` (= [`NP_SHIFT`]
+    /// alias), this re-seeds the three axes that feed the depth
+    /// spline (continentalness, erosion, weirdness); otherwise it
+    /// re-seeds only the named axis. Useful when callers want to
+    /// scan a single climate dimension without paying for the full
+    /// 6-axis init.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `nptype` is not one of the supported axes
+    /// (`NP_TEMPERATURE`, `NP_HUMIDITY`, `NP_CONTINENTALNESS`,
+    /// `NP_EROSION`, `NP_SHIFT`/`NP_DEPTH`, `NP_WEIRDNESS`).
+    pub fn re_seed_axis(&mut self, seed: u64, large: bool, nptype: usize) {
+        let mut pxr = Xoroshiro::new(seed);
+        let xlo = pxr.next_long();
+        let xhi = pxr.next_long();
+        if nptype == NP_DEPTH {
+            self.climate[NP_CONTINENTALNESS] =
+                init_climate_seed(xlo, xhi, large, NP_CONTINENTALNESS);
+            self.climate[NP_EROSION] = init_climate_seed(xlo, xhi, large, NP_EROSION);
+            self.climate[NP_WEIRDNESS] = init_climate_seed(xlo, xhi, large, NP_WEIRDNESS);
+        } else {
+            self.climate[nptype] = init_climate_seed(xlo, xhi, large, nptype);
+        }
+    }
+
     /// Sample the biome at `(x, y, z)`. Returns the biome id and the
     /// underlying 6-tuple `np` (units of 1/10000, sign-preserving `i64`).
     /// `sample_flags` accepts [`SAMPLE_NO_SHIFT`], [`SAMPLE_NO_DEPTH`],

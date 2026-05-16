@@ -1230,6 +1230,12 @@ fn regenerate_layers() -> ExitCode {
         return ExitCode::FAILURE;
     }
     if let Err(err) =
+        write_set_climate_para_seed_fixture(&fixtures_dir.join("set_climate_para_seed.bin"))
+    {
+        eprintln!("set_climate_para_seed fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
         eprintln!("viable_feature_biome fixture failed: {err}");
@@ -5011,6 +5017,76 @@ fn write_end_voronoi_fixture(path: &Path) -> std::io::Result<()> {
     file.flush()
 }
 
+/// `setClimateParaSeed` parity fixture (kind = 100). Each record:
+/// `mc(i32) init_seed(u64) para_seed(u64) large(i32) nptype(i32)
+/// x(i32) z(i32) sample_bits(u64)`. Layout = 4 + 8 + 8 + 4 + 4 + 4 +
+/// 4 + 8 = 44 bytes per record.
+fn write_set_climate_para_seed_fixture(path: &Path) -> std::io::Result<()> {
+    // (mc, init_seed, para_seed, large, nptype, x, z)
+    type Case = (i32, u64, u64, i32, i32, i32, i32);
+    // nptype constants (mirror cubiomes / NP_* in biome_noise.rs).
+    const NP_TEMPERATURE: i32 = 0;
+    const NP_HUMIDITY: i32 = 1;
+    const NP_CONTINENTALNESS: i32 = 2;
+    const NP_EROSION: i32 = 3;
+    const NP_DEPTH: i32 = 4;
+    const NP_WEIRDNESS: i32 = 5;
+    let cases: &[Case] = &[
+        // Each axis (single re-seeding) at three points.
+        (22, 0xdead_beef, 0xcafe_babe, 0, NP_TEMPERATURE, 0, 0),
+        (22, 0xdead_beef, 0xcafe_babe, 0, NP_TEMPERATURE, 100, 200),
+        (22, 0xdead_beef, 0xcafe_babe, 0, NP_HUMIDITY, 0, 0),
+        (22, 0xdead_beef, 0xcafe_babe, 0, NP_HUMIDITY, -50, 75),
+        (22, 0xdead_beef, 0xcafe_babe, 0, NP_CONTINENTALNESS, 0, 0),
+        (22, 0xdead_beef, 0xcafe_babe, 0, NP_EROSION, 12, -34),
+        (22, 0xdead_beef, 0xcafe_babe, 0, NP_WEIRDNESS, 0, 0),
+        // NP_DEPTH re-seeds 3 axes (CONTINENTAL/EROSION/WEIRDNESS).
+        // FFI samples the continentalness axis.
+        (22, 0xdead_beef, 0xcafe_babe, 0, NP_DEPTH, 0, 0),
+        (22, 0xdead_beef, 0xcafe_babe, 0, NP_DEPTH, 64, 64),
+        // Large biomes flag flips MD5 magics.
+        (22, 0xdead_beef, 0xcafe_babe, 1, NP_TEMPERATURE, 0, 0),
+        (22, 0xdead_beef, 0xcafe_babe, 1, NP_DEPTH, 0, 0),
+        // Different MC version.
+        (
+            28,
+            0xabcd_0000,
+            0x1234_5678,
+            0,
+            NP_CONTINENTALNESS,
+            100,
+            -100,
+        ),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 100, total)?;
+    for &(mc, init_seed, para_seed, large, nptype, x, z) in cases {
+        let mut out_bits: u64 = 0;
+        unsafe {
+            ffi::cubiomes_call_set_climate_para_seed(
+                mc,
+                init_seed,
+                para_seed,
+                large,
+                nptype,
+                x,
+                z,
+                &mut out_bits,
+            );
+        }
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&init_seed.to_le_bytes())?;
+        file.write_all(&para_seed.to_le_bytes())?;
+        file.write_all(&large.to_le_bytes())?;
+        file.write_all(&nptype.to_le_bytes())?;
+        file.write_all(&x.to_le_bytes())?;
+        file.write_all(&z.to_le_bytes())?;
+        file.write_all(&out_bits.to_le_bytes())?;
+    }
+    file.flush()
+}
+
 /// `inverf` parity record (kind = 97). Stored as f64 bits.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -8758,6 +8834,16 @@ mod ffi {
             sz: c_int,
             out: *mut c_int,
         ) -> c_int;
+        pub fn cubiomes_call_set_climate_para_seed(
+            mc: c_int,
+            init_seed: u64,
+            para_seed: u64,
+            large: c_int,
+            nptype: c_int,
+            x: c_int,
+            z: c_int,
+            out_bits: *mut u64,
+        );
         pub fn cubiomes_call_approx_prefilter(
             mc: c_int,
             seed: u64,
