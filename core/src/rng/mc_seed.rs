@@ -113,6 +113,23 @@ pub const fn get_start_seed(world_seed: u64, layer_salt: u64) -> u64 {
 /// Assumes `x` and `m` are positive (`< 2^63`) and coprime. Returns `0`
 /// when no inverse exists, matching cubiomes' `mulInv`. Implementation is
 /// the extended Euclidean algorithm with wrapping subtractions.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::rng::mc_seed::mul_inv;
+///
+/// // Modular inverse of 3 mod 7 is 5 (since 3 * 5 = 15 ≡ 1 mod 7).
+/// // Used internally to reverse the chunk-seed LCG when scanning
+/// // backwards from a quad-base candidate to its world seed.
+/// let inv = mul_inv(3, 7);
+/// assert_eq!(inv, 5);
+/// assert_eq!((3u64.wrapping_mul(inv)) % 7, 1);
+///
+/// // When `m <= 1` or `gcd(x, m) > 1`, the function returns 0
+/// // (cubiomes' "no inverse" sentinel).
+/// assert_eq!(mul_inv(3, 1), 0);
+/// ```
 #[inline]
 #[must_use]
 #[allow(clippy::many_single_char_names)] // mirrors variable names in the C source
