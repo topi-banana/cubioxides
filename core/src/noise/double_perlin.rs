@@ -74,6 +74,19 @@ impl DoublePerlinNoise {
     /// `nmax` (when `Some`) caps the total number of non-zero octaves
     /// across both stacks; the cap is split as `(nmax + 1) / 2` for the
     /// first stack and the remainder for the second.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::{DoublePerlinNoise, Xoroshiro};
+    ///
+    /// // 1.18+ climate noise: two octave stacks of equal width,
+    /// // each driven by its own slice of the same Xoroshiro stream.
+    /// let mut xr = Xoroshiro::new(0xdead_beef);
+    /// let amplitudes = [1.5, 0.0, 1.0, 0.0, 0.0, 0.0];
+    /// let noise = DoublePerlinNoise::from_xoroshiro(&mut xr, &amplitudes, -10, None);
+    /// let _y = noise.sample(1.0, 2.0, 3.0);
+    /// ```
     #[must_use]
     pub fn from_xoroshiro(
         xr: &mut Xoroshiro,

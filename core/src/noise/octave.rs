@@ -165,6 +165,20 @@ impl OctaveNoise {
     /// `amplitudes` may contain zeros; those octaves are skipped but still
     /// advance the persist / lacuna factors. `nmax` (when `Some`) caps the
     /// number of non-zero octaves actually constructed.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::{OctaveNoise, Xoroshiro};
+    ///
+    /// // 1.18+ temperature axis: 4 octaves, all active.
+    /// let mut xr = Xoroshiro::new(0xdead_beef);
+    /// let amplitudes = [1.5, 0.0, 1.0, 0.0, 0.0, 0.0];
+    /// let octaves = OctaveNoise::from_xoroshiro(&mut xr, &amplitudes, -10, None);
+    /// // Only non-zero amplitudes produce real octaves; zeros are skipped
+    /// // but still advance the RNG to match cubiomes' alignment.
+    /// assert_eq!(octaves.len(), 2);
+    /// ```
     #[must_use]
     pub fn from_xoroshiro(
         xr: &mut Xoroshiro,
