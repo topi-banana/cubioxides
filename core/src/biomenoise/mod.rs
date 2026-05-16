@@ -16,7 +16,10 @@ pub mod spline;
 pub mod surface;
 pub mod surface_beta;
 
-pub use beta::{BiomeNoiseBeta, get_old_beta_biome};
+pub use beta::{
+    BiomeNoiseBeta, gen_biome_noise_beta_scaled, gen_biome_noise_beta_scaled_simple,
+    get_old_beta_biome,
+};
 pub use biome_noise::{
     BiomeNoise, NP_CONTINENTALNESS, NP_DEPTH, NP_EROSION, NP_HUMIDITY, NP_MAX, NP_SHIFT,
     NP_TEMPERATURE, NP_WEIRDNESS, SAMPLE_NO_BIOME, SAMPLE_NO_DEPTH, SAMPLE_NO_SHIFT,
