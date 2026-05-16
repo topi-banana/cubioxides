@@ -118,6 +118,56 @@ pub fn check_for_biomes(
     }
 }
 
+/// `checkForBiomesAtLayer(stack, entry, cache, seed, x, z, w, h,
+/// filter)` — same semantics as cubiomes' function of that name, but
+/// implemented via `gen_area` + bitmask match rather than cubiomes'
+/// swap-map chain. The Pass/Fail outcome is bit-exact compatible
+/// (cubiomes' early-exit is purely an optimisation); we don't
+/// synthesise the return-2 `ExclusionStop` outcome.
+///
+/// Callers usually want the higher-level [`check_for_biomes`] which
+/// dispatches by `(dim, mc)`; this lower-level entrypoint is for the
+/// advanced case where the caller already has a specific layer
+/// entry from [`crate::generator::Generator::layer_for_scale`] or
+/// equivalent and wants to bypass the scale lookup.
+pub fn check_for_biomes_at_layer(
+    stack: &mut LayerStack,
+    entry: LayerId,
+    seed: u64,
+    x: i32,
+    z: i32,
+    w: u32,
+    h: u32,
+    filter: &BiomeFilter,
+) -> CheckForBiomesResult {
+    crate::layer::set_layer_seed(stack, entry, seed);
+    let mut ids = vec![crate::biome::Biome(0); (w as usize) * (h as usize)];
+    crate::layer::gen_area(stack, entry, &mut ids, x, z, w as usize, h as usize);
+
+    let mut b: u64 = 0;
+    let mut m: u64 = 0;
+    for cell in &ids {
+        let id = cell.0;
+        if (0..64).contains(&id) {
+            b |= 1_u64 << id;
+        } else if (128..192).contains(&id) {
+            m |= 1_u64 << (id - 128);
+        }
+    }
+    let mut match_exc = (filter.biome_to_excl | filter.biome_to_excl_m) == 0;
+    let mut match_any = (filter.biome_to_pick | filter.biome_to_pick_m) == 0;
+    let mut match_req = filter.biome_to_find == 0 && filter.biome_to_find_m == 0;
+    match_exc |= (b & filter.biome_to_excl) == 0 && (m & filter.biome_to_excl_m) == 0;
+    match_any |= (b & filter.biome_to_pick) != 0 || (m & filter.biome_to_pick_m) != 0;
+    match_req |= (b & filter.biome_to_find) == filter.biome_to_find
+        && (m & filter.biome_to_find_m) == filter.biome_to_find_m;
+    if match_exc && match_any && match_req {
+        CheckForBiomesResult::Pass
+    } else {
+        CheckForBiomesResult::Fail
+    }
+}
+
 // Raw biome IDs (subset used by the approx-prefilter switches).
 const BADLANDS_PLATEAU: i32 = 39;
 const WOODED_BADLANDS_PLATEAU: i32 = 38;
@@ -284,4 +334,42 @@ pub fn approx_prefilter_at_layer(
         return false;
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::finder::biome_filter::setup_biome_filter;
+    use crate::layer::setup_layer_stack;
+
+    #[test]
+    fn check_for_biomes_at_layer_matches_check_for_biomes() {
+        // Build a stack at 1.16.1, exercise check_for_biomes_at_layer
+        // directly via the OceanMix4 entry, and confirm the result
+        // matches what check_for_biomes computes for the equivalent
+        // scale=4 Overworld range. Both reduce to gen_area +
+        // bitmask, so they should agree on Pass/Fail.
+        let mc = MCVersion::V1_16_1;
+        let seed = 0xdead_beef;
+        let mut stack = Box::new(LayerStack::new());
+        setup_layer_stack(&mut stack, mc, false);
+        let entry = stack.entry_4.unwrap();
+
+        // Required: plains (1).
+        let filter = setup_biome_filter(mc, 0, &[1], &[], &[]).expect("filter");
+        let direct = check_for_biomes_at_layer(&mut stack, entry, seed, 0, 0, 16, 16, &filter);
+
+        let mut g = Generator::new(mc, 0);
+        let r = Range {
+            scale: 4,
+            x: 0,
+            z: 0,
+            sx: 16,
+            sz: 16,
+            y: 0,
+            sy: 1,
+        };
+        let high = check_for_biomes(&mut g, r, Dimension::Overworld, seed, &filter);
+        assert_eq!(direct, high);
+    }
 }
