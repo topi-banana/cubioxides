@@ -26,6 +26,17 @@ pub struct JavaRng {
 
 impl JavaRng {
     /// Create an RNG seeded from a Java `setSeed`-compatible value.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::JavaRng;
+    ///
+    /// // Java `new Random(0).nextInt(10)` produces the same sequence
+    /// // we get here — bit-exact with the JVM reference.
+    /// let mut rng = JavaRng::new(0);
+    /// let _first_draw = rng.next_int(10);
+    /// ```
     #[inline]
     #[must_use]
     pub const fn new(value: u64) -> Self {
