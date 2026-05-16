@@ -474,6 +474,142 @@ pub fn get_optimal_afk(p: &[Pos; 4], ax: i32, ay: i32, az: i32, spcnt: Option<&m
     afk
 }
 
+/// `isQuadBase(sconf, seed, radius)` — type-aware dispatcher for
+/// quad-base detection. **Partial port**: only `Swamp_Hut` with
+/// `radius == 128` is supported (the most common path used by
+/// `scan_for_quads`). Returns `Some(sqrad)` on a quad-base hit,
+/// `None` otherwise.
+#[must_use]
+pub fn is_quad_base(sconf: StructureConfig, seed: u64, radius: i32) -> Option<f32> {
+    use crate::finder::StructureType;
+    let Some(ty) = StructureType::from_ord(sconf.struct_type as i32) else {
+        panic!("is_quad_base: unknown struct_type {}", sconf.struct_type);
+    };
+    match ty {
+        StructureType::SwampHut if radius == 128 => {
+            // Cubiomes' isQuadBase passes (7+1, 7+1, 9+1).
+            is_quad_base_feature_24(sconf, seed, 8, 8, 10)
+        }
+        _ => {
+            panic!(
+                "is_quad_base: only Swamp_Hut + radius=128 currently supported (got {ty:?}, r={radius})"
+            )
+        }
+    }
+}
+
+/// `scanForQuadBits` — sweep a `(w, h)` chunk-coordinate window for
+/// quad-base candidates whose lower `lbitn` bits match `lbit`. Each
+/// hit is appended to `qplist` as a chunk-coordinate `Pos`.
+///
+/// Bit-exact port of cubiomes' `scanForQuadBits`. The `inv_b` arg
+/// is the modular inverse of `132897987541 mod 2^lbitn`.
+///
+/// Returns the number of hits found.
+#[allow(clippy::too_many_arguments)]
+pub fn scan_for_quad_bits(
+    sconf: StructureConfig,
+    radius: i32,
+    s48: u64,
+    lbit: u64,
+    lbitn: u32,
+    inv_b: u64,
+    x: i64,
+    z: i64,
+    w: i64,
+    h: i64,
+    qplist: &mut Vec<Pos>,
+    n: usize,
+) -> usize {
+    use crate::finder::move_structure;
+    let m: u64 = 1u64 << lbitn;
+    let a: u64 = 341_873_128_712;
+    if n < 1 {
+        return 0;
+    }
+    let lbit = lbit & (m - 1);
+
+    let mut cnt = 0;
+    for i in x..=(x + w) {
+        let sx = s48.wrapping_add(a.wrapping_mul(i as u64));
+        let mut j: i64 = ((z as u64 & !(m - 1))
+            | ((lbit.wrapping_sub(sx)).wrapping_mul(inv_b) & (m - 1)))
+            as i64;
+        if j < z {
+            j = j.wrapping_add(m as i64);
+        }
+        while j <= z + h {
+            let sp = move_structure(s48, -(i as i32), -(j as i32));
+            if (sp & (m - 1)) == lbit && is_quad_base(sconf, sp, radius).is_some() {
+                qplist.push(Pos {
+                    x: i as i32,
+                    z: j as i32,
+                });
+                cnt += 1;
+                if cnt >= n {
+                    return cnt;
+                }
+            }
+            j = j.wrapping_add(m as i64);
+        }
+    }
+    cnt
+}
+
+/// `scanForQuads` — outer driver that runs `scan_for_quad_bits`
+/// for every entry in `low_bits` (typically `LOW20_QUAD_*`). Stops
+/// when `qplist.len() >= n`. Each entry past zero in `low_bits` is
+/// treated as a sentinel terminator (matches cubiomes' `for (i = 0;
+/// lowBits[i]; i++)`).
+#[allow(clippy::too_many_arguments)]
+pub fn scan_for_quads(
+    sconf: StructureConfig,
+    radius: i32,
+    s48: u64,
+    low_bits: &[u64],
+    lbitn: u32,
+    salt: u64,
+    x: i64,
+    z: i64,
+    w: i64,
+    h: i64,
+    qplist: &mut Vec<Pos>,
+    n: usize,
+) -> usize {
+    use crate::rng::mc_seed::mul_inv;
+    let inv_b: u64 = if lbitn == 20 {
+        132_477
+    } else if lbitn == 48 {
+        211_541_297_333_629
+    } else {
+        mul_inv(132_897_987_541, 1u64 << lbitn)
+    };
+    let mut cnt = 0;
+    for &lb in low_bits {
+        if lb == 0 {
+            break;
+        }
+        cnt += scan_for_quad_bits(
+            sconf,
+            radius,
+            s48,
+            lb.wrapping_sub(salt),
+            lbitn,
+            inv_b,
+            x,
+            z,
+            w,
+            h,
+            qplist,
+            n - cnt,
+        );
+        if cnt >= n {
+            break;
+        }
+    }
+    cnt
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

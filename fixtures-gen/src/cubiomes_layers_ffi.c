@@ -209,6 +209,30 @@ int cubiomes_call_is_viable_structure_pos(int mc, int dim, int structure_type,
     return isViableStructurePos(structure_type, &g, x, z, flags);
 }
 
+int cubiomes_call_scan_for_quads(int mc, int sty, int radius, uint64_t s48,
+                                 const uint64_t *low_bits, int low_bit_count,
+                                 uint64_t salt, int x, int z, int w, int h,
+                                 int *out_xz, int n) {
+    StructureConfig sc;
+    if (!getStructureConfig(sty, mc, &sc)) {
+        return 0;
+    }
+    Pos *buf = (Pos *)malloc((size_t)n * sizeof(Pos));
+    /* Cubiomes expects the low_bits array to be 0-terminated; copy
+     * the caller's slice into a fresh buffer and append a sentinel. */
+    uint64_t *lb = (uint64_t *)malloc(sizeof(uint64_t) * (size_t)(low_bit_count + 1));
+    for (int i = 0; i < low_bit_count; i++) lb[i] = low_bits[i];
+    lb[low_bit_count] = 0;
+    int cnt = scanForQuads(sc, radius, s48, lb, /*lbitn=*/20, salt, x, z, w, h, buf, n);
+    for (int i = 0; i < cnt && i < n; i++) {
+        out_xz[i * 2 + 0] = buf[i].x;
+        out_xz[i * 2 + 1] = buf[i].z;
+    }
+    free(lb);
+    free(buf);
+    return cnt;
+}
+
 void cubiomes_call_get_linked_gateway_pos(int mc, uint64_t seed, int src_x,
                                           int src_z, int *out_x, int *out_z) {
     EndNoise en;

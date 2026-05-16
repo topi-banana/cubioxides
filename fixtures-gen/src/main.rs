@@ -698,6 +698,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("linked_gateway_pos fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_scan_for_quads_fixture(&fixtures_dir.join("scan_for_quads.bin")) {
+        eprintln!("scan_for_quads fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2180,6 +2184,77 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `scanForQuads` parity record (kind = 71). For each (s48, x, z,
+/// w, h) tuple, captures the count + first N=8 quad-base hit
+/// positions returned by cubiomes' Swamp_Hut + radius=128 scan.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ScanForQuadsRecord {
+    pub x: i32,
+    pub z: i32,
+    pub w: i32,
+    pub h: i32,
+    pub cnt: i32,
+    pub pad: i32,
+    pub s48: u64,
+    pub out_xz: [i32; 16],
+}
+
+fn write_scan_for_quads_fixture(path: &Path) -> std::io::Result<()> {
+    // Swamp_Hut, radius=128, 1.18 (any modern MC works since Swamp_Hut
+    // structure config is stable). Use LOW20_QUAD_IDEAL constellations.
+    const STY_SWAMP_HUT: i32 = 3;
+    let low_bits: [u64; 3] = [0x43f18, 0xc751a, 0xf520a];
+    // `salt` is the per-structure salt mixed by cubiomes' `moveStructure`
+    // arithmetic. For Swamp_Hut 1.13+ the config salt is 14357620.
+    let salt: u64 = 14_357_620;
+    let total: u64 = 64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 71, total)?;
+
+    let mut rng_state: u64 = 0x12af_face_b00b_c0de;
+    for _ in 0..total {
+        rng_state = lcg_step(rng_state);
+        let s48 = rng_state & ((1u64 << 48) - 1);
+        rng_state = lcg_step(rng_state);
+        let x = ((rng_state >> 32) as i32) % 64 - 32;
+        rng_state = lcg_step(rng_state);
+        let z = ((rng_state >> 32) as i32) % 64 - 32;
+        let w = 64_i32;
+        let h = 64_i32;
+        let mut buf = [0_i32; 16];
+        let cnt = unsafe {
+            ffi::cubiomes_call_scan_for_quads(
+                22, // V1_18
+                STY_SWAMP_HUT,
+                128,
+                s48,
+                low_bits.as_ptr(),
+                low_bits.len() as c_int,
+                salt,
+                x,
+                z,
+                w,
+                h,
+                buf.as_mut_ptr(),
+                8,
+            )
+        };
+        let rec = ScanForQuadsRecord {
+            x,
+            z,
+            w,
+            h,
+            cnt,
+            pad: 0,
+            s48,
+            out_xz: buf,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
 }
 
 /// `getLinkedGatewayPos` parity record (kind = 70). Each record
@@ -5416,6 +5491,21 @@ mod ffi {
             out: *mut c_int,
         ) -> c_int;
         pub fn cubiomes_call_get_fixed_end_gateways(mc: c_int, seed: u64, out_xz: *mut c_int);
+        pub fn cubiomes_call_scan_for_quads(
+            mc: c_int,
+            sty: c_int,
+            radius: c_int,
+            s48: u64,
+            low_bits: *const u64,
+            low_bit_count: c_int,
+            salt: u64,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+            out_xz: *mut c_int,
+            n: c_int,
+        ) -> c_int;
         pub fn cubiomes_call_get_linked_gateway_pos(
             mc: c_int,
             seed: u64,
