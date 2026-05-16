@@ -18,6 +18,25 @@ use crate::rng::JavaRng;
 /// `id_matches(id, validB, validM)` — does `id` appear in either
 /// of the two 64-bit biome-id bitsets? Bits 0..=127 live in
 /// `valid_b`; bits 128..=191 live in `valid_m`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::finder::id_matches;
+///
+/// // The split-mask convention: the low bitset (`valid_b`) covers
+/// // ids 0..128, the high bitset (`valid_m`) covers 128..192 with a
+/// // 128-offset, and ids ≥ 192 or < 0 always miss.
+/// let valid_b = (1u64 << 1) | (1u64 << 4); // plains + forest
+/// let valid_m = 1u64 << (129 - 128); // sunflower_plains
+///
+/// assert!(id_matches(1, valid_b, valid_m));   // plains
+/// assert!(id_matches(4, valid_b, valid_m));   // forest
+/// assert!(id_matches(129, valid_b, valid_m)); // sunflower_plains
+/// assert!(!id_matches(2, valid_b, valid_m));  // desert — not set
+/// assert!(!id_matches(-1, valid_b, valid_m)); // negative — always false
+/// assert!(!id_matches(200, valid_b, valid_m)); // >= 192 — out of range
+/// ```
 #[inline]
 #[must_use]
 pub const fn id_matches(id: i32, valid_b: u64, valid_m: u64) -> bool {
