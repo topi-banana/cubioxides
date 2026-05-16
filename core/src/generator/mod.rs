@@ -358,7 +358,19 @@ impl Generator {
                 gen_biome_noise_3d(bn, cache, r, r.scale > 4);
             }
             OverworldKind::Beta => {
-                panic!("Beta gen_biomes (with SurfaceNoiseBeta) is not yet implemented");
+                let bnb = self
+                    .biome_noise_beta
+                    .as_ref()
+                    .expect("BiomeNoiseBeta seeded");
+                // The SurfaceNoiseBeta-driven sea-level override is
+                // skipped for scale >= 4 in cubiomes (`!snb || r.scale >= 4`).
+                // The complex scale < 4 path (diagonal column-noise
+                // traversal) is deferred — panic if we land there for now.
+                assert!(
+                    r.scale >= 4 || self.flags & NO_BETA_OCEAN != 0,
+                    "Beta gen_biomes: scale < 4 with sea-level override not yet ported"
+                );
+                crate::biomenoise::beta::gen_biome_noise_beta_scaled_simple(bnb, cache, r);
             }
         }
     }

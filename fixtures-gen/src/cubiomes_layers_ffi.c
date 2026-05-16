@@ -1228,6 +1228,30 @@ uint64_t cubiomes_call_get_min_layer_cache_size(int mc, int entry, int sx, int s
     return (uint64_t) getMinLayerCacheSize(&ls.layers[entry], sx, sz);
 }
 
+/* checkForBiomes wrapper. Builds a BiomeFilter from the same
+ * required/excluded/matchany inputs that the Rust port uses, then
+ * invokes cubiomes' checkForBiomes. Cache is internally allocated. */
+int cubiomes_call_check_for_biomes(int mc, uint64_t seed, int dim,
+                                   int scale, int rx, int ry, int rz,
+                                   int sx, int sy, int sz,
+                                   uint32_t flags,
+                                   const int *required, int required_len,
+                                   const int *excluded, int excluded_len,
+                                   const int *matchany, int matchany_len) {
+    Generator g;
+    setupGenerator(&g, mc, flags);
+    applySeed(&g, dim, seed);
+    Range r;
+    r.scale = scale;
+    r.x = rx; r.z = rz;
+    r.sx = sx; r.sz = sz;
+    r.y = ry; r.sy = sy;
+    BiomeFilter bf;
+    setupBiomeFilter(&bf, mc, flags, required, required_len,
+                     excluded, excluded_len, matchany, matchany_len);
+    return checkForBiomes(&g, NULL, r, dim, seed, &bf, NULL);
+}
+
 /* getParaRange wrapper (no callback). Initialises a Generator at
  * `mc`, applies `seed`, then runs the range probe on climate axis
  * `npara`. `pmin_mask`/`pmax_mask` are 0 (disabled) or 1 (enabled).

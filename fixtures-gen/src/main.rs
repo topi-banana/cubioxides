@@ -1196,6 +1196,12 @@ fn regenerate_layers() -> ExitCode {
         return ExitCode::FAILURE;
     }
     if let Err(err) =
+        write_check_for_biomes_beta_fixture(&fixtures_dir.join("check_for_biomes_beta.bin"))
+    {
+        eprintln!("check_for_biomes_beta fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
         eprintln!("viable_feature_biome fixture failed: {err}");
@@ -4303,6 +4309,238 @@ fn write_para_range_fixture(path: &Path) -> std::io::Result<()> {
         file.write_all(&err.to_le_bytes())?;
         file.write_all(&pmin.to_bits().to_le_bytes())?;
         file.write_all(&pmax.to_bits().to_le_bytes())?;
+    }
+    file.flush()
+}
+
+/// `checkForBiomes` Beta-path payload (kind = 86). Per-record:
+/// `mc i32, seed u64, dim i32, scale i32, rx i32, ry i32, rz i32,
+///  sx i32, sy i32, sz i32, flags u32, req_len i32, exc_len i32,
+///  any_len i32, req [i32; 8], exc [i32; 8], any [i32; 8], result i32`.
+#[allow(clippy::too_many_lines)]
+fn write_check_for_biomes_beta_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (
+        i32,
+        u64,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        u32,
+        Vec<i32>,
+        Vec<i32>,
+        Vec<i32>,
+    );
+    // Beta IDs: 0=ocean, 1=plains, 2=desert, 4=forest, 5=taiga, 6=swamp,
+    // 12=snowy_tundra, 35=savanna, 51=seasonal_forest, 52=rainforest,
+    // 53=shrubland. MC enum: 1=B1_7, 2=B1_8. Always set NO_BETA_OCEAN
+    // (=0x2) so the sea-level override doesn't kick in — our Rust
+    // port only handles the snb=NULL path.
+    const NO_BETA_OCEAN: u32 = 0x2;
+    let f = NO_BETA_OCEAN;
+    let cases: Vec<Case> = vec![
+        // Empty filter → trivially pass.
+        (
+            1,
+            0xdead_beef,
+            0,
+            4,
+            0,
+            0,
+            0,
+            4,
+            1,
+            4,
+            f,
+            vec![],
+            vec![],
+            vec![],
+        ),
+        // Required ocean.
+        (
+            1,
+            0xdead_beef,
+            0,
+            4,
+            0,
+            0,
+            0,
+            8,
+            1,
+            8,
+            f,
+            vec![0],
+            vec![],
+            vec![],
+        ),
+        // Required snowy_tundra — area-dependent.
+        (
+            1,
+            0xdead_beef,
+            0,
+            4,
+            0,
+            0,
+            0,
+            8,
+            1,
+            8,
+            f,
+            vec![12],
+            vec![],
+            vec![],
+        ),
+        // Excluded ocean.
+        (
+            1,
+            0xdead_beef,
+            0,
+            4,
+            0,
+            0,
+            0,
+            4,
+            1,
+            4,
+            f,
+            vec![],
+            vec![0],
+            vec![],
+        ),
+        // Matchany ocean OR plains.
+        (
+            1,
+            0xdead_beef,
+            0,
+            4,
+            0,
+            0,
+            0,
+            4,
+            1,
+            4,
+            f,
+            vec![],
+            vec![],
+            vec![0, 1],
+        ),
+        // Larger area at B1_7.
+        (
+            1,
+            0x1234_5678,
+            0,
+            4,
+            -32,
+            0,
+            -32,
+            16,
+            1,
+            16,
+            f,
+            vec![0, 1],
+            vec![],
+            vec![],
+        ),
+        // Different seed.
+        (
+            1,
+            0xfeed_face,
+            0,
+            4,
+            0,
+            0,
+            0,
+            8,
+            1,
+            8,
+            f,
+            vec![1],
+            vec![],
+            vec![],
+        ),
+        // Wide area.
+        (
+            1,
+            0xdead_beef,
+            0,
+            4,
+            -100,
+            0,
+            -100,
+            32,
+            1,
+            32,
+            f,
+            vec![0],
+            vec![],
+            vec![],
+        ),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 86, total)?;
+    for (mc, seed, dim, scale, rx, ry, rz, sx, sy, sz, flags, req, exc, any) in cases {
+        let mut req8 = [0_i32; 8];
+        let mut exc8 = [0_i32; 8];
+        let mut any8 = [0_i32; 8];
+        for (i, &v) in req.iter().enumerate() {
+            req8[i] = v;
+        }
+        for (i, &v) in exc.iter().enumerate() {
+            exc8[i] = v;
+        }
+        for (i, &v) in any.iter().enumerate() {
+            any8[i] = v;
+        }
+        let result = unsafe {
+            ffi::cubiomes_call_check_for_biomes(
+                mc,
+                seed,
+                dim,
+                scale,
+                rx,
+                ry,
+                rz,
+                sx,
+                sy,
+                sz,
+                flags,
+                req.as_ptr(),
+                req.len() as c_int,
+                exc.as_ptr(),
+                exc.len() as c_int,
+                any.as_ptr(),
+                any.len() as c_int,
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&dim.to_le_bytes())?;
+        file.write_all(&scale.to_le_bytes())?;
+        file.write_all(&rx.to_le_bytes())?;
+        file.write_all(&ry.to_le_bytes())?;
+        file.write_all(&rz.to_le_bytes())?;
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sy.to_le_bytes())?;
+        file.write_all(&sz.to_le_bytes())?;
+        file.write_all(&flags.to_le_bytes())?;
+        file.write_all(&(req.len() as i32).to_le_bytes())?;
+        file.write_all(&(exc.len() as i32).to_le_bytes())?;
+        file.write_all(&(any.len() as i32).to_le_bytes())?;
+        for v in req8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        for v in exc8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        for v in any8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        file.write_all(&result.to_le_bytes())?;
     }
     file.flush()
 }
@@ -8024,6 +8262,25 @@ mod ffi {
             maxiter: c_int,
             alpha: f64,
         ) -> f64;
+        pub fn cubiomes_call_check_for_biomes(
+            mc: c_int,
+            seed: u64,
+            dim: c_int,
+            scale: c_int,
+            rx: c_int,
+            ry: c_int,
+            rz: c_int,
+            sx: c_int,
+            sy: c_int,
+            sz: c_int,
+            flags: u32,
+            required: *const c_int,
+            required_len: c_int,
+            excluded: *const c_int,
+            excluded_len: c_int,
+            matchany: *const c_int,
+            matchany_len: c_int,
+        ) -> c_int;
         pub fn cubiomes_call_get_para_range(
             mc: c_int,
             seed: u64,

@@ -225,6 +225,36 @@ impl BiomeNoiseBeta {
     }
 }
 
+/// Bit-exact port of cubiomes' `genBiomeNoiseBetaScaled` — but only
+/// the *simple* path (no surface noise, i.e. `snb == NULL` or
+/// `r.scale >= 4`). Fills `cache` row-major with biome IDs at scaled
+/// world coordinates `(r.x*scale + mid, r.z*scale + mid)`.
+///
+/// The complex `scale < 4` + surface-noise path (column-noise
+/// diagonal traversal) is deferred.
+pub fn gen_biome_noise_beta_scaled_simple(
+    bnb: &BiomeNoiseBeta,
+    cache: &mut [Biome],
+    r: crate::generator::Range,
+) {
+    let mid = r.scale >> 1;
+    let sx = r.sx as usize;
+    let sz = r.sz as usize;
+    let area = sx * sz;
+    assert!(cache.len() >= area * (r.sy as usize), "cache too small");
+    for j in 0..sz {
+        let z = (r.z + j as i32) * r.scale + mid;
+        for i in 0..sx {
+            let x = (r.x + i as i32) * r.scale + mid;
+            let (id, _t, _h) = bnb.sample(x, z);
+            cache[j * sx + i] = id;
+        }
+    }
+    for k in 1..r.sy as usize {
+        cache.copy_within(0..area, k * area);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

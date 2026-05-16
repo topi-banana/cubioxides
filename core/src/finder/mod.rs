@@ -18,6 +18,7 @@ pub mod available_biomes;
 pub mod biome_filter;
 pub mod biome_para;
 pub mod can_biome_generate;
+pub mod check_for_biomes;
 pub mod check_for_temps;
 pub mod end;
 pub mod end_city;
