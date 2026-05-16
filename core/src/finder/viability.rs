@@ -6,7 +6,11 @@
 //! `is_viable_structure_pos` (which samples biomes around the
 //! candidate point) lands in a follow-up.
 
-#![allow(clippy::collapsible_match, clippy::needless_return)]
+#![allow(
+    clippy::collapsible_match,
+    clippy::needless_return,
+    clippy::doc_markdown
+)]
 
 use crate::biome::Biome;
 use crate::finder::population_seed::chunk_generate_rng;
@@ -190,9 +194,131 @@ pub fn is_viable_structure_pos(
     if g.mc.is_at_least(MCVersion::V1_18) {
         return viable_overworld_modern(structure_type, g, x, z, chunk_x, chunk_z);
     }
-    unimplemented!(
-        "Pre-1.18 Overworld is_viable_structure_pos requires more `getStructureConfig` + biome-check work (follow-up stage)"
-    );
+    viable_overworld_legacy(structure_type, g, x, z, chunk_x, chunk_z)
+}
+
+/// Pre-1.18 Overworld viability. Cubiomes patches the
+/// `mapViableBiome` / `mapViableShore` layer-hook for performance
+/// (early-exit during biome generation when an invalid biome is
+/// seen); we skip the hook and just do the final biome check at
+/// the cubiomes-specific sample point.
+#[allow(clippy::too_many_lines)]
+fn viable_overworld_legacy(
+    structure_type: StructureType,
+    g: &Generator,
+    x: i32,
+    z: i32,
+    chunk_x: i64,
+    chunk_z: i64,
+) -> bool {
+    use StructureType::*;
+    match structure_type {
+        // Always-viable / version-gated trivial cases.
+        Mineshaft => true,
+        RuinedPortal | RuinedPortalN => g.mc.is_at_least(MCVersion::V1_16_1),
+        Geode => g.mc.is_at_least(MCVersion::V1_17),
+        AncientCity | TrialChambers => false, // 1.19_2+ / 1.21_1+ only.
+
+        // L_feature path: Desert/Jungle/Swamp temples, Igloo,
+        // Ocean_Ruin, Shipwreck, Treasure, Trail_Ruins.
+        DesertPyramid | JungleTemple | SwampHut | Igloo | OceanRuin | Shipwreck | Treasure
+        | TrailRuins => {
+            // Per-structure MC gates.
+            match structure_type {
+                TrailRuins => return false, // 1.20+ only, but 1.20 is 1.18+.
+                OceanRuin | Shipwreck | Treasure => {
+                    if g.mc.is_before(MCVersion::V1_13) {
+                        return false;
+                    }
+                }
+                Igloo => {
+                    if g.mc.is_before(MCVersion::V1_9) {
+                        return false;
+                    }
+                }
+                _ => {}
+            }
+            let (sample_x, sample_z, scale) = legacy_feature_sample(g.mc, chunk_x, chunk_z);
+            let id = g.biome_at(scale, sample_x, 319 >> 2, sample_z).0;
+            if id < 0 {
+                return false;
+            }
+            is_viable_feature_biome(g.mc, structure_type, id)
+        }
+
+        DesertWell => {
+            let (sample_x, sample_z, scale) = if g.mc.is_before(MCVersion::V1_16_1) {
+                (x, z, 1)
+            } else {
+                (x >> 2, z >> 2, 4)
+            };
+            let id = g.biome_at(scale, sample_x, 319 >> 2, sample_z).0;
+            if id < 0 {
+                return false;
+            }
+            is_viable_feature_biome(g.mc, structure_type, id)
+        }
+
+        Village => viable_village_legacy(g, chunk_x, chunk_z),
+
+        // Outpost pre-1.18 needs a recursive Village viability check
+        // for mc < 1.16.1; defer to a follow-up.
+        Outpost => {
+            unimplemented!("Pre-1.18 Outpost viability needs recursive Village check (follow-up)")
+        }
+
+        // Mansion / Monument pre-1.18 use `areBiomesViable` with the
+        // layered biome cache; defer.
+        Mansion | Monument => {
+            unimplemented!(
+                "Pre-1.18 Mansion / Monument viability needs `areBiomesViable` over the layered biome cache (follow-up)"
+            )
+        }
+
+        Feature | EndCity | EndGateway | EndIsland | Fortress | Bastion => {
+            // Wrong-dim or shouldn't reach here.
+            unimplemented!("legacy Overworld is_viable_structure_pos: {structure_type:?}")
+        }
+    }
+}
+
+/// Cubiomes' pre-1.18 L_feature sample point + entry-layer
+/// selection. Returns `(sample_x, sample_z, scale)`.
+fn legacy_feature_sample(mc: MCVersion, chunk_x: i64, chunk_z: i64) -> (i32, i32, i32) {
+    if mc.is_before(MCVersion::V1_16_1) {
+        // Pre-1.16: sample at chunk center (block coords) via L_VORONOI_1.
+        ((chunk_x * 16 + 9) as i32, (chunk_z * 16 + 9) as i32, 1)
+    } else {
+        // 1.16-1.17: sample at chunk*4+2 via L_RIVER_MIX_4.
+        ((chunk_x * 4 + 2) as i32, (chunk_z * 4 + 2) as i32, 4)
+    }
+}
+
+/// Pre-1.18 Village viability. MC_1_15 exclusively uses the
+/// L_VORONOI_1 sample like other features; everything else uses
+/// L_RIVER_MIX_4 at chunk*4+2. Pre-1.10 has an extra `getBiomeAt`
+/// check at (chunkX*16+2, _, chunkZ*16+2) with scale=1 to verify
+/// the corner of the chunk is also viable.
+fn viable_village_legacy(g: &Generator, chunk_x: i64, chunk_z: i64) -> bool {
+    let (sample_x, sample_z, scale) = if g.mc == MCVersion::V1_15 {
+        ((chunk_x * 16 + 9) as i32, (chunk_z * 16 + 9) as i32, 1)
+    } else {
+        ((chunk_x * 4 + 2) as i32, (chunk_z * 4 + 2) as i32, 4)
+    };
+    let id = g.biome_at(scale, sample_x, 0, sample_z).0;
+    if id < 0 || !is_viable_feature_biome(g.mc, StructureType::Village, id) {
+        return false;
+    }
+    if g.mc.is_before(MCVersion::V1_10) {
+        // Pre-1.10: also check the chunk-corner (2, 2) at scale=1.
+        let sx2 = (chunk_x * 16 + 2) as i32;
+        let sz2 = (chunk_z * 16 + 2) as i32;
+        let id2 = g.biome_at(1, sx2, 0, sz2).0;
+        if id2 < 0 || !is_viable_feature_biome(g.mc, StructureType::Village, id2) {
+            return false;
+        }
+    }
+    true
 }
 
 #[allow(clippy::too_many_lines)]

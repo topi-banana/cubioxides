@@ -2433,7 +2433,7 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
     // path for 1.18+), Ruined_Portal_N (1.16.1+).
     // End: End_City (1.9+), End_Gateway (1.13+).
     // Overworld 1.18+: L_feature path + Village + always-viable.
-    let combos: [(i32, i32, i32); 31] = [
+    let combos: [(i32, i32, i32); 46] = [
         // (mc, dim, structure_type)
         // Nether
         (10, -1, 18), // V1_7 Nether Fortress (returns true)
@@ -2472,6 +2472,28 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
         // Monument 1.18+ (deep-ocean center + 29-block ocean radius).
         (22, 0, 8), // V1_18 OW Monument
         (28, 0, 8), // V1_21 WD OW Monument
+        // Pre-1.18 Overworld L_feature path (V1_14 = ord 17 covers
+        // 1.16-1.17 sample shape via L_RIVER_MIX_4; V1_12 = ord 15
+        // covers the pre-1.16 L_VORONOI_1 shape).
+        (15, 0, 1),  // V1_12 OW Desert_Pyramid (pre-1.16 voronoi sample)
+        (15, 0, 3),  // V1_12 OW Swamp_Hut
+        (17, 0, 1),  // V1_14 OW Desert_Pyramid (1.16-1.17 river-mix)
+        (17, 0, 3),  // V1_14 OW Swamp_Hut
+        (21, 0, 4),  // V1_17 OW Igloo
+        (21, 0, 6),  // V1_17 OW Ocean_Ruin
+        (21, 0, 14), // V1_17 OW Treasure
+        // Pre-1.18 Village (V1_15 uses voronoi sample, others use river-mix;
+        // pre-1.10 has the extra chunk-corner check).
+        (15, 0, 5), // V1_12 OW Village
+        (17, 0, 5), // V1_14 OW Village
+        (18, 0, 5), // V1_15 OW Village (voronoi sample exclusively in 1.15)
+        // Always-viable.
+        (17, 0, 15), // V1_14 OW Mineshaft
+        (21, 0, 11), // V1_17 OW Ruined_Portal (1.16.1+ always viable)
+        (21, 0, 17), // V1_17 OW Geode (always viable)
+        // Desert_Well pre-1.18.
+        (17, 0, 16), // V1_14 OW Desert_Well
+        (21, 0, 16), // V1_17 OW Desert_Well
     ];
     let per_combo: u64 = 64;
     let total = combos.len() as u64 * per_combo;
