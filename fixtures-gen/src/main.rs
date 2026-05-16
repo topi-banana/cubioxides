@@ -603,6 +603,14 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("structure_pos fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_slime_fixture(&fixtures_dir.join("slime_chunks.bin")) {
+        eprintln!("slime fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_quadbase_fixture(&fixtures_dir.join("quadbase.bin")) {
+        eprintln!("quadbase fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1802,6 +1810,102 @@ pub struct GeneratorBiomeRecord {
 }
 
 const GENERATOR_BIOME_RECORDS: u64 = 1024;
+
+/// `isSlimeChunk` parity record (kind = 49).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct SlimeRecord {
+    pub seed: u64,
+    pub cx: i32,
+    pub cz: i32,
+    pub is_slime: i32,
+    pub pad: i32,
+}
+
+const SLIME_RECORDS: u64 = 4096;
+
+fn write_slime_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 49, SLIME_RECORDS)?;
+
+    let mut rng_state: u64 = 0x0000_5117e_5117e;
+    for _ in 0..SLIME_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let cx = (rng_state as i32) % 4096;
+        rng_state = lcg_step(rng_state);
+        let cz = (rng_state as i32) % 4096;
+        let is_slime = unsafe { ffi::cubiomes_call_is_slime_chunk(seed, cx, cz) };
+        let rec = SlimeRecord {
+            seed,
+            cx,
+            cz,
+            is_slime,
+            pad: 0,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// Quad-base feature24 parity record (kind = 50). Records the
+/// `isQuadBaseFeature24Classic` flag and the
+/// `isQuadBaseFeature24(7+1, 7+1, 9+1)` enclosing-sphere radius
+/// (`0.0` for non-quad-base seeds).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct QuadbaseRecord {
+    pub seed: u64,
+    pub structure_type: i32,
+    pub mc: i32,
+    pub classic_radius_bits: u32,
+    pub feature24_radius_bits: u32,
+    pub cst: i32,
+    pub low20: u32,
+}
+
+const QUADBASE_RECORDS: u64 = 4096;
+
+fn write_quadbase_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 50, QUADBASE_RECORDS)?;
+
+    // Structures suitable for isQuadBaseFeature24: Swamp_Hut (3),
+    // Desert_Pyramid (1), Jungle_Pyramid (2), Igloo (4), Village (5).
+    let types: [i32; 5] = [3, 1, 2, 4, 5];
+    let mc_pool: [i32; 3] = [15, 19, 22];
+
+    let mut rng_state: u64 = 0x0000_9aba_5e90_0001;
+    for _ in 0..QUADBASE_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let ty = types[(rng_state as usize) % types.len()];
+        rng_state = lcg_step(rng_state);
+        let mc = mc_pool[(rng_state as usize) % mc_pool.len()];
+
+        let classic = unsafe { ffi::cubiomes_call_is_quad_base_feature_24_classic(ty, mc, seed) };
+        let feat24 = unsafe { ffi::cubiomes_call_is_quad_base_feature_24(ty, mc, seed, 8, 8, 10) };
+
+        // For non-witch-hut types `getQuadHutCst` isn't meaningful;
+        // still record it so the fixture covers the function.
+        let low20 = (seed & 0xfffff) as u32;
+        let cst = unsafe { ffi::cubiomes_call_get_quad_hut_cst(low20 as u64) };
+
+        let rec = QuadbaseRecord {
+            seed,
+            structure_type: ty,
+            mc,
+            classic_radius_bits: classic.to_bits(),
+            feature24_radius_bits: feat24.to_bits(),
+            cst,
+            low20,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
 
 /// `getStructurePos` parity record (kind = 48). For each random
 /// `(structure_type, mc, seed, reg_x, reg_z)` tuple, stores the
@@ -3766,6 +3870,21 @@ mod ffi {
             pos_x: *mut c_int,
             pos_z: *mut c_int,
         ) -> c_int;
+        pub fn cubiomes_call_is_slime_chunk(seed: u64, cx: c_int, cz: c_int) -> c_int;
+        pub fn cubiomes_call_is_quad_base_feature_24_classic(
+            structure_type: c_int,
+            mc: c_int,
+            seed: u64,
+        ) -> f32;
+        pub fn cubiomes_call_is_quad_base_feature_24(
+            structure_type: c_int,
+            mc: c_int,
+            seed: u64,
+            ax: c_int,
+            ay: c_int,
+            az: c_int,
+        ) -> f32;
+        pub fn cubiomes_call_get_quad_hut_cst(low20: u64) -> c_int;
         pub fn cubiomes_call_gen_biomes(
             mc: c_int,
             flags: u32,

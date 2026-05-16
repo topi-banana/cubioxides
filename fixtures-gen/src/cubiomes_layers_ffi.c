@@ -64,6 +64,30 @@ int cubiomes_call_climate_to_biome(int mc, const uint64_t np[6]) {
  * and write the (biome_id, np[6]) tuple back via the output
  * pointers. */
 #include "finders.h"
+#include "quadbase.h"
+
+int cubiomes_call_is_slime_chunk(uint64_t seed, int cx, int cz) {
+    return isSlimeChunk(seed, cx, cz);
+}
+
+float cubiomes_call_is_quad_base_feature_24_classic(int structure_type, int mc,
+                                                    uint64_t seed) {
+    StructureConfig sconf;
+    if (!getStructureConfig(structure_type, mc, &sconf)) return 0.0f;
+    return isQuadBaseFeature24Classic(sconf, seed);
+}
+
+float cubiomes_call_is_quad_base_feature_24(int structure_type, int mc,
+                                            uint64_t seed, int ax, int ay,
+                                            int az) {
+    StructureConfig sconf;
+    if (!getStructureConfig(structure_type, mc, &sconf)) return 0.0f;
+    return isQuadBaseFeature24(sconf, seed, ax, ay, az);
+}
+
+int cubiomes_call_get_quad_hut_cst(uint64_t low20) {
+    return getQuadHutCst(low20);
+}
 
 /* getStructurePos(type, mc, seed, regX, regZ, pos) — write the
  * attempt position into pos_x / pos_z. Returns the cubiomes valid
