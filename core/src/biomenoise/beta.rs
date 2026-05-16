@@ -228,6 +228,24 @@ impl BiomeNoiseBeta {
 /// Bit-exact port of cubiomes' `genBiomeNoiseBetaScaled` — full
 /// dispatcher that picks between the simple (snb=None or scale >= 4)
 /// path and the diagonal-traversal (scale < 4 with snb) path.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::biome::Biome;
+/// use cubioxides::biomenoise::{BiomeNoiseBeta, gen_biome_noise_beta_scaled};
+/// use cubioxides::Range;
+///
+/// // Generate a 16×16 cell window of Beta biomes at the native 1:4
+/// // scale. Pass `snb = None` for the no-ocean path — the simple
+/// // path is taken whenever `scale >= 4` regardless of `snb`.
+/// let bnb = BiomeNoiseBeta::set_seed(0xdead_beef);
+/// let mut cache = vec![Biome::NONE; 16 * 16];
+/// gen_biome_noise_beta_scaled(
+///     &bnb, None, &mut cache,
+///     Range { scale: 4, x: 0, z: 0, sx: 16, sz: 16, y: 64, sy: 1 },
+/// );
+/// ```
 pub fn gen_biome_noise_beta_scaled(
     bnb: &BiomeNoiseBeta,
     snb: Option<&crate::biomenoise::surface_beta::SurfaceNoiseBeta>,
