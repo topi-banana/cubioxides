@@ -14,8 +14,8 @@ pub mod stack;
 
 pub use dispatch::{compute_upstream_area, gen_area};
 pub use stack::{
-    L_NUM, LAYER_INIT_SHA, LayerId, LayerNode, LayerOp, LayerStack, set_layer_seed,
-    setup_layer_stack,
+    L_NUM, LAYER_INIT_SHA, LayerId, LayerNode, LayerOp, LayerStack, apply_force_ocean_variants,
+    set_layer_seed, setup_layer_stack,
 };
 
 pub use ops::bamboo::map_bamboo;

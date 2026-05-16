@@ -20,7 +20,9 @@ pub use height::map_approx_height;
 use crate::biome::Biome;
 use crate::biomenoise::{BiomeNoise, BiomeNoiseBeta, EndNoise, NetherNoise, SAMPLE_NO_SHIFT};
 use crate::layer::ops::voronoi::voronoi_access_3d;
-use crate::layer::{LayerId, LayerStack, gen_area, set_layer_seed, setup_layer_stack};
+use crate::layer::{
+    LayerId, LayerStack, apply_force_ocean_variants, gen_area, set_layer_seed, setup_layer_stack,
+};
 use crate::mc_version::{Dimension, MCVersion};
 use crate::sha::voronoi_sha;
 
@@ -126,6 +128,9 @@ impl Generator {
         let layer_stack = if matches!(overworld_kind, OverworldKind::Layered) {
             let mut stack = Box::new(LayerStack::new());
             setup_layer_stack(&mut stack, mc, flags & LARGE_BIOMES != 0);
+            if (flags & FORCE_OCEAN_VARIANTS) != 0 && mc.is_at_least(MCVersion::V1_13) {
+                apply_force_ocean_variants(&mut stack, mc);
+            }
             Some(stack)
         } else {
             None

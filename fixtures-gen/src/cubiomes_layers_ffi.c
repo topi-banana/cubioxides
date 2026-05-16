@@ -1305,6 +1305,27 @@ uint64_t cubiomes_call_get_min_cache_size(int mc, int dim, uint64_t seed,
     return (uint64_t) getMinCacheSize(&g, scale, sx, sy, sz);
 }
 
+/* gen_biomes with FORCE_OCEAN_VARIANTS flag — for layer-stack
+ * mapOceanMixMod parity. */
+int cubiomes_call_gen_force_ocean_variants(int mc, uint64_t seed, int scale,
+                                           int rx, int ry, int rz,
+                                           int sx, int sy, int sz, int *out) {
+    Generator g;
+    setupGenerator(&g, mc, FORCE_OCEAN_VARIANTS);
+    applySeed(&g, DIM_OVERWORLD, seed);
+    Range r;
+    r.scale = scale; r.x = rx; r.z = rz;
+    r.sx = sx; r.sz = sz; r.y = ry; r.sy = sy;
+    int *cache = allocCache(&g, r);
+    if (!cache) return -1;
+    int err = genBiomes(&g, cache, r);
+    if (err == 0) {
+        for (int i = 0; i < sx*sy*sz; i++) out[i] = cache[i];
+    }
+    free(cache);
+    return err;
+}
+
 /* End scale > 16 (radial pseudo-biome) wrapper. */
 int cubiomes_call_gen_end_large(int mc, uint64_t seed, int scale,
                                 int rx, int ry, int rz,

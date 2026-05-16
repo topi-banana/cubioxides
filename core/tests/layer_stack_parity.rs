@@ -16,12 +16,18 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use bytemuck::{Pod, Zeroable};
-use cubioxides::layer::stack::{L_NUM, LayerStack, set_layer_seed, setup_layer_stack};
+use cubioxides::layer::stack::{LayerStack, set_layer_seed, setup_layer_stack};
 use cubioxides::mc_version::MCVersion;
 
 const MAGIC: [u8; 4] = *b"CUBX";
 const FORMAT_VERSION: u16 = 1;
 const KIND: u16 = 37;
+
+/// Number of cubiomes-side layer slots (`L_VORONOI_1` + 4
+/// large-biome zooms = 61). The Rust `L_NUM` adds three xlayer
+/// slots reserved for `FORCE_OCEAN_VARIANTS`; the fixture,
+/// generated against cubiomes' enum, only covers the first 61.
+const CUBIOMES_L_NUM: usize = 61;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -42,7 +48,7 @@ struct LayerStackHeader {
 }
 
 const RECORD_BYTES: usize =
-    std::mem::size_of::<LayerStackHeader>() + L_NUM * 3 * std::mem::size_of::<u64>();
+    std::mem::size_of::<LayerStackHeader>() + CUBIOMES_L_NUM * 3 * std::mem::size_of::<u64>();
 
 fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -92,7 +98,7 @@ fn setup_layer_stack_matches_cubiomes() {
         count * RECORD_BYTES,
         "fixture body length doesn't match {count} records of {RECORD_BYTES} bytes"
     );
-    let layer_state_bytes = L_NUM * 3 * std::mem::size_of::<u64>();
+    let layer_state_bytes = CUBIOMES_L_NUM * 3 * std::mem::size_of::<u64>();
     let lstack_hdr_size = std::mem::size_of::<LayerStackHeader>();
 
     let mut stack = Box::new(LayerStack::new());
@@ -110,7 +116,7 @@ fn setup_layer_stack_matches_cubiomes() {
         let entry = stack.entry_1.expect("entry_1 set");
         set_layer_seed(&mut stack, entry, rec_hdr.world_seed);
 
-        for layer_idx in 0..L_NUM {
+        for layer_idx in 0..CUBIOMES_L_NUM {
             let node = &stack.layers[layer_idx];
             let exp_layer_salt = expected[3 * layer_idx];
             let exp_start_salt = expected[3 * layer_idx + 1];

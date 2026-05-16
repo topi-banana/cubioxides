@@ -1254,6 +1254,12 @@ fn regenerate_layers() -> ExitCode {
         return ExitCode::FAILURE;
     }
     if let Err(err) =
+        write_force_ocean_variants_fixture(&fixtures_dir.join("force_ocean_variants.bin"))
+    {
+        eprintln!("force_ocean_variants fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
         eprintln!("viable_feature_biome fixture failed: {err}");
@@ -5021,6 +5027,61 @@ fn write_end_voronoi_fixture(path: &Path) -> std::io::Result<()> {
         };
         file.write_all(&mc.to_le_bytes())?;
         file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&rx.to_le_bytes())?;
+        file.write_all(&ry.to_le_bytes())?;
+        file.write_all(&rz.to_le_bytes())?;
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sy.to_le_bytes())?;
+        file.write_all(&sz.to_le_bytes())?;
+        file.write_all(&err.to_le_bytes())?;
+        for id in &ids {
+            file.write_all(&id.to_le_bytes())?;
+        }
+    }
+    file.flush()
+}
+
+/// `FORCE_OCEAN_VARIANTS` parity fixture (kind = 105). Same record
+/// layout as `end_voronoi.bin` (mc/seed/scale/rxryrz/sxsysz/err +
+/// biome ids). Exercises 1.13+ scales 16, 64, 256 where the
+/// `mapOceanMixMod` injection actually fires.
+fn write_force_ocean_variants_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (i32, u64, i32, i32, i32, i32, i32, i32, i32);
+    let cases: &[Case] = &[
+        // (mc, seed, scale, rx, ry, rz, sx, sy, sz)
+        // 1.13 (oldest supported), scale 16 in a known-ocean region.
+        (16, 0xdead_beef, 16, 0, 0, 0, 8, 1, 8),
+        (16, 0xcafe_babe, 16, -50, 0, 50, 8, 1, 8),
+        // 1.14 scale 64.
+        (17, 0xdead_beef, 64, 0, 0, 0, 8, 1, 8),
+        // 1.16.1 scale 256.
+        (19, 0xdead_beef, 256, -2, 0, -2, 4, 1, 4),
+        // 1.17 scale 16, vertical (planar replication).
+        (21, 0xdead_beef, 16, 0, 0, 0, 4, 2, 4),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 105, total)?;
+    for &(mc, seed, scale, rx, ry, rz, sx, sy, sz) in cases {
+        let n = (sx * sy * sz) as usize;
+        let mut ids = vec![0_i32; n];
+        let err = unsafe {
+            ffi::cubiomes_call_gen_force_ocean_variants(
+                mc,
+                seed,
+                scale,
+                rx,
+                ry,
+                rz,
+                sx,
+                sy,
+                sz,
+                ids.as_mut_ptr(),
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&scale.to_le_bytes())?;
         file.write_all(&rx.to_le_bytes())?;
         file.write_all(&ry.to_le_bytes())?;
         file.write_all(&rz.to_le_bytes())?;
@@ -9082,6 +9143,18 @@ mod ffi {
             out: *mut c_int,
         ) -> c_int;
         pub fn cubiomes_call_gen_end_large(
+            mc: c_int,
+            seed: u64,
+            scale: c_int,
+            rx: c_int,
+            ry: c_int,
+            rz: c_int,
+            sx: c_int,
+            sy: c_int,
+            sz: c_int,
+            out: *mut c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_gen_force_ocean_variants(
             mc: c_int,
             seed: u64,
             scale: c_int,

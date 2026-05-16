@@ -145,6 +145,51 @@ pub fn map_ocean_mix(
     }
 }
 
+/// `mapOceanMixMod` — used when the [`Generator`] is constructed
+/// with the `FORCE_OCEAN_VARIANTS` flag.
+///
+/// Takes the same `(ocean, land)` pair as [`map_ocean_mix`] but
+/// applies a simpler rule: every oceanic cell in `land` is replaced
+/// with the temperature variant from `ocean`, with `DEEP_OCEAN`
+/// promoted to `DEEP_LUKEWARM_OCEAN` / `DEEP_OCEAN` /
+/// `DEEP_COLD_OCEAN` / `DEEP_FROZEN_OCEAN` based on the ocean type.
+/// Non-oceanic cells are passed through unchanged.
+///
+/// Unlike [`map_ocean_mix`], the land and ocean slices are the same
+/// `w × h` size — no nearby-land 17×17 dilation.
+///
+/// Bit-exact port of `cubiomes/generator.c::mapOceanMixMod`.
+///
+/// [`Generator`]: crate::generator::Generator
+pub fn map_ocean_mix_mod(ocean: &[Biome], land: &[Biome], out: &mut [Biome], w: usize, h: usize) {
+    assert!(ocean.len() >= w * h, "map_ocean_mix_mod: ocean too small");
+    assert!(land.len() >= w * h, "map_ocean_mix_mod: land too small");
+    assert!(out.len() >= w * h, "map_ocean_mix_mod: out too small");
+
+    for j in 0..h {
+        for i in 0..w {
+            let land_id = land[i + j * w].id();
+            if !Biome::is_oceanic_id(land_id) {
+                out[i + j * w] = Biome(land_id);
+                continue;
+            }
+            let ocean_id = ocean[i + j * w].id();
+            let result = if land_id == DEEP_OCEAN {
+                match ocean_id {
+                    LUKEWARM_OCEAN => DEEP_LUKEWARM_OCEAN,
+                    OCEAN => DEEP_OCEAN,
+                    COLD_OCEAN => DEEP_COLD_OCEAN,
+                    FROZEN_OCEAN => DEEP_FROZEN_OCEAN,
+                    _ => ocean_id,
+                }
+            } else {
+                ocean_id
+            };
+            out[i + j * w] = Biome(result);
+        }
+    }
+}
+
 /// Returns `true` iff at least one biome cell within the 17×17 grid
 /// centred on `(centre_x, centre_z)` (step 4, `ii / jj in -8..=8`) is
 /// non-oceanic. `centre_x` / `centre_z` are land-slice coordinates.

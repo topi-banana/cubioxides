@@ -30,7 +30,7 @@ use super::ops::{
     land::{map_land, map_land_b18, map_land16},
     mushroom::map_mushroom,
     noise::map_noise,
-    ocean_mix::{map_ocean_mix, ocean_land_bbox},
+    ocean_mix::{map_ocean_mix, map_ocean_mix_mod, ocean_land_bbox},
     ocean_temp::map_ocean_temp,
     river::map_river,
     river_mix::map_river_mix,
@@ -270,6 +270,16 @@ pub fn gen_area(
             let mut land = vec![Biome::NONE; lw * lh];
             gen_area(stack, p, &mut land, x + lx0, z + lz0, lw, lh);
             map_ocean_mix(&ocean, &land, out, w, h, lx0, lz0, lw, lh);
+        }
+
+        LayerOp::OceanMixMod => {
+            let p = node.p.expect("OceanMixMod needs a land parent (p)");
+            let p2 = node.p2.expect("OceanMixMod needs an ocean parent (p2)");
+            let mut ocean = vec![Biome::NONE; w * h];
+            gen_area(stack, p2, &mut ocean, x, z, w, h);
+            let mut land = vec![Biome::NONE; w * h];
+            gen_area(stack, p, &mut land, x, z, w, h);
+            map_ocean_mix_mod(&ocean, &land, out, w, h);
         }
 
         LayerOp::Voronoi114 | LayerOp::Voronoi => {

@@ -91,11 +91,24 @@ pub enum LayerId {
     ZoomLargeB = 58,
     ZoomLRiverA = 59,
     ZoomLRiverB = 60,
+    /// Extra slot used when `FORCE_OCEAN_VARIANTS` is set: holds an
+    /// `OceanMixMod` node that wraps the original `entry_16`.
+    /// Mirrors cubiomes' `g->xlayer[2]`. Outside of that flag this
+    /// slot stays at [`LayerOp::None`].
+    XOceanMix16 = 61,
+    /// `OceanMixMod` wrapper around the original `entry_64`. See
+    /// [`Self::XOceanMix16`].
+    XOceanMix64 = 62,
+    /// `OceanMixMod` wrapper around the original `entry_256`. See
+    /// [`Self::XOceanMix16`].
+    XOceanMix256 = 63,
 }
 
 /// Number of layer slots in a [`LayerStack`]. Matches cubiomes'
-/// `L_NUM`.
-pub const L_NUM: usize = LayerId::ZoomLRiverB as usize + 1;
+/// `L_NUM` plus three reserved slots for the `FORCE_OCEAN_VARIANTS`
+/// `xlayer` overlay (cubiomes uses `xlayer[2..5]` so we keep the
+/// count of "real" cubiomes layers plus those three).
+pub const L_NUM: usize = LayerId::XOceanMix256 as usize + 1;
 
 impl LayerId {
     /// Numeric index into [`LayerStack::layers`].
@@ -144,6 +157,12 @@ pub enum LayerOp {
     RiverMix,
     OceanTemp,
     OceanMix,
+    /// Cubiomes' `mapOceanMixMod` — used only when
+    /// `FORCE_OCEAN_VARIANTS` is set on the [`crate::generator::Generator`].
+    /// Reads `p` (the original land entry) and `p2` (the
+    /// `L_ZOOM_*_OCEAN` ocean layer) and replaces oceanic biomes in
+    /// `p` with the temperature-variant from `p2`.
+    OceanMixMod,
     Voronoi,
     Voronoi114,
 }
@@ -341,6 +360,69 @@ fn set_layer_seed_recursive(stack: &mut LayerStack, id: LayerId, world_seed: u64
         node.start_seed = mc_step_seed(st, 0);
         debug_assert_eq!(node.start_seed, get_start_seed(world_seed, ls));
     }
+}
+
+/// Apply the `FORCE_OCEAN_VARIANTS` flag to a layered stack:
+/// inject `OceanMixMod` wrappers at the 1:16, 1:64, 1:256 entries
+/// so that biome generation always produces the temperature
+/// variants on oceanic cells. Mirrors cubiomes' `setupGenerator`
+/// branch when `flags & FORCE_OCEAN_VARIANTS && mc >= MC_1_13`.
+///
+/// Safe to call at any point after [`setup_layer_stack`] for an
+/// `mc >= V1_13` stack; no-op otherwise (entry layers are assumed
+/// non-None and the ocean-temperature chain to exist).
+pub fn apply_force_ocean_variants(stack: &mut LayerStack, mc: MCVersion) {
+    if !mc.is_at_least(MCVersion::V1_13) {
+        return;
+    }
+    let (Some(orig_16), Some(orig_64), Some(orig_256)) =
+        (stack.entry_16, stack.entry_64, stack.entry_256)
+    else {
+        return;
+    };
+    // Cubiomes: setupLayer(xlayer+2, &mapOceanMixMod, mc, 1, 0, 0,
+    //                     entry_16, &g->ls.layers[L_ZOOM_16_OCEAN]);
+    let layers = &mut stack.layers;
+    setup_layer(
+        layers,
+        LayerId::XOceanMix16,
+        LayerOp::OceanMixMod,
+        mc,
+        1,
+        0,
+        0,
+        Some(orig_16),
+        Some(LayerId::Zoom16Ocean),
+    );
+    setup_layer(
+        layers,
+        LayerId::XOceanMix64,
+        LayerOp::OceanMixMod,
+        mc,
+        1,
+        0,
+        0,
+        Some(orig_64),
+        Some(LayerId::Zoom64Ocean),
+    );
+    setup_layer(
+        layers,
+        LayerId::XOceanMix256,
+        LayerOp::OceanMixMod,
+        mc,
+        1,
+        0,
+        0,
+        Some(orig_256),
+        Some(LayerId::OceanTemp256),
+    );
+    // Propagate scales from the wrapped entries.
+    setup_scale(layers, LayerId::XOceanMix16, 16);
+    setup_scale(layers, LayerId::XOceanMix64, 64);
+    setup_scale(layers, LayerId::XOceanMix256, 256);
+    stack.entry_16 = Some(LayerId::XOceanMix16);
+    stack.entry_64 = Some(LayerId::XOceanMix64);
+    stack.entry_256 = Some(LayerId::XOceanMix256);
 }
 
 /// `setupLayerStack` — build the layer DAG for `mc` (and the
