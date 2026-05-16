@@ -14,6 +14,7 @@
     clippy::enum_glob_use
 )]
 
+pub mod can_biome_generate;
 pub mod end;
 pub mod end_city;
 pub mod fortress;

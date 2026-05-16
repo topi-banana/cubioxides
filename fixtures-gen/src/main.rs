@@ -1092,6 +1092,11 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("get_largest_rec fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_can_biome_generate_fixture(&fixtures_dir.join("can_biome_generate.bin"))
+    {
+        eprintln!("can_biome_generate fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3461,6 +3466,70 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
             ids: ids_arr,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `canBiomeGenerate` parity record (kind = 87). One record per
+/// (`layer_id`, mc, flags, `biome_id`) tuple.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct CanBiomeGenerateRecord {
+    pub layer_id: i32,
+    pub mc: i32,
+    pub flags: u32,
+    pub biome_id: i32,
+    pub result: i32,
+    pub padding: i32,
+}
+
+fn write_can_biome_generate_fixture(path: &Path) -> std::io::Result<()> {
+    // Layer ords cubiomes supports. Cubiomes panics (well, prints +
+    // returns 0) for unsupported layers; we cover the supported ones
+    // and skip the "unsupported" range to match cubiomes' contract.
+    let layers: [i32; 13] = [
+        48, // OceanTemp256
+        21, // Biome256
+        22, // Bamboo256
+        25, // BiomeEdge64
+        24, // Zoom64
+        29, // Hills64
+        33, // Zoom16
+        30, // Sunflower64
+        34, // Shore16
+        35, // SwampRiver16
+        47, // RiverMix4
+        55, // OceanMix4
+        56, // Voronoi1
+    ];
+    // MC versions to cover (each cubiomes/Rust ord pair).
+    let mcs: [i32; 7] = [3, 10, 12, 17, 19, 22, 28];
+    // Biome IDs (0..255 covers all overworld biomes).
+    let biome_ids: Vec<i32> = (0..256).collect();
+    let flags_set: [u32; 2] = [0, 0x4]; // 0x4 = FORCE_OCEAN_VARIANTS
+
+    let total = (layers.len() * mcs.len() * biome_ids.len() * flags_set.len()) as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 87, total)?;
+    for &layer_id in &layers {
+        for &mc in &mcs {
+            for &flags in &flags_set {
+                for &biome_id in &biome_ids {
+                    let result = unsafe {
+                        ffi::cubiomes_call_can_biome_generate(layer_id, mc, flags, biome_id)
+                    };
+                    let rec = CanBiomeGenerateRecord {
+                        layer_id,
+                        mc,
+                        flags,
+                        biome_id,
+                        result,
+                        padding: 0,
+                    };
+                    file.write_all(bytemuck::bytes_of(&rec))?;
+                }
+            }
+        }
     }
     file.flush()
 }
@@ -6635,6 +6704,12 @@ mod ffi {
         ) -> c_int;
         pub fn cubiomes_call_seed_zero_nextint4() -> c_int;
         pub fn cubiomes_call_get_shadow(seed: u64) -> u64;
+        pub fn cubiomes_call_can_biome_generate(
+            layer_id: c_int,
+            mc: c_int,
+            flags: u32,
+            id: c_int,
+        ) -> c_int;
         pub fn cubiomes_call_get_largest_rec(
             target: c_int,
             ids: *const c_int,

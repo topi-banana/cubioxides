@@ -1200,3 +1200,7 @@ int cubiomes_call_get_largest_rec(int target, const int *ids, int sx, int sz,
     *p1z = p1.z;
     return area;
 }
+
+int cubiomes_call_can_biome_generate(int layer_id, int mc, uint32_t flags, int id) {
+    return canBiomeGenerate(layer_id, mc, flags, id);
+}
