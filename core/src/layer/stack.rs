@@ -1985,4 +1985,43 @@ mod tests {
         let c = s.node(LayerId::Continent4096);
         assert_ne!(c.start_salt, 0);
     }
+
+    #[test]
+    fn apply_force_ocean_variants_redirects_entries() {
+        let mut s = LayerStack::new();
+        setup_layer_stack(&mut s, MCVersion::V1_16_1, false);
+        let orig_16 = s.entry_16.unwrap();
+        let orig_64 = s.entry_64.unwrap();
+        let orig_256 = s.entry_256.unwrap();
+        apply_force_ocean_variants(&mut s, MCVersion::V1_16_1);
+        // entry_1 / entry_4 are unchanged.
+        assert_eq!(s.entry_1, Some(LayerId::Voronoi1));
+        assert_eq!(s.entry_4, Some(LayerId::OceanMix4));
+        // entry_16 / 64 / 256 now point to xlayer wrappers.
+        assert_eq!(s.entry_16, Some(LayerId::XOceanMix16));
+        assert_eq!(s.entry_64, Some(LayerId::XOceanMix64));
+        assert_eq!(s.entry_256, Some(LayerId::XOceanMix256));
+        // The wrappers carry OceanMixMod and the right parents.
+        let x16 = s.node(LayerId::XOceanMix16);
+        assert_eq!(x16.op, LayerOp::OceanMixMod);
+        assert_eq!(x16.p, Some(orig_16));
+        assert_eq!(x16.p2, Some(LayerId::Zoom16Ocean));
+        assert_eq!(x16.scale, 16);
+        let x64 = s.node(LayerId::XOceanMix64);
+        assert_eq!(x64.p, Some(orig_64));
+        assert_eq!(x64.p2, Some(LayerId::Zoom64Ocean));
+        let x256 = s.node(LayerId::XOceanMix256);
+        assert_eq!(x256.p, Some(orig_256));
+        assert_eq!(x256.p2, Some(LayerId::OceanTemp256));
+    }
+
+    #[test]
+    fn apply_force_ocean_variants_noop_pre_113() {
+        let mut s = LayerStack::new();
+        setup_layer_stack(&mut s, MCVersion::V1_12, false);
+        let pre_16 = s.entry_16;
+        apply_force_ocean_variants(&mut s, MCVersion::V1_12);
+        assert_eq!(s.entry_16, pre_16);
+        assert_eq!(s.node(LayerId::XOceanMix16).op, LayerOp::None);
+    }
 }
