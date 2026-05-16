@@ -307,7 +307,11 @@ fn gen_tower(env: &mut PieceEnv<'_>, current: usize, depth: i32, my_scope: usize
     let mut base = current;
     base = add_end_city_piece(env, Some(base), rot, x, -3, z, EndCityPieceType::TowerBase);
     base = add_end_city_piece(env, Some(base), rot, 0, 7, 0, EndCityPieceType::TowerPiece);
-    let mut floor = if env.rng.next_int(3) == 0 { Some(base) } else { None };
+    let mut floor = if env.rng.next_int(3) == 0 {
+        Some(base)
+    } else {
+        None
+    };
     let floorcnt = 1 + env.rng.next_int(3);
     for i in 0..floorcnt {
         base = add_end_city_piece(env, Some(base), rot, 0, 4, 0, EndCityPieceType::TowerPiece);
@@ -316,12 +320,7 @@ fn gen_tower(env: &mut PieceEnv<'_>, current: usize, depth: i32, my_scope: usize
         }
     }
     if floor.is_some() {
-        const BINFO: [[i32; 4]; 4] = [
-            [0, 1, -1, 0],
-            [1, 6, -1, 1],
-            [3, 0, -1, 5],
-            [2, 5, -1, 6],
-        ];
+        const BINFO: [[i32; 4]; 4] = [[0, 1, -1, 0], [1, 6, -1, 1], [3, 0, -1, 5], [2, 5, -1, 6]];
         for entry in BINFO {
             if env.rng.next(1) == 0 {
                 continue;
@@ -350,12 +349,28 @@ fn gen_bridge(env: &mut PieceEnv<'_>, current: usize, depth: i32, my_scope: usiz
     let rot = env.list[current].rot;
     let floorcnt = 1 + env.rng.next_int(4);
     let mut base = current;
-    base = add_end_city_piece(env, Some(base), rot, 0, 0, -4, EndCityPieceType::BridgePiece);
+    base = add_end_city_piece(
+        env,
+        Some(base),
+        rot,
+        0,
+        0,
+        -4,
+        EndCityPieceType::BridgePiece,
+    );
     env.list[base].depth = -1;
     let mut y = 0_i32;
     for _ in 0..floorcnt {
         if env.rng.next(1) != 0 {
-            base = add_end_city_piece(env, Some(base), rot, 0, y, -4, EndCityPieceType::BridgePiece);
+            base = add_end_city_piece(
+                env,
+                Some(base),
+                rot,
+                0,
+                y,
+                -4,
+                EndCityPieceType::BridgePiece,
+            );
             y = 0;
             continue;
         }
@@ -462,15 +477,18 @@ fn gen_house_tower(env: &mut PieceEnv<'_>, current: usize, depth: i32, my_scope:
 }
 
 fn gen_fat_tower(env: &mut PieceEnv<'_>, current: usize, depth: i32, my_scope: usize) -> bool {
-    const BINFO: [[i32; 4]; 4] = [
-        [0, 4, -1, 0],
-        [1, 12, -1, 4],
-        [3, 0, -1, 8],
-        [2, 8, -1, 12],
-    ];
+    const BINFO: [[i32; 4]; 4] = [[0, 4, -1, 0], [1, 12, -1, 4], [3, 0, -1, 8], [2, 8, -1, 12]];
     let rot = env.list[current].rot;
     let mut base = current;
-    base = add_end_city_piece(env, Some(base), rot, -3, 4, -3, EndCityPieceType::FatTowerBase);
+    base = add_end_city_piece(
+        env,
+        Some(base),
+        rot,
+        -3,
+        4,
+        -3,
+        EndCityPieceType::FatTowerBase,
+    );
     base = add_end_city_piece(
         env,
         Some(base),
@@ -509,7 +527,15 @@ fn gen_fat_tower(env: &mut PieceEnv<'_>, current: usize, depth: i32, my_scope: u
         }
         j += 1;
     }
-    add_end_city_piece(env, Some(base), rot, -2, 8, -2, EndCityPieceType::FatTowerTop);
+    add_end_city_piece(
+        env,
+        Some(base),
+        rot,
+        -2,
+        8,
+        -2,
+        EndCityPieceType::FatTowerTop,
+    );
     true
 }
 
@@ -548,7 +574,15 @@ pub fn get_end_city_pieces(seed: u64, chunk_x: i32, chunk_z: i32) -> Vec<Piece> 
         -1,
         EndCityPieceType::ThirdFloor1,
     );
-    let base = add_end_city_piece(&mut env, Some(base), rot, -1, 8, -1, EndCityPieceType::ThirdRoof);
+    let base = add_end_city_piece(
+        &mut env,
+        Some(base),
+        rot,
+        -1,
+        8,
+        -1,
+        EndCityPieceType::ThirdRoof,
+    );
     gen_pieces_recursively(gen_tower, &mut env, base, 1, 0);
     list
 }
