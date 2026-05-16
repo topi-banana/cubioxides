@@ -7,8 +7,10 @@
 //! candidate point) lands in a follow-up.
 
 use crate::biome::Biome;
-use crate::finder::StructureType;
-use crate::mc_version::MCVersion;
+use crate::finder::{StructureType, get_structure_config, get_structure_pos};
+use crate::generator::Generator;
+use crate::math::floordiv;
+use crate::mc_version::{Dimension, MCVersion};
 
 /// `isViableFeatureBiome(mc, structureType, biomeID)` — return
 /// `true` when `biome_id` is one of the biomes the given structure
@@ -136,6 +138,109 @@ pub fn is_viable_feature_biome(
             panic!("is_viable_feature_biome: not implemented for {structure_type:?}");
         }
     }
+}
+
+/// `isViableStructurePos(structureType, g, x, z, flags)` — return
+/// `true` when the block-coordinate `(x, z)` position is allowed
+/// to host the given structure given the world state in `g`.
+///
+/// **Partial port**: this commit ships the Nether and End branches
+/// of cubiomes' `isViableStructurePos`. The Overworld branch
+/// requires the `mapViableBiome` / `mapViableShore` layer-hook
+/// machinery (cubiomes monkey-patches `getMap` on two layers and
+/// relies on early-return out of layer evaluation), plus
+/// `getVariant` for 1.18+ Bastion / Village placement. Those land
+/// in a follow-up stage; calling this function with an Overworld
+/// `Generator` panics.
+///
+/// Returns `true`/`false`. Cubiomes returns the biome id for some
+/// Village arms ("for further analysis") but we model that as a
+/// boolean; callers needing the biome can sample directly.
+#[must_use]
+pub fn is_viable_structure_pos(
+    structure_type: StructureType,
+    g: &Generator,
+    x: i32,
+    z: i32,
+    _flags: u32,
+) -> bool {
+    let dim = g
+        .dim
+        .expect("is_viable_structure_pos: generator must have apply_seed'd dim");
+    let chunk_x = (x >> 4) as i64;
+    let chunk_z = (z >> 4) as i64;
+
+    if dim == Dimension::Nether {
+        return viable_nether(structure_type, g, x, z, chunk_x, chunk_z);
+    }
+    if dim == Dimension::End {
+        return viable_end(structure_type, g, chunk_x, chunk_z);
+    }
+    // Overworld: requires the mapViableBiome layer hook + getVariant.
+    unimplemented!(
+        "Overworld is_viable_structure_pos requires the mapViableBiome layer hook (follow-up stage)"
+    );
+}
+
+fn viable_nether(
+    structure_type: StructureType,
+    g: &Generator,
+    x: i32,
+    z: i32,
+    chunk_x: i64,
+    chunk_z: i64,
+) -> bool {
+    use StructureType::*;
+    if structure_type == Fortress && g.mc.is_before(MCVersion::V1_18) {
+        return true;
+    }
+    if g.mc.is_before(MCVersion::V1_16_1) {
+        return false;
+    }
+    if structure_type == RuinedPortalN {
+        return true;
+    }
+    if structure_type == Fortress {
+        // 1.18+: fortresses generate wherever bastions don't.
+        let Some(sc) = get_structure_config(Fortress, g.mc) else {
+            return false;
+        };
+        let region_blocks = i32::from(sc.region_size) << 4;
+        let rp_x = floordiv(x, region_blocks);
+        let rp_z = floordiv(z, region_blocks);
+        if get_structure_pos(Bastion, g.mc, g.seed, rp_x, rp_z).is_none() {
+            return true;
+        }
+        return !is_viable_structure_pos(Bastion, g, x, z, 0);
+    }
+    // Bastion 1.18+ needs getVariant; defer.
+    if g.mc.is_at_least(MCVersion::V1_18) && structure_type == Bastion {
+        unimplemented!("Bastion 1.18+ viability needs getVariant (follow-up)");
+    }
+    let sample_x = (chunk_x as i32) * 4 + 2;
+    let sample_z = (chunk_z as i32) * 4 + 2;
+    let id = g.biome_at(4, sample_x, 0, sample_z).0;
+    is_viable_feature_biome(g.mc, structure_type, id)
+}
+
+fn viable_end(structure_type: StructureType, g: &Generator, chunk_x: i64, chunk_z: i64) -> bool {
+    use StructureType::*;
+    match structure_type {
+        EndCity => {
+            if g.mc.is_before(MCVersion::V1_9) {
+                return false;
+            }
+        }
+        EndGateway => {
+            if g.mc.is_before(MCVersion::V1_13) {
+                return false;
+            }
+        }
+        _ => return false,
+    }
+    // End biomes vary only on a per-chunk scale (1:16).
+    let id = g.biome_at(16, chunk_x as i32, 0, chunk_z as i32).0;
+    is_viable_feature_biome(g.mc, structure_type, id)
 }
 
 /// Cubiomes' `Village` viability — also used by `Outpost` on

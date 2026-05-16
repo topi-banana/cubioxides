@@ -38,7 +38,7 @@ pub use stronghold::{
     StrongholdIter, init_first_stronghold, is_stronghold_biome, next_stronghold,
     next_stronghold_no_biome,
 };
-pub use viability::is_viable_feature_biome;
+pub use viability::{is_viable_feature_biome, is_viable_structure_pos};
 
 use crate::mc_version::MCVersion;
 use crate::rng::{JavaRng, Xoroshiro};

@@ -678,6 +678,12 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("viable_feature_biome fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) =
+        write_viable_structure_pos_fixture(&fixtures_dir.join("viable_structure_pos.bin"))
+    {
+        eprintln!("viable_structure_pos fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2160,6 +2166,68 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `isViableStructurePos` parity record (kind = 67). Covers only
+/// the Nether and End branches in this fixture; the Overworld
+/// branch needs the `mapViableBiome` layer hook (follow-up).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ViableStructurePosRecord {
+    pub mc: i32,
+    pub dim: i32,
+    pub structure_type: i32,
+    pub viable: i32,
+    pub seed: u64,
+    pub x: i32,
+    pub z: i32,
+}
+
+fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
+    // Nether: Fortress (1.0+), Bastion 1.16.1-1.17 only (1.18+
+    // needs getVariant), Ruined_Portal_N (1.16.1+).
+    // End: End_City (1.9+), End_Gateway (1.13+).
+    let combos: [(i32, i32, i32); 9] = [
+        // (mc, dim, structure_type)
+        (10, -1, 18), // V1_7 Nether Fortress (returns true)
+        (17, -1, 18), // V1_14 Nether Fortress
+        (19, -1, 18), // V1_16_1 Nether Fortress 1.18- (returns true)
+        (19, -1, 19), // V1_16_1 Nether Bastion
+        (21, -1, 19), // V1_17 Nether Bastion
+        (19, -1, 12), // V1_16_1 Nether Ruined_Portal_N
+        (15, 1, 20),  // V1_12 End EndCity
+        (22, 1, 20),  // V1_18 End EndCity
+        (22, 1, 21),  // V1_18 End EndGateway
+    ];
+    let per_combo: u64 = 64;
+    let total = combos.len() as u64 * per_combo;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 67, total)?;
+
+    let mut rng_state: u64 = 0x55a1_5e91_b00b_face;
+    for &(mc, dim, sty) in &combos {
+        for _ in 0..per_combo {
+            rng_state = lcg_step(rng_state);
+            let seed = rng_state;
+            rng_state = lcg_step(rng_state);
+            let x = ((rng_state >> 32) as i32) % 4096 - 2048;
+            rng_state = lcg_step(rng_state);
+            let z = ((rng_state >> 32) as i32) % 4096 - 2048;
+            let viable =
+                unsafe { ffi::cubiomes_call_is_viable_structure_pos(mc, dim, sty, seed, x, z, 0) };
+            let rec = ViableStructurePosRecord {
+                mc,
+                dim,
+                structure_type: sty,
+                viable,
+                seed,
+                x,
+                z,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
 }
 
 /// `isViableFeatureBiome` parity record (kind = 66). One record per
@@ -5024,6 +5092,15 @@ mod ffi {
             mc: c_int,
             structure_type: c_int,
             biome_id: c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_is_viable_structure_pos(
+            mc: c_int,
+            dim: c_int,
+            structure_type: c_int,
+            seed: u64,
+            x: c_int,
+            z: c_int,
+            flags: u32,
         ) -> c_int;
         pub fn cubiomes_call_get_optimal_afk(
             px: *mut c_int,

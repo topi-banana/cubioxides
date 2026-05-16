@@ -200,6 +200,15 @@ int cubiomes_call_is_viable_feature_biome(int mc, int structure_type,
     return isViableFeatureBiome(mc, structure_type, biome_id);
 }
 
+int cubiomes_call_is_viable_structure_pos(int mc, int dim, int structure_type,
+                                          uint64_t seed, int x, int z,
+                                          uint32_t flags) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, dim, seed);
+    return isViableStructurePos(structure_type, &g, x, z, flags);
+}
+
 #include "quadbase.h"
 
 void cubiomes_call_get_optimal_afk(int *px, int *pz, int *spcnt, int p0x,
