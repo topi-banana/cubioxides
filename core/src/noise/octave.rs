@@ -239,6 +239,32 @@ impl OctaveNoise {
         }
         v
     }
+
+    /// Beta-1.7 terrain octave sampler (`sampleOctaveBeta17Terrain`).
+    /// Accumulates 2-value contributions across every octave whose
+    /// lacunarity is `≤ lac_min` (or all octaves when `lac_min == 0`).
+    /// `y_lac_flag` true scales the Perlin Y-axis lacunarity by 0.5.
+    pub fn sample_beta17_terrain(
+        &self,
+        v: &mut [f64; 2],
+        x: f64,
+        z: f64,
+        y_lac_flag: bool,
+        lac_min: f64,
+    ) {
+        v[0] = 0.0;
+        v[1] = 0.0;
+        let y_lac_amp = if y_lac_flag { 0.5 } else { 1.0 };
+        for p in &self.octaves {
+            let lf = p.lacunarity;
+            if lac_min != 0.0 && lf > lac_min {
+                continue;
+            }
+            let ax = crate::biomenoise::surface::maintain_precision(x * lf);
+            let az = crate::biomenoise::surface::maintain_precision(z * lf);
+            p.sample_beta17_terrain(v, ax, az, y_lac_amp);
+        }
+    }
 }
 
 #[cfg(test)]

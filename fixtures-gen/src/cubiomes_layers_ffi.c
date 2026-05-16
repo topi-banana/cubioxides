@@ -222,6 +222,15 @@ static int search_all_check_quad_hut(uint64_t s48, void *data) {
     return isQuadBase(ctx->sconf, s48, ctx->radius) ? 1 : 0;
 }
 
+double cubiomes_call_approx_surface_beta(uint64_t seed, int x, int z) {
+    BiomeNoiseBeta bnb;
+    memset(&bnb, 0, sizeof(bnb));
+    setBetaBiomeSeed(&bnb, seed);
+    SurfaceNoiseBeta snb;
+    initSurfaceNoiseBeta(&snb, seed);
+    return approxSurfaceBeta(&bnb, &snb, x, z);
+}
+
 int cubiomes_call_is_quad_base(int mc, int sty, uint64_t seed, int radius,
                                float *out_sqrad) {
     StructureConfig sc;

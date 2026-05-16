@@ -14,6 +14,7 @@ pub mod end_surface;
 pub mod nether;
 pub mod spline;
 pub mod surface;
+pub mod surface_beta;
 
 pub use beta::{BiomeNoiseBeta, get_old_beta_biome};
 pub use biome_noise::{
@@ -28,3 +29,7 @@ pub use spline::{
     SplineAxis, SplineBranch, SplineNode, SplineStack, build_overworld_spline, sample_spline,
 };
 pub use surface::{SurfaceNoise, maintain_precision};
+pub use surface_beta::{
+    SeaLevelColumnNoiseBeta, SurfaceNoiseBeta, approx_surface_beta, gen_column_noise,
+    process_column_noise,
+};

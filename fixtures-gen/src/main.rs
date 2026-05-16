@@ -771,6 +771,12 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("is_quad_base fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) =
+        write_approx_surface_beta_fixture(&fixtures_dir.join("approx_surface_beta.bin"))
+    {
+        eprintln!("approx_surface_beta fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2253,6 +2259,42 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `approxSurfaceBeta` parity record (kind = 74). One record per
+/// `(seed, x, z)` with bit-exact f64 output via `to_bits()`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ApproxSurfaceBetaRecord {
+    pub seed: u64,
+    pub x: i32,
+    pub z: i32,
+    pub h_bits: u64,
+}
+
+fn write_approx_surface_beta_fixture(path: &Path) -> std::io::Result<()> {
+    let total: u64 = 256;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 74, total)?;
+
+    let mut rng_state: u64 = 0xb00b_be7a_face_5eed;
+    for _ in 0..total {
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let x = ((rng_state >> 32) as i32) % 1024 - 512;
+        rng_state = lcg_step(rng_state);
+        let z = ((rng_state >> 32) as i32) % 1024 - 512;
+        let h = unsafe { ffi::cubiomes_call_approx_surface_beta(seed, x, z) };
+        let rec = ApproxSurfaceBetaRecord {
+            seed,
+            x,
+            z,
+            h_bits: h.to_bits(),
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
 }
 
 /// `isQuadBase` parity record (kind = 73). Tests the type
@@ -5710,6 +5752,7 @@ mod ffi {
             radius: c_int,
             out_sqrad: *mut f32,
         ) -> c_int;
+        pub fn cubiomes_call_approx_surface_beta(seed: u64, x: c_int, z: c_int) -> f64;
         pub fn cubiomes_call_search_all48_quad_hut(
             mc: c_int,
             start: u64,

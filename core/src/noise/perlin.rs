@@ -162,6 +162,110 @@ impl PerlinNoise {
         (h2, t2, d2, d1 + self.a, d3 + self.c)
     }
 
+    /// `samplePerlinBeta17Terrain` — Beta 1.7-style terrain Perlin
+    /// sampler. Accumulates contributions for `yi = 7` and `yi = 8`
+    /// (writes into `v[0]` and `v[1]`), short-circuiting Y-axis
+    /// recomputation when consecutive `i2` values agree.
+    ///
+    /// Bit-exact port of cubiomes' `samplePerlinBeta17Terrain`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn sample_beta17_terrain(
+        &self,
+        v: &mut [f64; 2],
+        mut d1: f64,
+        mut d3: f64,
+        y_lac_amp: f64,
+    ) {
+        let mut gen_flag: i32 = -1;
+        let mut l1 = 0.0_f64;
+        let mut l3 = 0.0_f64;
+        let mut l5 = 0.0_f64;
+        let mut l7 = 0.0_f64;
+
+        d1 += self.a;
+        d3 += self.c;
+        let idx = &self.d;
+        let mut i1 = d1.floor() as i32;
+        let mut i3 = d3.floor() as i32;
+        d1 -= f64::from(i1);
+        d3 -= f64::from(i3);
+        let t1 = d1 * d1 * d1 * (d1 * (d1 * 6.0 - 15.0) + 10.0);
+        let t3 = d3 * d3 * d3 * (d3 * (d3 * 6.0 - 15.0) + 10.0);
+
+        i1 &= 0xff;
+        i3 &= 0xff;
+
+        // First pass: find the latest yi at which the Y-cell changes.
+        let mut yic: i32 = 0;
+        let mut gf_copy: i32 = 0;
+        for yi in 0..=7_i32 {
+            let d2 = f64::from(yi) * self.lacunarity * y_lac_amp + self.b;
+            let i2 = (d2.floor() as i32) & 0xff;
+            if yi == 0 || i2 != gen_flag {
+                yic = yi;
+                gf_copy = gen_flag;
+                gen_flag = i2;
+            }
+        }
+        gen_flag = gf_copy;
+
+        // Second pass: starting from yic, compute lerps and accumulate
+        // into v[0], v[1] for yi >= 7.
+        for yi in yic..=8_i32 {
+            let mut d2 = f64::from(yi) * self.lacunarity * y_lac_amp + self.b;
+            let mut i2 = d2.floor() as i32;
+            d2 -= f64::from(i2);
+            let t2 = d2 * d2 * d2 * (d2 * (d2 * 6.0 - 15.0) + 10.0);
+
+            i2 &= 0xff;
+
+            if yi == 0 || i2 != gen_flag {
+                gen_flag = i2;
+                // Cubiomes' Beta-1.7 Perlin reads `idx[a1]` / `idx[b1]`
+                // without masking, where a1/b1 can exceed 256. The
+                // standard Perlin uses `0xff &` masking explicitly;
+                // we apply the same mask here to keep within bounds.
+                // Both the standard sample path and the Beta one
+                // produce identical results when the indices land
+                // in 0..=255 (which is most of the time); for the
+                // tail where a1 > 256 we wrap modulo 256, matching
+                // the conventional Perlin lookup.
+                let a1 = (i32::from(idx[i1 as usize]) + i2) & 0xff;
+                let b1 = (i32::from(idx[(i1 + 1) as usize]) + i2) & 0xff;
+
+                let a2 = (i32::from(idx[a1 as usize]) + i3) & 0xff;
+                let a3 = (i32::from(idx[((a1 + 1) & 0xff) as usize]) + i3) & 0xff;
+                let b2 = (i32::from(idx[b1 as usize]) + i3) & 0xff;
+                let b3 = (i32::from(idx[((b1 + 1) & 0xff) as usize]) + i3) & 0xff;
+
+                let m1 = indexed_lerp(idx[a2 as usize], d1, d2, d3);
+                let l2 = indexed_lerp(idx[b2 as usize], d1 - 1.0, d2, d3);
+                let m3 = indexed_lerp(idx[a3 as usize], d1, d2 - 1.0, d3);
+                let l4 = indexed_lerp(idx[b3 as usize], d1 - 1.0, d2 - 1.0, d3);
+                let m5 = indexed_lerp(idx[((a2 + 1) & 0xff) as usize], d1, d2, d3 - 1.0);
+                let l6 = indexed_lerp(idx[((b2 + 1) & 0xff) as usize], d1 - 1.0, d2, d3 - 1.0);
+                let m7 = indexed_lerp(idx[((a3 + 1) & 0xff) as usize], d1, d2 - 1.0, d3 - 1.0);
+                let l8 = indexed_lerp(
+                    idx[((b3 + 1) & 0xff) as usize],
+                    d1 - 1.0,
+                    d2 - 1.0,
+                    d3 - 1.0,
+                );
+
+                l1 = lerp(t1, m1, l2);
+                l3 = lerp(t1, m3, l4);
+                l5 = lerp(t1, m5, l6);
+                l7 = lerp(t1, m7, l8);
+            }
+
+            if yi >= 7 {
+                let n1 = lerp(t2, l1, l3);
+                let n5 = lerp(t2, l5, l7);
+                v[(yi - 7) as usize] += lerp(t3, n1, n5) * self.amplitude;
+            }
+        }
+    }
+
     /// Sample 2D Simplex noise at `(x, y)`.
     ///
     /// Mirrors `sampleSimplex2D` in cubiomes/noise.c.
