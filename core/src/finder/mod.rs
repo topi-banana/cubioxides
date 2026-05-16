@@ -39,7 +39,7 @@ pub use stronghold::{
 };
 
 use crate::mc_version::MCVersion;
-use crate::rng::JavaRng;
+use crate::rng::{JavaRng, Xoroshiro};
 
 /// 2D block-coordinate position. Mirrors cubiomes' `STRUCT(Pos)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -332,9 +332,64 @@ pub fn get_structure_config(ty: StructureType, mc: MCVersion) -> Option<Structur
                 cfg(0, 1, 1, EndIsland, 1, 14.0)
             }
         }
-        // Mineshaft / Bastion 1.18+ / decorator features (DesertWell,
-        // Geode, EndGateway) land in follow-ups.
-        Mineshaft | DesertWell | Geode | EndGateway => return None,
+        EndGateway => {
+            // cubiomes: `return mc >= MC_1_13` (1.11/1.12 generate
+            // gateways via a different RNG that isn't predictable).
+            // Watch out: cubiomes' `MC_1_16` is the *latest* 1.16
+            // (= 1.16.5), so `mc <= MC_1_16` covers 1.16.1..=1.16.5.
+            // The Rust threshold for "starts being a 1.16.x" is
+            // therefore `is_at_least(V1_16_1)`, not `V1_16`.
+            if !mc.is_at_least(MCVersion::V1_13) {
+                return None;
+            }
+            if mc.is_at_least(MCVersion::V1_18) {
+                // s_end_gateway = { 40000, 1, 1, End_Gateway, DIM_END, 1.f/700 }
+                cfg(40000, 1, 1, EndGateway, 1, 1.0_f32 / 700.0)
+            } else if mc.is_at_least(MCVersion::V1_17) {
+                // s_end_gateway_117 = { 40013, 1, 1, End_Gateway, DIM_END, 1.f/700 }
+                cfg(40013, 1, 1, EndGateway, 1, 1.0_f32 / 700.0)
+            } else if mc.is_at_least(MCVersion::V1_16_1) {
+                // s_end_gateway_116 = { 40013, 1, 1, End_Gateway, DIM_END, 700 }
+                cfg(40013, 1, 1, EndGateway, 1, 700.0)
+            } else {
+                // s_end_gateway_115 = { 30000, 1, 1, End_Gateway, DIM_END, 700 }
+                cfg(30000, 1, 1, EndGateway, 1, 700.0)
+            }
+        }
+        DesertWell => {
+            // cubiomes: wells exist since 1.2 but cubiomes only
+            // supports the decorator-feature predictor for 1.13+.
+            // Same `V1_16_1` threshold subtlety as EndGateway.
+            if !mc.is_at_least(MCVersion::V1_13) {
+                return None;
+            }
+            if mc.is_at_least(MCVersion::V1_18) {
+                // s_desert_well = { 40002, 1, 1, Desert_Well, 0, 1.f/1000 }
+                cfg(40002, 1, 1, DesertWell, 0, 1.0_f32 / 1000.0)
+            } else if mc.is_at_least(MCVersion::V1_16_1) {
+                // s_desert_well_117 = { 40013, 1, 1, Desert_Well, 0, 1.f/1000 }
+                cfg(40013, 1, 1, DesertWell, 0, 1.0_f32 / 1000.0)
+            } else {
+                // s_desert_well_115 = { 30010, 1, 1, Desert_Well, 0, 1.f/1000 }
+                cfg(30010, 1, 1, DesertWell, 0, 1.0_f32 / 1000.0)
+            }
+        }
+        Geode => {
+            // cubiomes: `return mc >= MC_1_17` (geodes were added
+            // in 1.17 with caves & cliffs).
+            if !mc.is_at_least(MCVersion::V1_17) {
+                return None;
+            }
+            if mc.is_at_least(MCVersion::V1_18) {
+                // s_geode = { 20002, 1, 1, Geode, 0, 1.f/24 }
+                cfg(20002, 1, 1, Geode, 0, 1.0_f32 / 24.0)
+            } else {
+                // s_geode_117 = { 20000, 1, 1, Geode, 0, 1.f/24 }
+                cfg(20000, 1, 1, Geode, 0, 1.0_f32 / 24.0)
+            }
+        }
+        // Mineshaft / Bastion 1.18+ land in follow-ups.
+        Mineshaft => return None,
     };
     Some(cfg)
 }
@@ -553,7 +608,61 @@ pub fn get_structure_pos(
             }
         }
 
-        Mineshaft | DesertWell | Geode | EndGateway | EndIsland => None,
+        EndGateway | EndIsland | DesertWell | Geode => {
+            decorator_attempt_pos(config, mc, seed, reg_x, reg_z)
+        }
+
+        Mineshaft => None,
+    }
+}
+
+/// Shared decorator-feature placement (`End_Gateway`, `End_Island`,
+/// `Desert_Well`, `Geode`). Mirrors the common case-arm in cubiomes'
+/// `getStructurePos`: `regX`/`regZ` are interpreted as *chunk*
+/// coordinates (since `region_size = chunk_range = 1`).
+///
+/// The roll uses `getPopulationSeed + salt` as the per-feature seed,
+/// then on MC ≥ 1.18 runs the Xoroshiro float-rarity check followed
+/// by two `xNextIntJ(16)` offset draws. On older versions the same
+/// applies via Java RNG, with an extra branch when `rarity ≥ 1.0`
+/// to use `nextInt((int)rarity) != 0` instead of `nextFloat`.
+fn decorator_attempt_pos(
+    config: StructureConfig,
+    mc: MCVersion,
+    seed: u64,
+    reg_x: i32,
+    reg_z: i32,
+) -> Option<Pos> {
+    let bx = reg_x.wrapping_mul(16);
+    let bz = reg_z.wrapping_mul(16);
+    let pop = population_seed::get_population_seed(mc, seed, bx, bz);
+    let salt_u = config.salt as i64 as u64;
+    if mc.is_at_least(MCVersion::V1_18) {
+        let mut xr = Xoroshiro::new(pop.wrapping_add(salt_u));
+        if xr.next_float() >= config.rarity {
+            return None;
+        }
+        let ox = xr.next_int_j(16);
+        let oz = xr.next_int_j(16);
+        Some(Pos {
+            x: bx + ox,
+            z: bz + oz,
+        })
+    } else {
+        let mut rng = JavaRng::new(pop.wrapping_add(salt_u));
+        if config.rarity < 1.0 {
+            if rng.next_float() >= config.rarity {
+                return None;
+            }
+        } else if rng.next_int(config.rarity as i32) != 0 {
+            return None;
+        }
+        let ox = rng.next_int(16);
+        let oz = rng.next_int(16);
+        Some(Pos {
+            x: bx + ox,
+            z: bz + oz,
+        })
     }
 }
 

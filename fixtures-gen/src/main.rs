@@ -2331,11 +2331,10 @@ fn write_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
     write_header(&mut file, 48, STRUCTURE_POS_RECORDS)?;
 
     // (structure_type_ord, min_mc_ord) — sampled from cubiomes'
-    // enum. Skip Mineshaft (15), Desert_Well (16), Geode (17),
-    // End_Gateway (21), End_Island (22) since those aren't ported
-    // yet. Bastion (19) is included only for mc < 1.18 (the 1.18+
-    // chunkGenerateRnd path is deferred).
-    let types: [(i32, i32); 17] = [
+    // enum. Skip Mineshaft (15) since it isn't a region-grid
+    // structure. Bastion (19) is included only for mc < 1.18
+    // (the 1.18+ chunkGenerateRnd path is deferred).
+    let types: [(i32, i32); 21] = [
         (0, 1),   // Feature (Beta-1.12 only)
         (1, 6),   // Desert_Pyramid (1.3+)
         (2, 6),   // Jungle_Temple (1.3+)
@@ -2351,8 +2350,12 @@ fn write_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
         (12, 19), // Ruined_Portal_N (1.16.1+)
         (13, 23), // Ancient_City (1.19.2+)
         (14, 16), // Treasure (1.13+)
+        (16, 16), // Desert_Well (1.13+ in cubiomes)
+        (17, 21), // Geode (1.17+)
         (18, 3),  // Fortress (1.0+ all paths)
         (20, 12), // End_City (1.9+)
+        (21, 16), // End_Gateway (1.13+)
+        (22, 16), // End_Island (1.13+)
     ];
 
     let mc_pool: [i32; 8] = [2, 3, 10, 15, 19, 22, 25, 28];
