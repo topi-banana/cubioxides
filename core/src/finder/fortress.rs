@@ -578,6 +578,21 @@ fn extend_fortress_piece(env: &mut FortressEnv<'_>, p_idx: usize) {
 /// on Minecraft version `mc`. Mirrors cubiomes' `getFortressPieces`.
 /// `max_pieces` bounds the arena (recommended ~400; cubiomes uses
 /// `n` as a soft limit but does not actually enforce it).
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::finder::get_fortress_pieces;
+///
+/// // After locating a candidate Nether Fortress chunk via
+/// // `get_structure_pos`, expand its piece tree. The first element
+/// // is always the `FortressStart` arena root. Pre-1.16.1 uses
+/// // `setAttemptSeed`; 1.16.1+ uses `chunkGenerateRnd` (the doc
+/// // example uses 1.18).
+/// let pieces = get_fortress_pieces(MCVersion::V1_18, 0xdead_beef, 16, 16, 400);
+/// assert!(!pieces.is_empty());
+/// ```
 #[must_use]
 pub fn get_fortress_pieces(
     mc: MCVersion,
