@@ -12,32 +12,45 @@
     clippy::too_many_lines,
     clippy::many_single_char_names,
     clippy::items_after_statements,
-    clippy::unit_arg
+    clippy::unit_arg,
+    clippy::struct_excessive_bools,
+    clippy::doc_markdown
 )]
 
 use crate::finder::StructureType;
-use crate::finder::population_seed::chunk_generate_rng;
+use crate::finder::population_seed::{chunk_generate_rng, get_population_seed};
 use crate::finder::viability::is_viable_feature_biome;
 use crate::mc_version::MCVersion;
 use crate::rng::JavaRng;
 
-/// Mirrors cubiomes' `STRUCT(StructureVariant)`. Only the fields
-/// used by Village + Bastion are populated here; the others land
-/// alongside their respective structure arms.
+/// Mirrors cubiomes' `STRUCT(StructureVariant)`. Fields not used
+/// by a given arm default to `false`/`0`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StructureVariant {
     /// Abandoned (zombie village) flag.
     pub abandoned: bool,
-    /// Geode "cracked" flag (unused here; defaults to false).
+    /// Giant portal variant (Ruined_Portal).
+    pub giant: bool,
+    /// Underground portal (Ruined_Portal).
+    pub underground: bool,
+    /// Air-pocket portal (Ruined_Portal).
+    pub airpocket: bool,
+    /// Igloo basement flag.
+    pub basement: bool,
+    /// Geode "cracked" flag.
     pub cracked: bool,
-    /// Starting piece index (cubiomes' `start`, sentinel `-1` until
-    /// the structure-specific arm assigns it).
-    pub start: i8,
+    /// Geode size (and Igloo middle-piece count).
+    pub size: u8,
+    /// Starting piece index (cubiomes' `start`, sentinel `255`
+    /// (uint8_t -1) until the structure-specific arm assigns it).
+    pub start: u8,
     /// Biome variant ID (e.g. cubiomes encodes meadow→plains for
     /// Village). `-1` means unassigned.
     pub biome: i16,
     /// Rotation: 0=identity, 1=cw90, 2=cw180, 3=ccw90.
     pub rotation: u8,
+    /// Mirror flag (Igloo, Desert_Pyramid, Jungle_Temple, Swamp_Hut).
+    pub mirror: u8,
     /// Bounding-box offset relative to the chunk origin.
     pub x: i16,
     /// Bounding-box origin Y (Bastion: 0; Village: 320 sentinel).
@@ -70,7 +83,7 @@ pub fn get_variant(
 ) -> Option<StructureVariant> {
     use StructureType::*;
     let mut r = StructureVariant {
-        start: -1,
+        start: u8::MAX, // cubiomes: `r->start = -1` (uint8_t wraps to 255)
         biome: -1,
         y: 320,
         ..Default::default()
@@ -82,14 +95,124 @@ pub fn get_variant(
         Bastion => Some(get_variant_bastion(&mut r, &mut rng, mc, x, z)),
         AncientCity => Some(get_variant_ancient_city(&mut r, &mut rng, x, z)),
         TrialChambers => Some(get_variant_trial_chambers(&mut r, &mut rng)),
+        Monument => Some(get_variant_monument(&mut r)),
+        DesertPyramid | JungleTemple | SwampHut => {
+            Some(get_variant_temple(&mut r, &mut rng, mc, structure_type))
+        }
+        Igloo => Some(get_variant_igloo(&mut r, &mut rng, mc, seed, x, z)),
         _ => None,
     }
     .map(|()| r)
 }
 
+fn get_variant_monument(r: &mut StructureVariant) {
+    r.x = -29;
+    r.z = -29;
+    r.sx = 58;
+    r.sz = 58;
+}
+
+fn get_variant_temple(
+    r: &mut StructureVariant,
+    rng: &mut JavaRng,
+    mc: MCVersion,
+    structure_type: StructureType,
+) {
+    use StructureType::*;
+    let (sx, sy, sz): (i16, i16, i16) = match structure_type {
+        DesertPyramid => (21, 15, 21),
+        JungleTemple => (12, 10, 15),
+        SwampHut => (7, 7, 9),
+        _ => unreachable!(),
+    };
+    r.sy = sy;
+    if mc.is_before(MCVersion::V1_20) {
+        // Pre-1.20: no rotation roll, raw size.
+        r.sx = sx;
+        r.sz = sz;
+        return;
+    }
+    // 1.20+: orientation = nextInt(4) → rotation + mirror + swapped size.
+    match rng.next_int(4) {
+        0 => {
+            r.rotation = 0;
+            r.mirror = 0;
+            r.sx = sx;
+            r.sz = sz;
+        }
+        1 => {
+            r.rotation = 1;
+            r.mirror = 0;
+            r.sx = sz;
+            r.sz = sx;
+        }
+        2 => {
+            r.rotation = 0;
+            r.mirror = 1;
+            r.sx = sx;
+            r.sz = sz;
+        }
+        3 => {
+            r.rotation = 1;
+            r.mirror = 1;
+            r.sx = sz;
+            r.sz = sx;
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn get_variant_igloo(
+    r: &mut StructureVariant,
+    rng: &mut JavaRng,
+    mc: MCVersion,
+    seed: u64,
+    x: i32,
+    z: i32,
+) {
+    if mc.is_before(MCVersion::V1_13) {
+        // Pre-1.13: re-seed off the population seed of the
+        // *previous* chunk.
+        let pop = get_population_seed(mc, seed, (x >> 4) - 1, (z >> 4) - 1);
+        *rng = JavaRng::new(pop);
+    }
+    r.rotation = rng.next_int(4) as u8;
+    r.basement = rng.next_double() < 0.5;
+    r.size = (rng.next_int(8) + 4) as u8;
+    let (sx, sy, sz): (i16, i16, i16) = (7, 5, 8);
+    r.sy = sy;
+    match r.rotation {
+        0 => {
+            r.rotation = 0;
+            r.mirror = 0;
+            r.sx = sx;
+            r.sz = sz;
+        }
+        1 => {
+            r.rotation = 1;
+            r.mirror = 0;
+            r.sx = sz;
+            r.sz = sx;
+        }
+        2 => {
+            r.rotation = 0;
+            r.mirror = 1;
+            r.sx = sx;
+            r.sz = sz;
+        }
+        3 => {
+            r.rotation = 1;
+            r.mirror = 1;
+            r.sx = sz;
+            r.sz = sx;
+        }
+        _ => unreachable!(),
+    }
+}
+
 fn get_variant_ancient_city(r: &mut StructureVariant, rng: &mut JavaRng, mut x: i32, mut z: i32) {
     r.rotation = rng.next_int(4) as u8;
-    r.start = 1 + rng.next_int(3) as i8; // city_center_1..3
+    r.start = 1 + rng.next_int(3) as u8; // city_center_1..3
     let mut sx: i16 = 18;
     let sy: i16 = 31;
     let mut sz: i16 = 41;
@@ -151,7 +274,7 @@ fn get_variant_ancient_city(r: &mut StructureVariant, rng: &mut JavaRng, mut x: 
 fn get_variant_trial_chambers(r: &mut StructureVariant, rng: &mut JavaRng) {
     r.y = (rng.next_int(1 + 20) + -40) as i16;
     r.rotation = rng.next_int(4) as u8;
-    r.start = rng.next_int(2) as i8;
+    r.start = rng.next_int(2) as u8;
     r.sx = 19;
     r.sy = 20;
     r.sz = 19;
@@ -355,12 +478,10 @@ fn get_variant_village(
 
 fn get_variant_bastion(r: &mut StructureVariant, rng: &mut JavaRng, mc: MCVersion, x: i32, z: i32) {
     r.rotation = rng.next_int(4) as u8;
-    r.start = rng.next_int(4) as i8;
+    r.start = rng.next_int(4) as u8;
     if mc == MCVersion::V1_16_1 {
         // Cubiomes: in 1.16.1 the start and rotation are swapped.
-        let tmp = r.start;
-        r.start = r.rotation as i8;
-        r.rotation = tmp as u8;
+        std::mem::swap(&mut r.start, &mut r.rotation);
     }
     let (sx, sy, sz) = match r.start {
         0 => (46, 24, 46), // units/air_base

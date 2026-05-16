@@ -223,16 +223,22 @@ int cubiomes_call_get_variant(int structure_type, int mc, uint64_t seed, int x,
     StructureVariant sv;
     int rc = getVariant(&sv, structure_type, mc, seed, x, z, biome_id);
     out[0] = sv.abandoned;
-    out[1] = sv.cracked;
-    out[2] = sv.start;
-    out[3] = sv.biome;
-    out[4] = sv.rotation;
-    out[5] = sv.x;
-    out[6] = sv.y;
-    out[7] = sv.z;
-    out[8] = sv.sx;
-    out[9] = sv.sy;
-    out[10] = sv.sz;
+    out[1] = sv.giant;
+    out[2] = sv.underground;
+    out[3] = sv.airpocket;
+    out[4] = sv.basement;
+    out[5] = sv.cracked;
+    out[6] = sv.size;
+    out[7] = sv.start;
+    out[8] = sv.biome;
+    out[9] = sv.rotation;
+    out[10] = sv.mirror;
+    out[11] = sv.x;
+    out[12] = sv.y;
+    out[13] = sv.z;
+    out[14] = sv.sx;
+    out[15] = sv.sy;
+    out[16] = sv.sz;
     return rc;
 }
 

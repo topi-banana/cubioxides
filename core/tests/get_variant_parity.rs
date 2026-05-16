@@ -37,7 +37,10 @@ struct GetVariantRecord {
     seed: u64,
     x: i32,
     z: i32,
-    fields: [i32; 11],
+    /// Order: `abandoned, giant, underground, airpocket, basement,
+    /// cracked, size, start, biome, rotation, mirror, x, y, z, sx,
+    /// sy, sz` (17 entries).
+    fields: [i32; 17],
     pad: i32,
 }
 
@@ -51,11 +54,13 @@ fn fixture_path() -> PathBuf {
 
 fn mc_from_ord(ord: i32) -> MCVersion {
     match ord {
+        15 => MCVersion::V1_12,
         17 => MCVersion::V1_14,
         19 => MCVersion::V1_16_1,
         21 => MCVersion::V1_17,
         22 => MCVersion::V1_18,
         23 => MCVersion::V1_19_2,
+        25 => MCVersion::V1_20,
         26 => MCVersion::V1_21_1,
         28 => MCVersion::V1_21,
         other => panic!("unsupported MC ordinal: {other}"),
@@ -96,18 +101,24 @@ fn get_variant_matches_cubiomes() {
             r.biome_id
         );
         let v = got.unwrap();
-        let got_fields = [
+        let got_fields: [i32; 17] = [
             i32::from(v.abandoned),
+            i32::from(v.giant),
+            i32::from(v.underground),
+            i32::from(v.airpocket),
+            i32::from(v.basement),
             i32::from(v.cracked),
-            v.start as i32,
-            v.biome as i32,
-            v.rotation as i32,
-            v.x as i32,
-            v.y as i32,
-            v.z as i32,
-            v.sx as i32,
-            v.sy as i32,
-            v.sz as i32,
+            i32::from(v.size),
+            i32::from(v.start),
+            i32::from(v.biome),
+            i32::from(v.rotation),
+            i32::from(v.mirror),
+            i32::from(v.x),
+            i32::from(v.y),
+            i32::from(v.z),
+            i32::from(v.sx),
+            i32::from(v.sy),
+            i32::from(v.sz),
         ];
         assert!(
             got_fields == r.fields,

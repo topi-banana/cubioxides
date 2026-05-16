@@ -2226,9 +2226,10 @@ fn write_fixed_end_gateways_fixture(path: &Path) -> std::io::Result<()> {
     file.flush()
 }
 
-/// `getVariant` parity record (kind = 68). Captures the 11
+/// `getVariant` parity record (kind = 68). Captures the 17
 /// integer-encoded fields of `StructureVariant` plus the `getVariant`
-/// return code.
+/// return code. `pad2` rounds the struct out to a multiple of the
+/// u64 alignment (8 bytes).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct GetVariantRecord {
@@ -2239,8 +2240,10 @@ pub struct GetVariantRecord {
     pub seed: u64,
     pub x: i32,
     pub z: i32,
-    /// (`abandoned`, `cracked`, `start`, `biome`, `rotation`, `x`, `y`, `z`, `sx`, `sy`, `sz`).
-    pub fields: [i32; 11],
+    /// Order: `abandoned, giant, underground, airpocket, basement,
+    /// cracked, size, start, biome, rotation, mirror, x, y, z, sx,
+    /// sy, sz` (17 entries).
+    pub fields: [i32; 17],
     pub pad: i32,
 }
 
@@ -2276,6 +2279,18 @@ fn write_get_variant_fixture(path: &Path) -> std::io::Result<()> {
         // Trial_Chambers: biome_id ignored.
         (24, 26, -1), // Trial_Chambers V1_21_1
         (24, 28, -1), // Trial_Chambers V1_21 WD
+        // Monument: biome_id ignored, fixed bounding box.
+        (8, 22, -1), // Monument V1_18
+        // Desert_Pyramid / Jungle_Temple / Swamp_Hut: pre-1.20 vs 1.20+.
+        (1, 19, -1), // Desert_Pyramid V1_16_1 (pre-1.20)
+        (1, 25, -1), // Desert_Pyramid V1_20 (with rotation)
+        (2, 25, -1), // Jungle_Temple V1_20
+        (3, 25, -1), // Swamp_Hut V1_20
+        (3, 28, -1), // Swamp_Hut V1_21 WD
+        // Igloo: pre-1.13 (different seed) vs 1.13+.
+        (4, 15, -1), // Igloo V1_12 (population-seed re-seed)
+        (4, 22, -1), // Igloo V1_18
+        (4, 28, -1), // Igloo V1_21 WD
     ];
     let per_combo: u64 = 64;
     let total = probes.len() as u64 * per_combo;
@@ -2291,7 +2306,7 @@ fn write_get_variant_fixture(path: &Path) -> std::io::Result<()> {
             let x = ((rng_state >> 32) as i32) % 2048 - 1024;
             rng_state = lcg_step(rng_state);
             let z = ((rng_state >> 32) as i32) % 2048 - 1024;
-            let mut out = [0_i32; 11];
+            let mut out = [0_i32; 17];
             let rc = unsafe {
                 ffi::cubiomes_call_get_variant(sty, mc, seed, x, z, biome, out.as_mut_ptr())
             };
