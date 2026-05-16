@@ -627,6 +627,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("stronghold_full fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_spawn_fixture(&fixtures_dir.join("estimate_spawn.bin")) {
+        eprintln!("estimate_spawn fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1960,6 +1964,65 @@ fn write_stronghold_full_fixture(path: &Path) -> std::io::Result<()> {
             pos_xz: buf,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `estimateSpawn` parity record (kind = 55). `(mc, seed) →
+/// (spawn_x, spawn_z)`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct EstimateSpawnRecord {
+    pub mc: i32,
+    pub pad: i32,
+    pub seed: u64,
+    pub spawn_x: i32,
+    pub spawn_z: i32,
+}
+
+fn write_spawn_fixture(path: &Path) -> std::io::Result<()> {
+    let mc_pool: [i32; 5] = [3, 10, 15, 22, 28];
+    // Modern findFittestPos is O(spiral) — keep the per-MC count
+    // small so fixture generation stays under a few seconds.
+    let modern_count: u64 = 32;
+    let layered_count: u64 = 96;
+    let beta_count: u64 = 32;
+    // mc_pool = [3, 10, 15, 22, 28]: 1 beta (V1_0), 2 layered
+    // (V1_7, V1_12), 2 modern (V1_18, V1_21 WD).
+    let total = beta_count + layered_count * 2 + modern_count * 2;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 55, total)?;
+    let mut rng_state: u64 = 0x0000_55a1_7e51_5e91;
+    for &mc in &mc_pool {
+        let count = if mc <= 3 {
+            beta_count
+        } else if mc <= 21 {
+            layered_count
+        } else {
+            modern_count
+        };
+        for _ in 0..count {
+            rng_state = lcg_step(rng_state);
+            let seed = rng_state;
+            let mut px: c_int = 0;
+            let mut pz: c_int = 0;
+            unsafe {
+                ffi::cubiomes_call_estimate_spawn(
+                    mc,
+                    seed,
+                    std::ptr::from_mut(&mut px),
+                    std::ptr::from_mut(&mut pz),
+                );
+            }
+            let rec = EstimateSpawnRecord {
+                mc,
+                pad: 0,
+                seed,
+                spawn_x: px,
+                spawn_z: pz,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
     }
     file.flush()
 }
@@ -4120,6 +4183,7 @@ mod ffi {
             n_steps: c_int,
             out_xz: *mut c_int,
         );
+        pub fn cubiomes_call_estimate_spawn(mc: c_int, seed: u64, px: *mut c_int, pz: *mut c_int);
         pub fn cubiomes_call_get_mineshafts(
             mc: c_int,
             seed: u64,

@@ -101,6 +101,15 @@ int cubiomes_call_get_quad_hut_cst(uint64_t low20) {
     return getQuadHutCst(low20);
 }
 
+void cubiomes_call_estimate_spawn(int mc, uint64_t seed, int *px, int *pz) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, 0, seed);
+    Pos p = estimateSpawn(&g, NULL);
+    *px = p.x;
+    *pz = p.z;
+}
+
 void cubiomes_call_nth_strongholds(int mc, uint64_t seed, int n_steps,
                                    int *out_xz) {
     Generator g;

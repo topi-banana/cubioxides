@@ -18,6 +18,7 @@ pub mod locate_biome;
 pub mod mineshaft;
 pub mod quadbase;
 pub mod slime;
+pub mod spawn;
 pub mod stronghold;
 
 pub use locate_biome::{id_matches, locate_biome};
@@ -27,6 +28,7 @@ pub use quadbase::{
     get_quad_hut_cst, is_quad_base_feature_24, is_quad_base_feature_24_classic,
 };
 pub use slime::is_slime_chunk;
+pub use spawn::estimate_spawn;
 pub use stronghold::{
     StrongholdIter, init_first_stronghold, is_stronghold_biome, next_stronghold,
     next_stronghold_no_biome,
