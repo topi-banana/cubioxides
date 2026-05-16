@@ -18,6 +18,7 @@
 #![cfg_attr(not(test), warn(missing_docs))]
 
 pub mod biome;
+pub mod biome_set;
 pub mod biomenoise;
 pub mod finder;
 pub mod generator;

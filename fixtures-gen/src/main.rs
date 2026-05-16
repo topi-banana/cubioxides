@@ -1097,6 +1097,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("can_biome_generate fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_id_set_fixture(&fixtures_dir.join("id_set.bin")) {
+        eprintln!("id_set fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3466,6 +3470,66 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
             ids: ids_arr,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `idSetAdd` / `idSetTest` parity record (kind = 88). One record
+/// per (id, `sample_m_l`, `sample_m_m`) tuple. The Rust side cross-
+/// checks both add (resulting bitfield) and test (boolean) against
+/// cubiomes verbatim.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct IdSetRecord {
+    pub id: i32,
+    pub padding: i32,
+    pub added_m_l: u64,
+    pub added_m_m: u64,
+    pub test_m_l: u64,
+    pub test_m_m: u64,
+    pub test_result: i32,
+    pub padding2: i32,
+}
+
+fn write_id_set_fixture(path: &Path) -> std::io::Result<()> {
+    // Cover IDs across all four ranges: [0, 64), [64, 128) (ignored),
+    // [128, 192), [192, ...) (ignored).
+    let ids: Vec<i32> = (0..200).collect();
+    // Sample masks for the test side.
+    let test_masks: [(u64, u64); 4] = [
+        (0, 0),
+        (u64::MAX, u64::MAX),
+        (0x1234_5678_9abc_def0, 0xfedc_ba98_7654_3210),
+        (1u64 << 17, 1u64 << 40),
+    ];
+    let total = (ids.len() * test_masks.len()) as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 88, total)?;
+    for &id in &ids {
+        for &(test_m_l, test_m_m) in &test_masks {
+            let mut added_m_l: u64 = 0;
+            let mut added_m_m: u64 = 0;
+            let test_result;
+            unsafe {
+                ffi::cubiomes_call_id_set_add(
+                    std::ptr::from_mut(&mut added_m_l),
+                    std::ptr::from_mut(&mut added_m_m),
+                    id,
+                );
+                test_result = ffi::cubiomes_call_id_set_test(test_m_l, test_m_m, id);
+            }
+            let rec = IdSetRecord {
+                id,
+                padding: 0,
+                added_m_l,
+                added_m_m,
+                test_m_l,
+                test_m_m,
+                test_result,
+                padding2: 0,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
     }
     file.flush()
 }
@@ -6704,6 +6768,8 @@ mod ffi {
         ) -> c_int;
         pub fn cubiomes_call_seed_zero_nextint4() -> c_int;
         pub fn cubiomes_call_get_shadow(seed: u64) -> u64;
+        pub fn cubiomes_call_id_set_add(out_m_l: *mut u64, out_m_m: *mut u64, id: c_int);
+        pub fn cubiomes_call_id_set_test(m_l: u64, m_m: u64, id: c_int) -> c_int;
         pub fn cubiomes_call_can_biome_generate(
             layer_id: c_int,
             mc: c_int,

@@ -1204,3 +1204,11 @@ int cubiomes_call_get_largest_rec(int target, const int *ids, int sx, int sz,
 int cubiomes_call_can_biome_generate(int layer_id, int mc, uint32_t flags, int id) {
     return canBiomeGenerate(layer_id, mc, flags, id);
 }
+
+/* Mirrors cubiomes' idSetAdd: writes the bit into *out_mL / *out_mM. */
+void cubiomes_call_id_set_add(uint64_t *out_mL, uint64_t *out_mM, int id) {
+    idSetAdd(out_mL, out_mM, id);
+}
+int cubiomes_call_id_set_test(uint64_t mL, uint64_t mM, int id) {
+    return idSetTest(mL, mM, id);
+}
