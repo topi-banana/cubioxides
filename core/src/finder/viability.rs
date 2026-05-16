@@ -1074,3 +1074,237 @@ pub fn is_viable_structure_terrain(
     }
     true
 }
+
+/// `isViableEndCityTerrain(g, sn, blockX, blockZ)` — End City terrain
+/// gate. Returns `Some(min_height)` when all four corners are >= 60
+/// (cubiomes returns `min_height` itself, which is also used as the
+/// y-coordinate for the city's base floor), `None` otherwise.
+///
+/// Samples the End surface-noise columns over a 2x3 / 3x2 / 3x3 grid
+/// depending on the city's rotation (drawn from a chunk-seeded RNG),
+/// then trilinear-interpolates per-corner heights via
+/// [`crate::biomenoise::end_surface::get_surface_height`]. Bit-exact
+/// port of cubiomes' `isViableEndCityTerrain`.
+#[must_use]
+#[allow(
+    clippy::many_single_char_names,
+    clippy::too_many_lines,
+    clippy::identity_op,
+    clippy::nonminimal_bool
+)]
+pub fn is_viable_end_city_terrain(
+    g: &Generator,
+    sn: &crate::biomenoise::surface::SurfaceNoise,
+    block_x: i32,
+    block_z: i32,
+) -> Option<i32> {
+    use crate::biomenoise::end_surface::{get_surface_height, sample_noise_column_end};
+    const Y0: i32 = 15;
+    const Y1: i32 = 18;
+    const YN: usize = (Y1 - Y0 + 1) as usize;
+
+    let en = g.end.as_ref()?;
+    let chunk_x = block_x >> 4;
+    let chunk_z = block_z >> 4;
+    let block_x = chunk_x * 16 + 7;
+    let block_z = chunk_z * 16 + 7;
+    let cellx = block_x >> 3;
+    let cellz = block_z >> 3;
+    let mut ncol = [[[0.0_f64; YN]; 3]; 3];
+
+    sample_noise_column_end(&mut ncol[0][0], sn, en, cellx, cellz, Y0, Y1);
+    sample_noise_column_end(&mut ncol[0][1], sn, en, cellx, cellz + 1, Y0, Y1);
+    sample_noise_column_end(&mut ncol[1][0], sn, en, cellx + 1, cellz, Y0, Y1);
+    sample_noise_column_end(&mut ncol[1][1], sn, en, cellx + 1, cellz + 1, Y0, Y1);
+
+    let h00 = get_surface_height(
+        &ncol[0][0],
+        &ncol[0][1],
+        &ncol[1][0],
+        &ncol[1][1],
+        Y0,
+        Y1,
+        4,
+        f64::from(block_x & 7) / 8.0,
+        f64::from(block_z & 7) / 8.0,
+    );
+
+    let mut rng = if en.mc.is_before(MCVersion::V1_19_2) {
+        // 1.18- branch: setSeed(cs, chunkX + chunkZ * 10387313)
+        let value =
+            (chunk_x as i64 as u64).wrapping_add((chunk_z as i64 as u64).wrapping_mul(10_387_313));
+        crate::rng::JavaRng::new(value)
+    } else {
+        crate::finder::population_seed::chunk_generate_rng(g.seed, chunk_x, chunk_z)
+    };
+    let rot = rng.next_int(4);
+    let h01: i32;
+    let h10: i32;
+    let h11: i32;
+    match rot {
+        0 => {
+            // (++) 0
+            sample_noise_column_end(&mut ncol[0][2], sn, en, cellx + 0, cellz + 2, Y0, Y1);
+            sample_noise_column_end(&mut ncol[1][2], sn, en, cellx + 1, cellz + 2, Y0, Y1);
+            sample_noise_column_end(&mut ncol[2][0], sn, en, cellx + 2, cellz + 0, Y0, Y1);
+            sample_noise_column_end(&mut ncol[2][1], sn, en, cellx + 2, cellz + 1, Y0, Y1);
+            sample_noise_column_end(&mut ncol[2][2], sn, en, cellx + 2, cellz + 2, Y0, Y1);
+            h01 = get_surface_height(
+                &ncol[0][1],
+                &ncol[0][2],
+                &ncol[1][1],
+                &ncol[1][2],
+                Y0,
+                Y1,
+                4,
+                f64::from(block_x & 7) / 8.0,
+                f64::from((block_z + 5) & 7) / 8.0,
+            );
+            h10 = get_surface_height(
+                &ncol[1][0],
+                &ncol[1][1],
+                &ncol[2][0],
+                &ncol[2][1],
+                Y0,
+                Y1,
+                4,
+                f64::from((block_x + 5) & 7) / 8.0,
+                f64::from(block_z & 7) / 8.0,
+            );
+            h11 = get_surface_height(
+                &ncol[1][1],
+                &ncol[1][2],
+                &ncol[2][1],
+                &ncol[2][2],
+                Y0,
+                Y1,
+                4,
+                f64::from((block_x + 5) & 7) / 8.0,
+                f64::from((block_z + 5) & 7) / 8.0,
+            );
+        }
+        1 => {
+            // (-+) 90
+            sample_noise_column_end(&mut ncol[0][2], sn, en, cellx + 0, cellz + 2, Y0, Y1);
+            sample_noise_column_end(&mut ncol[1][2], sn, en, cellx + 1, cellz + 2, Y0, Y1);
+            h01 = get_surface_height(
+                &ncol[0][1],
+                &ncol[0][2],
+                &ncol[1][1],
+                &ncol[1][2],
+                Y0,
+                Y1,
+                4,
+                f64::from(block_x & 7) / 8.0,
+                f64::from((block_z + 5) & 7) / 8.0,
+            );
+            h10 = get_surface_height(
+                &ncol[0][0],
+                &ncol[0][1],
+                &ncol[1][0],
+                &ncol[1][1],
+                Y0,
+                Y1,
+                4,
+                f64::from((block_x - 5) & 7) / 8.0,
+                f64::from(block_z & 7) / 8.0,
+            );
+            h11 = get_surface_height(
+                &ncol[0][1],
+                &ncol[0][2],
+                &ncol[1][1],
+                &ncol[1][2],
+                Y0,
+                Y1,
+                4,
+                f64::from((block_x - 5) & 7) / 8.0,
+                f64::from((block_z + 5) & 7) / 8.0,
+            );
+        }
+        2 => {
+            // (--) 180
+            h01 = get_surface_height(
+                &ncol[0][0],
+                &ncol[0][1],
+                &ncol[1][0],
+                &ncol[1][1],
+                Y0,
+                Y1,
+                4,
+                f64::from(block_x & 7) / 8.0,
+                f64::from((block_z - 5) & 7) / 8.0,
+            );
+            h10 = get_surface_height(
+                &ncol[0][0],
+                &ncol[0][1],
+                &ncol[1][0],
+                &ncol[1][1],
+                Y0,
+                Y1,
+                4,
+                f64::from((block_x - 5) & 7) / 8.0,
+                f64::from(block_z & 7) / 8.0,
+            );
+            h11 = get_surface_height(
+                &ncol[0][0],
+                &ncol[0][1],
+                &ncol[1][0],
+                &ncol[1][1],
+                Y0,
+                Y1,
+                4,
+                f64::from((block_x - 5) & 7) / 8.0,
+                f64::from((block_z - 5) & 7) / 8.0,
+            );
+        }
+        _ => {
+            // (+-) 270
+            sample_noise_column_end(&mut ncol[2][0], sn, en, cellx + 2, cellz + 0, Y0, Y1);
+            sample_noise_column_end(&mut ncol[2][1], sn, en, cellx + 2, cellz + 1, Y0, Y1);
+            h01 = get_surface_height(
+                &ncol[0][0],
+                &ncol[0][1],
+                &ncol[1][0],
+                &ncol[1][1],
+                Y0,
+                Y1,
+                4,
+                f64::from(block_x & 7) / 8.0,
+                f64::from((block_z - 5) & 7) / 8.0,
+            );
+            h10 = get_surface_height(
+                &ncol[1][0],
+                &ncol[1][1],
+                &ncol[2][0],
+                &ncol[2][1],
+                Y0,
+                Y1,
+                4,
+                f64::from((block_x + 5) & 7) / 8.0,
+                f64::from(block_z & 7) / 8.0,
+            );
+            h11 = get_surface_height(
+                &ncol[1][0],
+                &ncol[1][1],
+                &ncol[2][0],
+                &ncol[2][1],
+                Y0,
+                Y1,
+                4,
+                f64::from((block_x + 5) & 7) / 8.0,
+                f64::from((block_z - 5) & 7) / 8.0,
+            );
+        }
+    }
+    let mut h = h00;
+    if h01 < h {
+        h = h01;
+    }
+    if h10 < h {
+        h = h10;
+    }
+    if h11 < h {
+        h = h11;
+    }
+    if h >= 60 { Some(h) } else { None }
+}

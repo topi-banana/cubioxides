@@ -37,6 +37,7 @@ fn main() -> ExitCode {
         "debug-mch-scale" => debug_mch_scale(),
         "debug-end-city" => debug_end_city(),
         "debug-fortress" => debug_fortress(),
+        "debug-end-city-terrain" => debug_end_city_terrain(),
         "rng" => regenerate_rng(),
         "noise" => regenerate_noise(),
         "layers" => regenerate_layers(),
@@ -80,6 +81,59 @@ fn print_help() {
 /// matching Rust test diffs each scale to localise the first
 /// upstream layer where divergence appears. Also dumps the
 /// `BiomeEdge64` and `Zoom64Hills` parent rings used by `mapHills`.
+fn debug_end_city_terrain() -> ExitCode {
+    let mc: c_int = 17; // V1_14
+    let seed: u64 = 0xdead_beef_0000;
+    let (x, z) = (0_i32, 0_i32);
+    let nextint4 = unsafe { ffi::cubiomes_call_seed_zero_nextint4() };
+    println!("cubiomes: setSeed(0).nextInt(4) = {nextint4}");
+    let mut h00: c_int = 0;
+    let mut h01: c_int = 0;
+    let mut h10: c_int = 0;
+    let mut h11: c_int = 0;
+    let mut rot: c_int = 0;
+    unsafe {
+        ffi::cubiomes_call_debug_end_city_terrain(
+            mc,
+            seed,
+            x,
+            z,
+            std::ptr::from_mut(&mut h00),
+            std::ptr::from_mut(&mut h01),
+            std::ptr::from_mut(&mut h10),
+            std::ptr::from_mut(&mut h11),
+            std::ptr::from_mut(&mut rot),
+        );
+    }
+    println!("cubiomes: h00={h00} h01={h01} h10={h10} h11={h11} rot={rot}");
+    let viable1 = unsafe { ffi::cubiomes_call_is_viable_end_city_terrain(mc, seed, x, z) };
+    println!("cubiomes call 1: viable result = {viable1}");
+    let viable2 = unsafe { ffi::cubiomes_call_is_viable_end_city_terrain(mc, seed, x, z) };
+    println!("cubiomes call 2: viable result = {viable2}");
+    // Call the debug helper first (which mutates RNG locally), then re-call viable.
+    let mut h00: c_int = 0;
+    let mut h01: c_int = 0;
+    let mut h10: c_int = 0;
+    let mut h11: c_int = 0;
+    let mut rot2: c_int = 0;
+    unsafe {
+        ffi::cubiomes_call_debug_end_city_terrain(
+            mc,
+            seed,
+            x,
+            z,
+            std::ptr::from_mut(&mut h00),
+            std::ptr::from_mut(&mut h01),
+            std::ptr::from_mut(&mut h10),
+            std::ptr::from_mut(&mut h11),
+            std::ptr::from_mut(&mut rot2),
+        );
+    }
+    let viable3 = unsafe { ffi::cubiomes_call_is_viable_end_city_terrain(mc, seed, x, z) };
+    println!("cubiomes call 3 (after debug): viable result = {viable3}");
+    ExitCode::SUCCESS
+}
+
 fn debug_fortress() -> ExitCode {
     let mc: c_int = 15; // V1_12
     let seed: u64 = 0xdead_beef_0000;
@@ -1022,6 +1076,12 @@ fn regenerate_layers() -> ExitCode {
         write_viable_structure_terrain_fixture(&fixtures_dir.join("viable_structure_terrain.bin"))
     {
         eprintln!("viable_structure_terrain fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) =
+        write_viable_end_city_terrain_fixture(&fixtures_dir.join("viable_end_city_terrain.bin"))
+    {
+        eprintln!("viable_end_city_terrain fixture failed: {err}");
         return ExitCode::FAILURE;
     }
     if let Err(err) =
@@ -3288,6 +3348,65 @@ fn write_get_house_list_fixture(path: &Path) -> std::io::Result<()> {
                 rng_final,
             };
             file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
+}
+
+/// `isViableEndCityTerrain` parity record (kind = 84). One record
+/// per (mc, seed, x, z) tuple. `height` is cubiomes' return value:
+/// the minimum corner height (>= 60) or 0 if not viable.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ViableEndCityTerrainRecord {
+    pub mc: i32,
+    pub padding: i32,
+    pub seed: u64,
+    pub x: i32,
+    pub z: i32,
+    pub height: i32,
+    pub padding2: i32,
+}
+
+fn write_viable_end_city_terrain_fixture(path: &Path) -> std::io::Result<()> {
+    // Cover the 1.18- and 1.19+ branches separately, plus a few
+    // representative seeds at chunks in the End-island outer ring.
+    let mcs: [i32; 4] = [12, 17, 22, 28]; // V1_9, V1_14, V1_18, V1_21
+    let seeds: [u64; 4] = [
+        0x0000_dead_beef_0000,
+        0x1234_5678_9abc_def0,
+        0x7edf_7985_db06_7c7d,
+        0xa110_dec0_de5e_ed00,
+    ];
+    let coords: [(i32, i32); 8] = [
+        (0, 0),
+        (1200, 0),
+        (-1200, 0),
+        (0, 1200),
+        (0, -1200),
+        (1500, 1500),
+        (-1500, 1500),
+        (2000, -2000),
+    ];
+    let total = (mcs.len() * seeds.len() * coords.len()) as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 84, total)?;
+
+    for &mc in &mcs {
+        for &seed in &seeds {
+            for &(x, z) in &coords {
+                let h = unsafe { ffi::cubiomes_call_is_viable_end_city_terrain(mc, seed, x, z) };
+                let rec = ViableEndCityTerrainRecord {
+                    mc,
+                    padding: 0,
+                    seed,
+                    x,
+                    z,
+                    height: h,
+                    padding2: 0,
+                };
+                file.write_all(bytemuck::bytes_of(&rec))?;
+            }
         }
     }
     file.flush()
@@ -6361,6 +6480,24 @@ mod ffi {
             x: c_int,
             z: c_int,
         ) -> c_int;
+        pub fn cubiomes_call_is_viable_end_city_terrain(
+            mc: c_int,
+            seed: u64,
+            x: c_int,
+            z: c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_seed_zero_nextint4() -> c_int;
+        pub fn cubiomes_call_debug_end_city_terrain(
+            mc: c_int,
+            seed: u64,
+            x: c_int,
+            z: c_int,
+            out_h00: *mut c_int,
+            out_h01: *mut c_int,
+            out_h10: *mut c_int,
+            out_h11: *mut c_int,
+            out_rot: *mut c_int,
+        );
         pub fn cubiomes_call_scan_for_quads(
             mc: c_int,
             sty: c_int,

@@ -97,7 +97,7 @@ const LOWER_DROP: [f64; 33] = [
 /// For MC > 1.13, an outer-ring fallback fills the column with NaN
 /// when the squared distance overflows i32 (matching cubiomes' cast
 /// to `int`).
-fn sample_noise_column_end(
+pub fn sample_noise_column_end(
     column: &mut [f64],
     sn: &SurfaceNoise,
     en: &EndNoise,
@@ -144,7 +144,7 @@ fn sample_noise_column_end(
 /// through the cells to find the topmost block where the trilinear
 /// interpolated noise is `> 0`. Returns 0 if no positive cell exists.
 #[allow(clippy::too_many_arguments)]
-fn get_surface_height(
+pub fn get_surface_height(
     ncol00: &[f64],
     ncol01: &[f64],
     ncol10: &[f64],

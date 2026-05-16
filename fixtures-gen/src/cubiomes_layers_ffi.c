@@ -11,6 +11,7 @@
 #include "generator.h"
 #include "layers.h"
 #include "noise.h"
+#include <stdio.h>
 #include <string.h>
 
 double cubiomes_call_sample_surface_noise(int dim, uint64_t seed, int x, int y,
@@ -1118,4 +1119,70 @@ int cubiomes_call_is_viable_structure_terrain(int struct_type, int mc,
     setupGenerator(&g, mc, 0);
     applySeed(&g, 0, seed); // overworld
     return isViableStructureTerrain(struct_type, &g, x, z);
+}
+
+/* Run cubiomes' isViableEndCityTerrain. Initialises a fresh generator
+ * + SurfaceNoise per call. Returns the height (>= 60) or 0 if not viable. */
+int cubiomes_call_is_viable_end_city_terrain(int mc, uint64_t seed, int x,
+                                             int z) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, DIM_END, seed);
+    SurfaceNoise sn;
+    initSurfaceNoise(&sn, DIM_END, seed);
+    return isViableEndCityTerrain(&g, &sn, x, z);
+}
+
+/* Debug helper: dump cubiomes' h00 + rotation for a given seed. */
+extern int getSurfaceHeight(
+        const double ncol00[], const double ncol01[],
+        const double ncol10[], const double ncol11[],
+        int colymin, int colymax, int blockspercell, double dx, double dz);
+extern void sampleNoiseColumnEnd(double column[], const SurfaceNoise *sn,
+        const EndNoise *en, int x, int z, int colymin, int colymax);
+
+void cubiomes_call_debug_end_city_terrain(int mc, uint64_t seed, int x, int z,
+                                          int *out_h00, int *out_h01,
+                                          int *out_h10, int *out_h11,
+                                          int *out_rot) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, DIM_END, seed);
+    SurfaceNoise sn;
+    initSurfaceNoise(&sn, DIM_END, seed);
+    const EndNoise *en = &g.en;
+    int chunkX = x >> 4;
+    int chunkZ = z >> 4;
+    int blockX = chunkX * 16 + 7;
+    int blockZ = chunkZ * 16 + 7;
+    int cellx = (blockX >> 3);
+    int cellz = (blockZ >> 3);
+
+    enum { y0 = 15, y1 = 18, yn = y1-y0+1 };
+    double ncol[3][3][yn];
+
+    sampleNoiseColumnEnd(ncol[0][0], &sn, en, cellx, cellz, y0, y1);
+    sampleNoiseColumnEnd(ncol[0][1], &sn, en, cellx, cellz+1, y0, y1);
+    sampleNoiseColumnEnd(ncol[1][0], &sn, en, cellx+1, cellz, y0, y1);
+    sampleNoiseColumnEnd(ncol[1][1], &sn, en, cellx+1, cellz+1, y0, y1);
+
+    *out_h00 = getSurfaceHeight(ncol[0][0], ncol[0][1], ncol[1][0], ncol[1][1],
+            y0, y1, 4, (blockX & 7) / 8.0, (blockZ & 7) / 8.0);
+
+    uint64_t cs;
+    if (en->mc <= MC_1_18)
+        setSeed(&cs, chunkX + chunkZ * 10387313ULL);
+    else
+        cs = chunkGenerateRnd(seed, chunkX, chunkZ);
+    *out_rot = nextInt(&cs, 4);
+    *out_h01 = 0;
+    *out_h10 = 0;
+    *out_h11 = 0;
+}
+
+/* Debug: verify cubiomes' nextInt(0, 4). */
+int cubiomes_call_seed_zero_nextint4(void) {
+    uint64_t cs;
+    setSeed(&cs, 0);
+    return nextInt(&cs, 4);
 }
