@@ -1198,6 +1198,14 @@ int cubiomes_call_get_biome_para_extremes(int mc, int *out12) {
     return 1;
 }
 
+/* Copies getBiomeParaLimits output into a fixed 12-int buffer. */
+int cubiomes_call_get_biome_para_limits(int mc, int id, int *out12) {
+    const int *p = getBiomeParaLimits(mc, id);
+    if (!p) return 0;
+    for (int i = 0; i < 12; i++) out12[i] = p[i];
+    return 1;
+}
+
 int cubiomes_call_get_largest_rec(int target, const int *ids, int sx, int sz,
                                   int *p0x, int *p0z, int *p1x, int *p1z) {
     Pos p0 = {0, 0};
