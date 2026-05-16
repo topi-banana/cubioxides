@@ -1188,3 +1188,15 @@ int cubiomes_call_seed_zero_nextint4(void) {
 }
 
 uint64_t cubiomes_call_get_shadow(uint64_t seed) { return getShadow(seed); }
+
+int cubiomes_call_get_largest_rec(int target, const int *ids, int sx, int sz,
+                                  int *p0x, int *p0z, int *p1x, int *p1z) {
+    Pos p0 = {0, 0};
+    Pos p1 = {0, 0};
+    int area = getLargestRec(target, ids, sx, sz, &p0, &p1);
+    *p0x = p0.x;
+    *p0z = p0.z;
+    *p1x = p1.x;
+    *p1z = p1.z;
+    return area;
+}

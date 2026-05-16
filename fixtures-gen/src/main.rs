@@ -1088,6 +1088,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("get_shadow fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_get_largest_rec_fixture(&fixtures_dir.join("get_largest_rec.bin")) {
+        eprintln!("get_largest_rec fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3353,6 +3357,110 @@ fn write_get_house_list_fixture(path: &Path) -> std::io::Result<()> {
             };
             file.write_all(bytemuck::bytes_of(&rec))?;
         }
+    }
+    file.flush()
+}
+
+/// `getLargestRec` parity record (kind = 86). Each record contains
+/// a small `(sx, sz)` ids grid plus cubiomes' output (area + p0 + p1).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct GetLargestRecRecord {
+    pub target: i32,
+    pub sx: i32,
+    pub sz: i32,
+    pub area: i32,
+    pub p0x: i32,
+    pub p0z: i32,
+    pub p1x: i32,
+    pub p1z: i32,
+    /// 64 cells (8×8 max). Unused cells are 0.
+    pub ids: [i32; 64],
+}
+
+fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
+    // Hand-picked small grids. We avoid full-match grids and grids
+    // whose rightmost column is entirely match — cubiomes' meta
+    // buffer is sized `max(sx, sz)` but the stack can overflow when
+    // pushes accumulate across outer iterations without popping.
+    // The cases we ship all have a non-match cell on the last
+    // column to flush the stack each outer iteration.
+    type Grid = (i32, i32, i32, Vec<i32>);
+    let mut grids: Vec<Grid> = Vec::with_capacity(8);
+    // empty 3x3
+    grids.push((1, 3, 3, vec![0; 9]));
+    // inner block 5x4
+    #[rustfmt::skip]
+    grids.push((1, 5, 4, vec![
+        0,0,0,0,0,
+        0,1,1,1,0,
+        0,1,1,1,0,
+        0,0,0,0,0,
+    ]));
+    // tall vs wide 6x4
+    #[rustfmt::skip]
+    grids.push((2, 6, 4, vec![
+        2,2,0,2,2,0,
+        2,2,0,2,2,0,
+        2,2,0,2,2,0,
+        0,0,0,2,2,0,
+    ]));
+    // mixed values 4x4 (column 3 has 0s, safe)
+    #[rustfmt::skip]
+    grids.push((7, 4, 4, vec![
+        0,7,7,0,
+        7,7,7,0,
+        7,7,7,0,
+        0,7,7,0,
+    ]));
+    // single 8x8 with multiple rects (column 7 has 0s, safe)
+    #[rustfmt::skip]
+    grids.push((3, 8, 8, vec![
+        3,3,0,3,3,3,0,0,
+        3,3,0,3,3,3,0,0,
+        0,0,0,3,3,3,3,0,
+        3,3,3,3,3,3,3,0,
+        3,3,3,3,3,3,3,0,
+        0,3,3,3,3,3,3,0,
+        0,3,3,3,3,3,0,0,
+        0,0,0,0,3,3,0,0,
+    ]));
+
+    let total = grids.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 86, total)?;
+    for (target, sx, sz, ids) in &grids {
+        let mut p0x: c_int = 0;
+        let mut p0z: c_int = 0;
+        let mut p1x: c_int = 0;
+        let mut p1z: c_int = 0;
+        let area = unsafe {
+            ffi::cubiomes_call_get_largest_rec(
+                *target,
+                ids.as_ptr(),
+                *sx,
+                *sz,
+                std::ptr::from_mut(&mut p0x),
+                std::ptr::from_mut(&mut p0z),
+                std::ptr::from_mut(&mut p1x),
+                std::ptr::from_mut(&mut p1z),
+            )
+        };
+        let mut ids_arr = [0_i32; 64];
+        let n = (*sx as usize * *sz as usize).min(64);
+        ids_arr[..n].copy_from_slice(&ids[..n]);
+        let rec = GetLargestRecRecord {
+            target: *target,
+            sx: *sx,
+            sz: *sz,
+            area,
+            p0x,
+            p0z,
+            p1x,
+            p1z,
+            ids: ids_arr,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
     }
     file.flush()
 }
@@ -6527,6 +6635,16 @@ mod ffi {
         ) -> c_int;
         pub fn cubiomes_call_seed_zero_nextint4() -> c_int;
         pub fn cubiomes_call_get_shadow(seed: u64) -> u64;
+        pub fn cubiomes_call_get_largest_rec(
+            target: c_int,
+            ids: *const c_int,
+            sx: c_int,
+            sz: c_int,
+            p0x: *mut c_int,
+            p0z: *mut c_int,
+            p1x: *mut c_int,
+            p1z: *mut c_int,
+        ) -> c_int;
         pub fn cubiomes_call_debug_end_city_terrain(
             mc: c_int,
             seed: u64,
