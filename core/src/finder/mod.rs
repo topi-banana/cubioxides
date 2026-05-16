@@ -79,9 +79,9 @@ pub use stronghold::{
     StrongholdIter, init_first_stronghold, is_stronghold_biome, next_stronghold,
     next_stronghold_no_biome,
 };
-pub use village_houses::get_house_list;
 pub use variant::{StructureVariant, get_variant};
 pub use viability::{is_viable_feature_biome, is_viable_structure_pos};
+pub use village_houses::get_house_list;
 
 use crate::mc_version::MCVersion;
 use crate::rng::{JavaRng, Xoroshiro};
