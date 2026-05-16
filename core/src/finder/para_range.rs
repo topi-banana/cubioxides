@@ -32,6 +32,25 @@ pub type ParaRangeResult = Result<(f64, f64), i32>;
 /// `pmin_enabled` / `pmax_enabled` mirror cubiomes' "NULL pointer
 /// disables this side" idiom. When a side is disabled, that bound
 /// stays at its initial sentinel (`f64::MAX` / `-f64::MAX`).
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::biomenoise::BiomeNoise;
+/// use cubioxides::biomenoise::biome_noise::NP_TEMPERATURE;
+/// use cubioxides::finder::get_para_range;
+/// use cubioxides::MCVersion;
+///
+/// // Scan a 16×16 cell window at the 1:4 grid for the min/max of
+/// // the temperature axis. Pass `None` for the abort callback so the
+/// // search runs to completion. Result is wrapped in Result —
+/// // `Ok((pmin, pmax))` carries the bounds.
+/// let bn = BiomeNoise::new(MCVersion::V1_21, 0xdead_beef, false);
+/// let temp = &bn.climate[NP_TEMPERATURE];
+/// let (_pmin, _pmax) = get_para_range::<fn(i32, i32, f64) -> i32>(
+///     temp, true, true, 0, 0, 16, 16, None,
+/// ).unwrap();
+/// ```
 pub fn get_para_range<F>(
     para: &DoublePerlinNoise,
     pmin_enabled: bool,
