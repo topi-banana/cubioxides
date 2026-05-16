@@ -462,6 +462,10 @@ impl Generator {
             return;
         }
         let en = self.end.as_ref().expect("End noise seeded");
+        if r.scale == 1 {
+            self.gen_biomes_end_voronoi(en, cache, r);
+            return;
+        }
         let area = r.sx as usize * r.sz as usize;
         let mut buf = vec![0_i32; area];
         match r.scale {
@@ -474,6 +478,67 @@ impl Generator {
         for k in 0..r.sy as usize {
             for (i, &v) in buf.iter().enumerate() {
                 cache[k * area + i] = Biome(v);
+            }
+        }
+    }
+
+    /// End scale=1 via voronoi access — mirrors cubiomes'
+    /// `genEndScaled` scale=1 branch. Pre-1.15 uses `mapVoronoi114`
+    /// (planar, expanded to 3D by replicating Y=0); 1.15+ uses
+    /// `mapVoronoiPlane` iterated per Y layer.
+    fn gen_biomes_end_voronoi(&self, en: &EndNoise, cache: &mut [Biome], r: Range) {
+        let sx = r.sx as usize;
+        let sy = r.sy as usize;
+        let sz = r.sz as usize;
+        let s = get_voronoi_src_range(r);
+        let s_sx = s.sx as usize;
+        let s_sz = s.sz as usize;
+        let mut parent = vec![0_i32; s_sx * s_sz];
+        en.map_end(&mut parent, s.x, s.z, s_sx, s_sz);
+        let parent_b: Vec<Biome> = parent.iter().map(|&v| Biome(v)).collect();
+
+        if self.mc.is_at_least(MCVersion::V1_15) {
+            // 3D voronoi — iterate per Y layer.
+            let area = sx * sz;
+            for k in 0..sy {
+                let slice = &mut cache[k * area..(k + 1) * area];
+                crate::layer::ops::voronoi::map_voronoi_plane(
+                    self.sha,
+                    &parent_b,
+                    s.x,
+                    s.z,
+                    s_sx,
+                    s_sz,
+                    slice,
+                    r.x,
+                    r.y + k as i32,
+                    r.z,
+                    sx,
+                    sz,
+                );
+            }
+        } else {
+            // Planar voronoi — 2D output then replicate across Y.
+            let area = sx * sz;
+            let mut out_plane = vec![Biome::NONE; area];
+            crate::layer::ops::voronoi::map_voronoi114(
+                crate::rng::mc_seed::get_layer_salt(10),
+                0,
+                &parent_b,
+                s.x,
+                s.z,
+                s_sx,
+                s_sz,
+                &mut out_plane,
+                r.x,
+                r.z,
+                sx,
+                sz,
+            );
+            for k in 0..sy {
+                for i in 0..area {
+                    cache[k * area + i] = out_plane[i];
+                }
             }
         }
     }

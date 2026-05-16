@@ -1248,6 +1248,26 @@ int cubiomes_call_gen_nether_voronoi(int mc, uint64_t seed,
     return err;
 }
 
+/* End scale=1 gen_biomes wrapper. */
+int cubiomes_call_gen_end_voronoi(int mc, uint64_t seed,
+                                  int rx, int ry, int rz,
+                                  int sx, int sy, int sz, int *out) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, DIM_END, seed);
+    Range r;
+    r.scale = 1; r.x = rx; r.z = rz;
+    r.sx = sx; r.sz = sz; r.y = ry; r.sy = sy;
+    int *cache = allocCache(&g, r);
+    if (!cache) return -1;
+    int err = genBiomes(&g, cache, r);
+    if (err == 0) {
+        for (int i = 0; i < sx*sy*sz; i++) out[i] = cache[i];
+    }
+    free(cache);
+    return err;
+}
+
 /* checkForBiomesAtLayer with BF_APPROX flag. The cubiomes-side
  * checkForBiomesAtLayer would normally run the swap-map chain
  * after the prefilter passes. To extract just the prefilter, we
