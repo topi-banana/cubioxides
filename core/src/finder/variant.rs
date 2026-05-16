@@ -76,6 +76,19 @@ pub struct StructureVariant {
 /// Returns `Some(variant)` on success, `None` for unsupported
 /// `(structureType, mc)` combinations or biomes that fail the
 /// Village viability gate. Bastion ignores the `biome_id` argument.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::finder::{StructureType, get_variant};
+///
+/// // For pieces / orientation: after locating a Village placement
+/// // via get_structure_pos, ask for the variant given the biome at
+/// // the position. Pass `biome_id = 1` (plains) for a 1.16.1 world.
+/// let v = get_variant(StructureType::Village, MCVersion::V1_16_1, 0xdead_beef, 32, 32, 1);
+/// assert!(v.is_some(), "plains is a viable Village biome on 1.16.1");
+/// ```
 #[must_use]
 #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
 pub fn get_variant(
