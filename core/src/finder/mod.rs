@@ -22,6 +22,7 @@ pub mod quadbase;
 pub mod slime;
 pub mod spawn;
 pub mod stronghold;
+pub mod viability;
 
 pub use end::{EndIsland, get_end_islands, is_end_chunk_empty, map_end_island_height};
 pub use locate_biome::{id_matches, locate_biome};
@@ -37,6 +38,7 @@ pub use stronghold::{
     StrongholdIter, init_first_stronghold, is_stronghold_biome, next_stronghold,
     next_stronghold_no_biome,
 };
+pub use viability::is_viable_feature_biome;
 
 use crate::mc_version::MCVersion;
 use crate::rng::{JavaRng, Xoroshiro};

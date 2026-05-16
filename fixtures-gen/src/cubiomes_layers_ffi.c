@@ -195,6 +195,11 @@ void cubiomes_call_get_spawn(int mc, uint64_t seed, int *px, int *pz) {
     *pz = p.z;
 }
 
+int cubiomes_call_is_viable_feature_biome(int mc, int structure_type,
+                                          int biome_id) {
+    return isViableFeatureBiome(mc, structure_type, biome_id);
+}
+
 #include "quadbase.h"
 
 void cubiomes_call_get_optimal_afk(int *px, int *pz, int *spcnt, int p0x,

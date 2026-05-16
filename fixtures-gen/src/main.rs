@@ -672,6 +672,12 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("get_spawn fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) =
+        write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
+    {
+        eprintln!("viable_feature_biome fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2154,6 +2160,51 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `isViableFeatureBiome` parity record (kind = 66). One record per
+/// (mc, structure_type, biome_id) triple — cubiomes panics on
+/// unsupported types so we skip Feature / EndIsland / Geode.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ViableFeatureBiomeRecord {
+    pub mc: i32,
+    pub structure_type: i32,
+    pub biome_id: i32,
+    pub viable: i32,
+}
+
+fn write_viable_feature_biome_fixture(path: &Path) -> std::io::Result<()> {
+    // Cover every MC version with a meaningful step and every
+    // structure type cubiomes' isViableFeatureBiome accepts.
+    let mc_pool: [i32; 12] = [3, 5, 8, 11, 14, 16, 17, 19, 20, 22, 25, 28];
+    // ords from cubiomes' enum StructureType, excluding Feature (0),
+    // EndIsland (22), Geode (17) which trigger the fatal panic arm.
+    let struct_types: [i32; 22] = [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 23, 24,
+    ];
+    // 256 biome IDs cover every cubiomes biome (and reserve some for
+    // negative tests against ids that no version uses).
+    let total: u64 = mc_pool.len() as u64 * struct_types.len() as u64 * 256;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 66, total)?;
+
+    for &mc in &mc_pool {
+        for &sty in &struct_types {
+            for biome_id in 0..256_i32 {
+                let viable =
+                    unsafe { ffi::cubiomes_call_is_viable_feature_biome(mc, sty, biome_id) };
+                let rec = ViableFeatureBiomeRecord {
+                    mc,
+                    structure_type: sty,
+                    biome_id,
+                    viable,
+                };
+                file.write_all(bytemuck::bytes_of(&rec))?;
+            }
+        }
+    }
+    file.flush()
 }
 
 /// `getSpawn` parity record (kind = 65). MC pool matches
@@ -4969,6 +5020,11 @@ mod ffi {
             ids: *mut c_int,
         ) -> c_int;
         pub fn cubiomes_call_get_spawn(mc: c_int, seed: u64, px: *mut c_int, pz: *mut c_int);
+        pub fn cubiomes_call_is_viable_feature_biome(
+            mc: c_int,
+            structure_type: c_int,
+            biome_id: c_int,
+        ) -> c_int;
         pub fn cubiomes_call_get_optimal_afk(
             px: *mut c_int,
             pz: *mut c_int,
