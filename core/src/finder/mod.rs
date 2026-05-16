@@ -25,6 +25,7 @@ pub mod spawn;
 pub mod stronghold;
 pub mod variant;
 pub mod viability;
+pub mod village_houses;
 
 pub use end::{
     EndIsland, get_end_islands, get_fixed_end_gateways, get_linked_gateway_chunk,

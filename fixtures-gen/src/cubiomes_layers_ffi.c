@@ -1070,3 +1070,9 @@ void cubiomes_call_get_end_city_pieces(uint64_t seed, int chunk_x, int chunk_z,
         out_records[i].type = pieces[i].type;
     }
 }
+
+/* Run cubiomes' getHouseList and copy its 9-entry output. */
+uint64_t cubiomes_call_get_house_list(uint64_t seed, int chunk_x, int chunk_z,
+                                      int *out_houses) {
+    return getHouseList(out_houses, seed, chunk_x, chunk_z);
+}

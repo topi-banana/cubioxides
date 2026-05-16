@@ -970,6 +970,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("end_city_pieces fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_get_house_list_fixture(&fixtures_dir.join("get_house_list.bin")) {
+        eprintln!("get_house_list fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3181,6 +3185,57 @@ fn write_get_spawn_fixture(path: &Path) -> std::io::Result<()> {
                 seed,
                 spawn_x: px,
                 spawn_z: pz,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
+}
+
+/// Village house-count parity record (kind = 81). Houses array
+/// covers MC 1.10 – 1.13's `getHouseList` output verbatim.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct GetHouseListRecord {
+    pub seed: u64,
+    pub chunk_x: i32,
+    pub chunk_z: i32,
+    pub houses: [i32; 9],
+    pub padding: i32,
+    pub rng_final: u64,
+}
+
+fn write_get_house_list_fixture(path: &Path) -> std::io::Result<()> {
+    let seeds: [u64; 4] = [
+        0x0000_dead_beef_0000,
+        0x1234_5678_9abc_def0,
+        0x7edf_7985_db06_7c7d,
+        0xa110_dec0_de5e_ed00,
+    ];
+    let chunks: [(i32, i32); 6] = [
+        (0, 0),
+        (8, 8),
+        (-16, 4),
+        (32, -32),
+        (-100, 100),
+        (1000, -1000),
+    ];
+    let total = (seeds.len() * chunks.len()) as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 81, total)?;
+
+    for &seed in &seeds {
+        for &(cx, cz) in &chunks {
+            let mut houses = [0_i32; 9];
+            let rng_final =
+                unsafe { ffi::cubiomes_call_get_house_list(seed, cx, cz, houses.as_mut_ptr()) };
+            let rec = GetHouseListRecord {
+                seed,
+                chunk_x: cx,
+                chunk_z: cz,
+                houses,
+                padding: 0,
+                rng_final,
             };
             file.write_all(bytemuck::bytes_of(&rec))?;
         }
@@ -6081,6 +6136,12 @@ mod ffi {
             out_count: *mut c_int,
             out_records: *mut EndCityBBRecord,
         );
+        pub fn cubiomes_call_get_house_list(
+            seed: u64,
+            chunk_x: c_int,
+            chunk_z: c_int,
+            out_houses: *mut c_int,
+        ) -> u64;
         pub fn cubiomes_call_scan_for_quads(
             mc: c_int,
             sty: c_int,
