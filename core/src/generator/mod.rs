@@ -498,30 +498,12 @@ impl Generator {
             return;
         }
         let nn = self.nether.as_ref().expect("Nether noise seeded");
-        if r.scale == 1 {
-            self.gen_biomes_nether_voronoi(nn, cache, r);
-            return;
-        }
-        let total = r.cell_count();
-        let mut buf = vec![0_i32; total];
-        nn.map_nether_3d(
-            &mut buf,
-            r.x,
-            r.y,
-            r.z,
-            r.sx as usize,
-            r.sy as usize,
-            r.sz as usize,
-            r.scale,
-            1.0,
-        );
-        for (dst, src) in cache.iter_mut().zip(buf.iter()) {
-            *dst = Biome(*src);
-        }
+        gen_nether_scaled(nn, cache, r, self.sha);
     }
 
     /// Nether scale=1 via voronoi access — mirrors cubiomes'
     /// `genNetherScaled` scale=1 branch.
+    #[allow(dead_code)]
     fn gen_biomes_nether_voronoi(&self, nn: &NetherNoise, cache: &mut [Biome], r: Range) {
         let sx = r.sx as usize;
         let sy = r.sy as usize;
@@ -734,6 +716,95 @@ fn get_voronoi_src_range(r: Range) -> Range {
         sz: sz as u32,
         y,
         sy,
+    }
+}
+
+/// `genNetherScaled(nn, out, r, mc, sha)` — fill `cache` with
+/// Nether biome ids over the requested 3D `Range`. Bit-exact port
+/// of cubiomes' `genNetherScaled`: at `r.scale == 1` uses voronoi
+/// access at 1:4 scale; otherwise calls [`NetherNoise::map_nether_3d`]
+/// directly with the requested scale.
+///
+/// The caller is responsible for picking the right MC version (the
+/// Nether biome generator is identical for all 1.16+ versions, so
+/// no `mc` parameter is needed here — cubiomes accepts one for API
+/// symmetry but ignores it). For pre-1.16.1, fill with
+/// `nether_wastes` manually.
+///
+/// Most callers should use [`Generator::gen_biomes`] instead; this
+/// lower-level helper is for code that has a [`NetherNoise`]
+/// without going through a [`Generator`].
+pub fn gen_nether_scaled(nn: &NetherNoise, cache: &mut [Biome], r: Range, sha: u64) {
+    if r.scale == 1 {
+        gen_nether_voronoi(nn, cache, r, sha);
+        return;
+    }
+    let total = r.cell_count();
+    let mut buf = vec![0_i32; total];
+    nn.map_nether_3d(
+        &mut buf,
+        r.x,
+        r.y,
+        r.z,
+        r.sx as usize,
+        r.sy as usize,
+        r.sz as usize,
+        r.scale,
+        1.0,
+    );
+    for (dst, src) in cache.iter_mut().zip(buf.iter()) {
+        *dst = Biome(*src);
+    }
+}
+
+/// Nether scale=1 voronoi access — `genNetherScaled` scale=1 branch.
+/// Standalone equivalent of [`Generator::gen_biomes_nether_voronoi`].
+pub fn gen_nether_voronoi(nn: &NetherNoise, cache: &mut [Biome], r: Range, sha: u64) {
+    let sx = r.sx as usize;
+    let sy = r.sy as usize;
+    let sz = r.sz as usize;
+    let total = sx * sy * sz;
+    let (src, s_x, s_y, s_z, s_sx, s_sz) = if total > 1 {
+        let s = get_voronoi_src_range(r);
+        let s_total = (s.sx as usize) * (s.sy as usize) * (s.sz as usize);
+        let mut buf = vec![0_i32; s_total];
+        nn.map_nether_3d(
+            &mut buf,
+            s.x,
+            s.y,
+            s.z,
+            s.sx as usize,
+            s.sy as usize,
+            s.sz as usize,
+            4,
+            1.0,
+        );
+        (Some(buf), s.x, s.y, s.z, s.sx as usize, s.sz as usize)
+    } else {
+        (None, 0, 0, 0, 0, 0)
+    };
+    let mut p = 0_usize;
+    for k in 0..sy {
+        for j in 0..sz {
+            for i in 0..sx {
+                let (x4, y4, z4) = crate::layer::ops::voronoi::voronoi_access_3d(
+                    sha,
+                    r.x + i as i32,
+                    r.y + k as i32,
+                    r.z + j as i32,
+                );
+                let id = if let Some(src) = &src {
+                    let lx = (x4 - s_x) as usize;
+                    let ly = (y4 - s_y) as usize;
+                    let lz = (z4 - s_z) as usize;
+                    src[ly * s_sx * s_sz + lz * s_sx + lx]
+                } else {
+                    nn.get_nether_biome(x4, y4, z4).0.0
+                };
+                cache[p] = Biome(id);
+                p += 1;
+            }
+        }
     }
 }
 
