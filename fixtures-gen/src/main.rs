@@ -2268,11 +2268,13 @@ pub struct ViableStructurePosRecord {
 }
 
 fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
-    // Nether: Fortress (1.0+), Bastion 1.16.1-1.17 only (1.18+
-    // needs getVariant), Ruined_Portal_N (1.16.1+).
+    // Nether: Fortress (1.0+), Bastion 1.16.1+ (with getVariant
+    // path for 1.18+), Ruined_Portal_N (1.16.1+).
     // End: End_City (1.9+), End_Gateway (1.13+).
-    let combos: [(i32, i32, i32); 12] = [
+    // Overworld 1.18+: L_feature path + Village + always-viable.
+    let combos: [(i32, i32, i32); 24] = [
         // (mc, dim, structure_type)
+        // Nether
         (10, -1, 18), // V1_7 Nether Fortress (returns true)
         (17, -1, 18), // V1_14 Nether Fortress
         (19, -1, 18), // V1_16_1 Nether Fortress 1.18- (returns true)
@@ -2283,8 +2285,22 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
         (28, -1, 19), // V1_21 Nether Bastion
         (22, -1, 18), // V1_18 Nether Fortress (bastion-exclusion check)
         (19, -1, 12), // V1_16_1 Nether Ruined_Portal_N
-        (15, 1, 20),  // V1_12 End EndCity
-        (22, 1, 20),  // V1_18 End EndCity
+        // End
+        (15, 1, 20), // V1_12 End EndCity
+        (22, 1, 20), // V1_18 End EndCity
+        // Overworld 1.18+
+        (22, 0, 1),  // V1_18 OW Desert_Pyramid
+        (22, 0, 2),  // V1_18 OW Jungle_Temple
+        (22, 0, 3),  // V1_18 OW Swamp_Hut
+        (22, 0, 4),  // V1_18 OW Igloo
+        (22, 0, 5),  // V1_18 OW Village
+        (22, 0, 6),  // V1_18 OW Ocean_Ruin
+        (22, 0, 7),  // V1_18 OW Shipwreck
+        (22, 0, 14), // V1_18 OW Treasure
+        (22, 0, 9),  // V1_18 OW Mansion
+        (22, 0, 11), // V1_18 OW Ruined_Portal (always viable)
+        (22, 0, 17), // V1_18 OW Geode (always viable)
+        (22, 0, 15), // V1_18 OW Mineshaft (always viable)
     ];
     let per_combo: u64 = 64;
     let total = combos.len() as u64 * per_combo;

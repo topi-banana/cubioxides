@@ -6,6 +6,8 @@
 //! `is_viable_structure_pos` (which samples biomes around the
 //! candidate point) lands in a follow-up.
 
+#![allow(clippy::collapsible_match, clippy::needless_return)]
+
 use crate::biome::Biome;
 use crate::finder::variant::get_variant;
 use crate::finder::{StructureType, get_structure_config, get_structure_pos};
@@ -177,10 +179,139 @@ pub fn is_viable_structure_pos(
     if dim == Dimension::End {
         return viable_end(structure_type, g, chunk_x, chunk_z);
     }
-    // Overworld: requires the mapViableBiome layer hook + getVariant.
+    // Overworld: 1.18+ uses BiomeNoise sampling and does NOT need the
+    // legacy `mapViableBiome` / `mapViableShore` layer hooks; pre-1.18
+    // does need them for performance, but we can match cubiomes
+    // bit-exactly by skipping the early-exit optimisation and just
+    // doing the final biome check at the standard sample point.
+    if g.mc.is_at_least(MCVersion::V1_18) {
+        return viable_overworld_modern(structure_type, g, x, z, chunk_x, chunk_z);
+    }
     unimplemented!(
-        "Overworld is_viable_structure_pos requires the mapViableBiome layer hook (follow-up stage)"
+        "Pre-1.18 Overworld is_viable_structure_pos requires more `getStructureConfig` + biome-check work (follow-up stage)"
     );
+}
+
+#[allow(clippy::too_many_lines)]
+fn viable_overworld_modern(
+    structure_type: StructureType,
+    g: &Generator,
+    x: i32,
+    z: i32,
+    chunk_x: i64,
+    chunk_z: i64,
+) -> bool {
+    use StructureType::*;
+    match structure_type {
+        // Always-viable / unsupported gates first.
+        Mineshaft => return true,
+        RuinedPortal | RuinedPortalN => return g.mc.is_at_least(MCVersion::V1_16_1),
+        Geode => return g.mc.is_at_least(MCVersion::V1_17),
+
+        Village => return viable_village_modern(g, x, z, chunk_x, chunk_z),
+
+        // L_feature path (1.18+: sample at chunkX*4+2, y=319>>2).
+        DesertPyramid | JungleTemple | SwampHut | OceanRuin | Shipwreck | Treasure | Igloo
+        | TrailRuins => {
+            // Per-structure MC gates from cubiomes.
+            match structure_type {
+                TrailRuins => {
+                    if g.mc.is_before(MCVersion::V1_20) {
+                        return false;
+                    }
+                }
+                OceanRuin | Shipwreck | Treasure => {
+                    if g.mc.is_before(MCVersion::V1_13) {
+                        return false;
+                    }
+                }
+                Igloo => {
+                    if g.mc.is_before(MCVersion::V1_9) {
+                        return false;
+                    }
+                }
+                _ => {}
+            }
+            let sample_x = (chunk_x * 4 + 2) as i32;
+            let sample_z = (chunk_z * 4 + 2) as i32;
+            let id = modern_biome_at_scale0(g, sample_x, 319 >> 2, sample_z);
+            if id < 0 {
+                return false;
+            }
+            is_viable_feature_biome(g.mc, structure_type, id)
+        }
+
+        DesertWell => {
+            let id = modern_biome_at_scale0(g, x >> 2, 319 >> 2, z >> 2);
+            if id < 0 {
+                return false;
+            }
+            is_viable_feature_biome(g.mc, structure_type, id)
+        }
+
+        Mansion => {
+            // 1.18+: cubiomes' TODO note — biome check at center,
+            // ignoring the surface-height minimum.
+            let sample_x = (chunk_x * 16 + 7) as i32;
+            let sample_z = (chunk_z * 16 + 7) as i32;
+            let id = g.biome_at(4, sample_x >> 2, 319 >> 2, sample_z >> 2).0;
+            if id < 0 {
+                return false;
+            }
+            is_viable_feature_biome(g.mc, structure_type, id)
+        }
+
+        // Bastion / Fortress are Nether-only — should never reach
+        // here. Feature is pre-1.13 only. Defer Monument / Outpost /
+        // Ancient_City / Trial_Chambers / EndCity / EndGateway /
+        // EndIsland to follow-up sub-stages.
+        Feature | Monument | Outpost | AncientCity | TrialChambers | EndCity | EndGateway
+        | EndIsland | Fortress | Bastion => {
+            unimplemented!(
+                "Modern Overworld is_viable_structure_pos: {structure_type:?} not yet ported"
+            )
+        }
+    }
+}
+
+/// Cubiomes' `getBiomeAt(g, 0, x, y, z)` for 1.18+ Overworld
+/// resolves to `genBiomeNoise3D(..., scale=1, mid=0)` which is
+/// equivalent to sampling `BiomeNoise` directly at `(x, y, z)`
+/// (scale-4 cell coords with no voronoi). Rust's
+/// `Generator::biome_at` rejects scale=0 explicitly, so we bypass
+/// it here.
+fn modern_biome_at_scale0(g: &Generator, x: i32, y: i32, z: i32) -> i32 {
+    let bn = g
+        .biome_noise
+        .as_ref()
+        .expect("modern Overworld must have BiomeNoise");
+    bn.sample(x, y, z, 0).0
+}
+
+/// 1.18+ Village viability: per-biome `getVariant` loop with a
+/// biome-check at the variant centroid. Mirrors cubiomes' inner
+/// `vv[]` loop.
+fn viable_village_modern(g: &Generator, x: i32, z: i32, chunk_x: i64, chunk_z: i64) -> bool {
+    use crate::finder::variant::get_variant;
+    // Village biomes cubiomes 1.18+ tries in order: plains, desert,
+    // savanna, taiga, snowy_tundra.
+    const VV: [i32; 5] = [1, 2, 35, 5, 12];
+    const MEADOW: i32 = 177;
+    for vi in VV {
+        let Some(sv) = get_variant(StructureType::Village, g.mc, g.seed, x, z, vi) else {
+            continue;
+        };
+        let sample_x =
+            (((chunk_x * 32 + 2 * i64::from(sv.x) + i64::from(sv.sx) - 1) / 2) >> 2) as i32;
+        let sample_z =
+            (((chunk_z * 32 + 2 * i64::from(sv.z) + i64::from(sv.sz) - 1) / 2) >> 2) as i32;
+        let sample_y = 319 >> 2;
+        let id = modern_biome_at_scale0(g, sample_x, sample_y, sample_z);
+        if id == vi || (id == MEADOW && vi == 1) {
+            return true;
+        }
+    }
+    false
 }
 
 fn viable_nether(
