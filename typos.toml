@@ -21,6 +21,9 @@ splat = "splat"
 pn = "pn"
 xr = "xr"
 ot = "ot"
+# `mch` = abbreviation for "map_approx_height cache" used in
+# debug-investigation fixtures and tests.
+mch = "mch"
 
 [files]
 extend-exclude = ["fixtures/**", "target/**", "Cargo.lock"]
