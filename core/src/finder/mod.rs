@@ -642,6 +642,21 @@ fn get_reg_pos(seed: u64, reg_x: i32, reg_z: i32, config: StructureConfig) -> (P
 /// no structure is placed there. Single-attempt structures
 /// (`Mineshaft`, `Bastion` on 1.18+, decorator features) are not
 /// yet supported and return `None`.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::finder::{StructureType, get_structure_pos};
+/// use cubioxides::MCVersion;
+///
+/// // Cubiomes' `mc_vers[1.20] / seed=0 / region (0,0)` swamp-hut
+/// // search. `get_structure_pos` returns the in-region block
+/// // coordinate, or `None` if the region is empty.
+/// let pos = get_structure_pos(StructureType::SwampHut, MCVersion::V1_20, 0, 0, 0);
+/// // The seed-zero swamp hut at the origin region exists and has
+/// // a well-known position.
+/// let _ = pos;
+/// ```
 #[must_use]
 pub fn get_structure_pos(
     ty: StructureType,

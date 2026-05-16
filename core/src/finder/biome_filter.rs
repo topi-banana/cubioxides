@@ -152,6 +152,24 @@ pub struct BiomeFilter {
 ///
 /// **IDs outside `[0, 64) ∪ [128, 192)` cause cubiomes to abort the
 /// process via `exit(-1)`. We return `None` in that case instead.**
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::finder::{check_for_biomes, setup_biome_filter};
+/// use cubioxides::{Dimension, Generator, MCVersion, Range};
+///
+/// // Ask "does this region contain plains (id=1)?". `required`
+/// // lists biomes the area *must* contain; `excluded` is for
+/// // biomes the area must *not* contain; `matchany` requires at
+/// // least one of the listed biomes to appear.
+/// let filter = setup_biome_filter(MCVersion::V1_16_1, 0, &[1], &[], &[])
+///     .expect("plains is a valid id");
+///
+/// let mut g = Generator::new(MCVersion::V1_16_1, 0);
+/// let range = Range { scale: 4, x: 0, z: 0, sx: 16, sz: 16, y: 0, sy: 1 };
+/// let _result = check_for_biomes(&mut g, range, Dimension::Overworld, 0, &filter);
+/// ```
 #[must_use]
 pub fn setup_biome_filter(
     mc: MCVersion,
