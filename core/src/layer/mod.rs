@@ -1,11 +1,15 @@
 //! Pre-1.18 layered biome generation pipeline.
 //!
-//! Ports of cubiomes' `layers.c`. Each `mapfunc_t` from the C source
-//! becomes a free function under `layer::ops` taking a slice for the
-//! output grid and a `start_seed` (the seed produced by the world-seed
-//! pipeline for this particular layer). Higher-level structures
-//! (`Layer`, `LayerStack`, the DAG dispatch) land in later M3
-//! sub-stages as more `mapfunc_t`s come online.
+//! Ports of cubiomes' `layers.c` and `generator.c`'s
+//! layer-stack helpers. Each `mapfunc_t` from the C source becomes
+//! a free function under [`ops`], taking a slice for the output
+//! grid and a `start_seed` (the seed produced by the world-seed
+//! pipeline for this particular layer). The higher-level
+//! [`LayerStack`] holds the DAG, [`setup_layer_stack`] configures
+//! per-MC structure, [`set_layer_seed`] propagates the world seed
+//! recursively, [`gen_area`] runs the DAG, and
+//! [`apply_force_ocean_variants`] injects the `mapOceanMixMod`
+//! wrappers for the `FORCE_OCEAN_VARIANTS` flag.
 
 pub mod cache;
 pub mod dispatch;
