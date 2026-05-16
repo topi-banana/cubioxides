@@ -125,6 +125,24 @@ impl Generator {
     /// Cubiomes' `setupGenerator(g, mc, flags)`. Static state is
     /// initialised based on `mc`; seeding happens in
     /// [`Self::apply_seed`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::{Biome, Dimension, Generator, MCVersion, Range};
+    ///
+    /// let mut g = Generator::new(MCVersion::V1_18, 0);
+    /// g.apply_seed(Dimension::Overworld, 0xdead_beef);
+    /// let biome = g.biome_at(4, 0, 64, 0);
+    /// assert!(biome.id() >= 0);
+    ///
+    /// // Bulk sampling over an 8×1×8 area at scale=4.
+    /// let mut cache = vec![Biome::NONE; 64];
+    /// g.gen_biomes(
+    ///     &mut cache,
+    ///     Range { scale: 4, x: 0, z: 0, sx: 8, sz: 8, y: 64, sy: 1 },
+    /// );
+    /// ```
     #[must_use]
     pub fn new(mc: MCVersion, flags: u32) -> Self {
         let overworld_kind = if mc.is_at_least(MCVersion::V1_18) {
