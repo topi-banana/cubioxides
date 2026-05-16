@@ -639,6 +639,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("end_islands fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_end_island_height_fixture(&fixtures_dir.join("end_island_height.bin")) {
+        eprintln!("end_island_height fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2101,6 +2105,97 @@ pub struct EndIslandsRecord {
     pub seed: u64,
     /// `[x0, y0, z0, r0, x1, y1, z1, r1]`. Unused slots are zero.
     pub islands: [i32; 8],
+}
+
+/// `mapEndIslandHeight` parity record (kind = 58). Each record
+/// reduces a `(w, h)` height grid to a `(min, max, hash32)` triple
+/// — full grids would balloon the fixture, but the digest catches
+/// any per-cell drift.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct EndIslandHeightRecord {
+    pub mc: i32,
+    pub x: i32,
+    pub z: i32,
+    pub w: i32,
+    pub h: i32,
+    pub scale: i32,
+    pub seed: u64,
+    pub y_min_bits: u32,
+    pub y_max_bits: u32,
+    pub digest: u32,
+    pub pad: u32,
+}
+
+fn write_end_island_height_fixture(path: &Path) -> std::io::Result<()> {
+    // 1.13+ — pre-1.13 is unsupported by cubiomes anyway. Pre-1.14
+    // skips the outer-ring fallback in mapEndBiome but the island
+    // search logic itself is unchanged.
+    let mc_pool: [i32; 4] = [17, 20, 22, 28];
+    // Probe `scale = 1, 4, 16` with a small grid each — full
+    // 16-block grids would inflate the fixture per record.
+    let scales: [(i32, i32, i32); 3] = [(1, 16, 16), (4, 8, 8), (16, 4, 4)];
+    let per_combo: u64 = 30;
+    let total = mc_pool.len() as u64 * scales.len() as u64 * per_combo;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 58, total)?;
+
+    let mut rng_state: u64 = 0xfeed_face_dead_c0de;
+    for &mc in &mc_pool {
+        for &(scale, w, h) in &scales {
+            for _ in 0..per_combo {
+                rng_state = lcg_step(rng_state);
+                let seed = rng_state;
+                rng_state = lcg_step(rng_state);
+                // Block coords / scale. Pick from a chunk-ish range
+                // near the End origin where small_end_islands are
+                // most common.
+                let x = ((rng_state >> 32) as i32) % 64 - 32;
+                rng_state = lcg_step(rng_state);
+                let z = ((rng_state >> 32) as i32) % 64 - 32;
+                let mut y = vec![0.0_f32; (w * h) as usize];
+                unsafe {
+                    ffi::cubiomes_call_map_end_island_height(
+                        mc,
+                        seed,
+                        x,
+                        z,
+                        w,
+                        h,
+                        scale,
+                        y.as_mut_ptr(),
+                    );
+                }
+                let mut y_min = f32::INFINITY;
+                let mut y_max = f32::NEG_INFINITY;
+                let mut digest: u32 = 0;
+                for &v in &y {
+                    if v < y_min {
+                        y_min = v;
+                    }
+                    if v > y_max {
+                        y_max = v;
+                    }
+                    digest = hash32(digest.wrapping_add(v.to_bits()));
+                }
+                let rec = EndIslandHeightRecord {
+                    mc,
+                    x,
+                    z,
+                    w,
+                    h,
+                    scale,
+                    seed,
+                    y_min_bits: y_min.to_bits(),
+                    y_max_bits: y_max.to_bits(),
+                    digest,
+                    pad: 0,
+                };
+                file.write_all(bytemuck::bytes_of(&rec))?;
+            }
+        }
+    }
+    file.flush()
 }
 
 fn write_end_islands_fixture(path: &Path) -> std::io::Result<()> {
@@ -4309,6 +4404,16 @@ mod ffi {
             chunk_x: c_int,
             chunk_z: c_int,
             out_xyzr: *mut c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_map_end_island_height(
+            mc: c_int,
+            seed: u64,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+            scale: c_int,
+            y: *mut f32,
         ) -> c_int;
         pub fn cubiomes_call_get_mineshafts(
             mc: c_int,
