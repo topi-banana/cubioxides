@@ -33,6 +33,7 @@ fn main() -> ExitCode {
         }
         "verify" => verify_ffi(),
         "debug-monument-cache" => debug_monument_cache(),
+        "debug-mch-cache" => debug_mch_cache(),
         "rng" => regenerate_rng(),
         "noise" => regenerate_noise(),
         "layers" => regenerate_layers(),
@@ -68,6 +69,68 @@ fn print_help() {
     eprintln!("  layers           Generate layer fixtures (continent)");
     eprintln!("  regenerate-all   Regenerate every fixture under fixtures/");
     eprintln!("  help             Show this help");
+}
+
+/// Dump cubiomes' `gen_biomes` output for the legacy
+/// `map_approx_height` Range that triggers a V1_16_1 mismatch
+/// in stage 14b's parity fixture (cell-by-cell diff with my
+/// Rust gen_biomes localises whether the bug is in the layer
+/// chain or in the per-cell legacy math).
+fn debug_mch_cache() -> ExitCode {
+    // Failing seed/coords from map_approx_height_parity (V1_16_1
+    // record 37): seed=0x7edf7985db067c7d, x=-156, z=-325, w=h=8.
+    // `map_approx_height_legacy` sets up Range
+    // {scale=4, x=x-2, z=z-2, sx=w+5, sz=h+5, y=0, sy=1}
+    // = {scale=4, x=-158, z=-327, sx=13, sz=13, y=0, sy=1}.
+    let mc: c_int = 19; // cubiomes MC_1_16_1
+    let seed: u64 = 0x7edf_7985_db06_7c7d;
+    let (x, z, sx, sz, y, sy) = (-158_i32, -327_i32, 13_i32, 13_i32, 0_i32, 1_i32);
+    let mut cache = vec![0_i32; (sx * sz * sy) as usize];
+    let err = unsafe {
+        ffi::cubiomes_call_gen_biomes(
+            mc,
+            0,
+            0, // DIM_OVERWORLD
+            seed,
+            4,
+            x,
+            z,
+            sx,
+            sz,
+            y,
+            sy,
+            cache.as_mut_ptr(),
+        )
+    };
+    if err != 0 {
+        eprintln!("cubiomes gen_biomes returned err={err}");
+        return ExitCode::FAILURE;
+    }
+    let out_path = workspace_root()
+        .join("fixtures")
+        .join("layers")
+        .join("debug_mch_cache.bin");
+    if let Some(parent) = out_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let mut file = match File::create(&out_path) {
+        Ok(f) => BufWriter::new(f),
+        Err(e) => {
+            eprintln!("creating {}: {e}", out_path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(e) = file.write_all(bytemuck::cast_slice(&cache)) {
+        eprintln!("writing {}: {e}", out_path.display());
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "Wrote {} ({} i32 biome ids) to {}",
+        cache.len(),
+        cache.len(),
+        out_path.display()
+    );
+    ExitCode::SUCCESS
 }
 
 /// Dump cubiomes' gen_biomes output for the exact Range that the

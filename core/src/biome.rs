@@ -482,7 +482,11 @@ impl Biome {
         if id1 == id2 {
             return true;
         }
-        if !mc.is_at_least(crate::mc_version::MCVersion::V1_16) && (id1 == 38 || id1 == 39) {
+        // Cubiomes: `mc <= MC_1_15` — the badlands_plateau /
+        // wooded_badlands_plateau pair is considered similar only
+        // before 1.16.1. Rust's `is_before(V1_16_1)` mirrors this
+        // exactly (V1_16_1 is the version just after V1_15).
+        if mc.is_before(crate::mc_version::MCVersion::V1_16_1) && (id1 == 38 || id1 == 39) {
             return id2 == 38 || id2 == 39;
         }
         Self::get_category_id(mc, id1) == Self::get_category_id(mc, id2)
