@@ -611,6 +611,14 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("quadbase fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_stronghold_fixture(&fixtures_dir.join("stronghold_init.bin")) {
+        eprintln!("stronghold fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_mineshaft_fixture(&fixtures_dir.join("mineshaft.bin")) {
+        eprintln!("mineshaft fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1901,6 +1909,130 @@ fn write_quadbase_fixture(path: &Path) -> std::io::Result<()> {
             feature24_radius_bits: feat24.to_bits(),
             cst,
             low20,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `initFirstStronghold` parity record (kind = 51). `(mc, seed) →
+/// (first_x, first_z)` of the first stronghold's approximate
+/// position.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct StrongholdInitRecord {
+    pub mc: i32,
+    pub pad: i32,
+    pub seed: u64,
+    pub first_x: i32,
+    pub first_z: i32,
+}
+
+const STRONGHOLD_INIT_RECORDS: u64 = 2048;
+
+fn write_stronghold_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 51, STRONGHOLD_INIT_RECORDS)?;
+
+    let mc_pool: [i32; 6] = [3, 10, 12, 15, 22, 28];
+    let mut rng_state: u64 = 0x0000_5478_0000_0011;
+    for _ in 0..STRONGHOLD_INIT_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let mc = mc_pool[(rng_state as usize) % mc_pool.len()];
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        let mut px: c_int = 0;
+        let mut pz: c_int = 0;
+        unsafe {
+            ffi::cubiomes_call_init_first_stronghold(
+                mc,
+                seed,
+                std::ptr::from_mut(&mut px),
+                std::ptr::from_mut(&mut pz),
+            );
+        }
+        let rec = StrongholdInitRecord {
+            mc,
+            pad: 0,
+            seed,
+            first_x: px,
+            first_z: pz,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `getMineshafts` parity record (kind = 52). Records the total
+/// count plus an XOR-folded digest of the (x, z) pair stream over
+/// a small chunk rectangle.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct MineshaftRecord {
+    pub mc: i32,
+    pub cx0: i32,
+    pub cz0: i32,
+    pub cx1: i32,
+    pub cz1: i32,
+    pub count: i32,
+    pub digest: u32,
+    pub pad0: u32,
+    pub seed: u64,
+}
+
+const MINESHAFT_RECORDS: u64 = 256;
+const MINESHAFT_N_MAX: i32 = 4096;
+
+#[allow(clippy::many_single_char_names)]
+fn write_mineshaft_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 52, MINESHAFT_RECORDS)?;
+
+    let mc_pool: [i32; 4] = [3, 15, 22, 28];
+    let mut rng_state: u64 = 0x0000_8e8e_88a8_0000;
+    for _ in 0..MINESHAFT_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let mc = mc_pool[(rng_state as usize) % mc_pool.len()];
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let cx0 = (rng_state as i32) % 256 - 128;
+        rng_state = lcg_step(rng_state);
+        let cz0 = (rng_state as i32) % 256 - 128;
+        rng_state = lcg_step(rng_state);
+        let width = ((rng_state & 0x3f) as i32) + 1;
+        let height = ((rng_state >> 8) & 0x3f) as i32 + 1;
+        let cx1 = cx0 + width;
+        let cz1 = cz0 + height;
+
+        let mut out_xz = vec![0_i32; (MINESHAFT_N_MAX * 2) as usize];
+        let mut total: c_int = 0;
+        unsafe {
+            ffi::cubiomes_call_get_mineshafts(
+                mc,
+                seed,
+                cx0,
+                cz0,
+                cx1,
+                cz1,
+                out_xz.as_mut_ptr(),
+                MINESHAFT_N_MAX,
+                std::ptr::from_mut(&mut total),
+            );
+        }
+        let written = (total as usize).min(MINESHAFT_N_MAX as usize);
+        let digest = digest_i32_slice(&out_xz[..written * 2]);
+
+        let rec = MineshaftRecord {
+            mc,
+            cx0,
+            cz0,
+            cx1,
+            cz1,
+            count: total,
+            digest,
+            pad0: 0,
+            seed,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
     }
@@ -3885,6 +4017,23 @@ mod ffi {
             az: c_int,
         ) -> f32;
         pub fn cubiomes_call_get_quad_hut_cst(low20: u64) -> c_int;
+        pub fn cubiomes_call_init_first_stronghold(
+            mc: c_int,
+            seed: u64,
+            px: *mut c_int,
+            pz: *mut c_int,
+        );
+        pub fn cubiomes_call_get_mineshafts(
+            mc: c_int,
+            seed: u64,
+            cx0: c_int,
+            cz0: c_int,
+            cx1: c_int,
+            cz1: c_int,
+            out_xz: *mut c_int,
+            n_max: c_int,
+            total: *mut c_int,
+        ) -> c_int;
         pub fn cubiomes_call_gen_biomes(
             mc: c_int,
             flags: u32,

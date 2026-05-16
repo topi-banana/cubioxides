@@ -89,6 +89,29 @@ int cubiomes_call_get_quad_hut_cst(uint64_t low20) {
     return getQuadHutCst(low20);
 }
 
+void cubiomes_call_init_first_stronghold(int mc, uint64_t seed, int *px,
+                                         int *pz) {
+    Pos p = initFirstStronghold(NULL, mc, seed);
+    *px = p.x;
+    *pz = p.z;
+}
+
+#include <stdlib.h>
+int cubiomes_call_get_mineshafts(int mc, uint64_t seed, int cx0, int cz0,
+                                 int cx1, int cz1, int *out_xz, int n_max,
+                                 int *total) {
+    Pos *buf = (Pos *)malloc((size_t)n_max * sizeof(Pos));
+    int n = getMineshafts(mc, seed, cx0, cz0, cx1, cz1, buf, n_max);
+    int written = n < n_max ? n : n_max;
+    for (int i = 0; i < written; i++) {
+        out_xz[i * 2 + 0] = buf[i].x;
+        out_xz[i * 2 + 1] = buf[i].z;
+    }
+    *total = n;
+    free(buf);
+    return written;
+}
+
 /* getStructurePos(type, mc, seed, regX, regZ, pos) — write the
  * attempt position into pos_x / pos_z. Returns the cubiomes valid
  * flag (1 = structure placed, 0 = no structure in this region). */
