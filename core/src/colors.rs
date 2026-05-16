@@ -218,6 +218,35 @@ pub fn biomes_to_image(
     contains_invalid
 }
 
+/// `savePPM(path, pixels, sx, sy)` — write an RGB pixel buffer
+/// to disk as a binary [PPM P6] file. Bit-exact port of cubiomes'
+/// helper of the same name.
+///
+/// `pixels` must contain `3 * sx * sy` bytes in row-major
+/// (red, green, blue) order. Returns `Ok(())` on full success.
+/// File handling errors propagate via `std::io::Error`.
+///
+/// Gated behind `not(wasm32)` since wasm32-unknown-unknown has no
+/// filesystem; callers on wasm should use [`biomes_to_image`] and
+/// pass the resulting buffer to their host environment instead.
+///
+/// [PPM P6]: https://en.wikipedia.org/wiki/Netpbm
+#[cfg(not(target_arch = "wasm32"))]
+pub fn save_ppm(path: &std::path::Path, pixels: &[u8], sx: u32, sy: u32) -> std::io::Result<()> {
+    use std::io::Write;
+    let expected = 3 * sx as usize * sy as usize;
+    assert!(
+        pixels.len() >= expected,
+        "save_ppm: pixels buffer too small ({} < {})",
+        pixels.len(),
+        expected
+    );
+    let mut file = std::fs::File::create(path)?;
+    write!(file, "P6\n{sx} {sy}\n255\n")?;
+    file.write_all(&pixels[..expected])?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,6 +298,21 @@ mod tests {
         assert!(invalid);
         // the_void palette is [0, 0, 0]; saturating_sub(40) keeps it 0.
         assert_eq!(pixels, vec![0, 0, 0]);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn save_ppm_writes_p6_header_and_pixels() {
+        // 2x1 image: red, green.
+        let pixels: [u8; 6] = [0xff, 0x00, 0x00, 0x00, 0xff, 0x00];
+        let dir = std::env::temp_dir();
+        let path = dir.join("cubioxides_save_ppm_test.ppm");
+        save_ppm(&path, &pixels, 2, 1).expect("write");
+        let bytes = std::fs::read(&path).expect("read");
+        // Header: "P6\n2 1\n255\n" = 11 bytes, then 6 pixel bytes.
+        assert_eq!(&bytes[..11], b"P6\n2 1\n255\n");
+        assert_eq!(&bytes[11..], &pixels);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
