@@ -131,6 +131,21 @@ pub fn is_quad_base_feature_24_classic(sconf: StructureConfig, seed: u64) -> boo
 /// quad-structure filter for the `regionSize = 32, chunkRange = 24,
 /// radius = 128` configuration. Returns the enclosing-sphere radius
 /// (in blocks) on success, or `None` if `seed` doesn't qualify.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::MCVersion;
+/// use cubioxides::finder::{StructureType, get_structure_config, is_quad_base_feature_24};
+///
+/// // Lower-level swamp-hut quad-base check used by `is_quad_base`
+/// // when `radius == 128`. The `(ax, ay, az)` bbox is the spawn box
+/// // — `(8, 8, 10)` matches cubiomes' SwampHut footprint with the
+/// // +1 inclusive margin already applied.
+/// let sconf = get_structure_config(StructureType::SwampHut, MCVersion::V1_18)
+///     .expect("SwampHut config exists for 1.18");
+/// let _maybe = is_quad_base_feature_24(sconf, 0xdead_beef, 8, 8, 10);
+/// ```
 #[must_use]
 pub fn is_quad_base_feature_24(
     sconf: StructureConfig,
