@@ -86,6 +86,19 @@ impl OctaveNoise {
     /// `omin` is the first octave index (typically negative); `len` is the
     /// number of octaves to allocate. The caller must ensure
     /// `len >= 1 && omin + len - 1 <= 0`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::{JavaRng, OctaveNoise};
+    ///
+    /// // Allocate 4 octaves spanning indices [-3, 0] — a common
+    /// // configuration for 1.7-1.17 overworld temperature / humidity.
+    /// let mut rng = JavaRng::new(0xdead_beef);
+    /// let octaves = OctaveNoise::from_java(&mut rng, -3, 4);
+    /// assert_eq!(octaves.len(), 4);
+    /// let _y = octaves.sample(1.0, 2.0, 3.0);
+    /// ```
     #[must_use]
     pub fn from_java(rng: &mut JavaRng, omin: i32, len: i32) -> Self {
         let end = omin + len - 1;
