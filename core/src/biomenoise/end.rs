@@ -38,6 +38,20 @@ pub struct EndNoise {
 impl EndNoise {
     /// `setEndSeed(en, mc, seed)` — seed a Java RNG with `seed`,
     /// skip 17,292 calls, then `perlinInit`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cubioxides::MCVersion;
+    /// use cubioxides::biomenoise::EndNoise;
+    ///
+    /// // The End uses a single simplex-2D Perlin noise sampled at
+    /// // a fixed RNG offset (17292 calls in). Once seeded, the same
+    /// // `map_end_biome` output is reproducible across platforms.
+    /// let en = EndNoise::set_seed(MCVersion::V1_21, 0xdead_beef);
+    /// let mut out = vec![0i32; 16 * 16];
+    /// en.map_end_biome(&mut out, 0, 0, 16, 16);
+    /// ```
     #[must_use]
     pub fn set_seed(mc: MCVersion, seed: u64) -> Self {
         let mut rng = JavaRng::new(seed);
