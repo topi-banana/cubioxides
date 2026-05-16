@@ -1,4 +1,4 @@
-//! `checkForBiomes` — partial port.
+//! `checkForBiomes` — bit-exact-where-possible port.
 //!
 //! Cubiomes' `checkForBiomes` covers three paths:
 //! 1. Beta (`mc <= MC_B1_7`) — `genBiomes` + bitmask test.
@@ -8,17 +8,25 @@
 //!    randomised Monte-Carlo sampler that uses libc `rand()`
 //!    (non-portable, no bit-exact parity possible).
 //!
-//! Paths #1 and #2 are both supported here via the same simple
-//! "`gen_biomes` + bitmask" implementation: cubiomes' swap-map chain
-//! in path #2 is purely an early-exit optimisation, so the
-//! Pass/Fail answer is the same. We don't synthesise cubiomes'
-//! return-2 `ExclusionStop` outcome — callers should treat it as
-//! Pass for the exclusion filter. Path #3 still returns
-//! [`CheckForBiomesResult::Unsupported`]. A separate
-//! [`approx_prefilter_at_layer`] entrypoint exposes the
-//! `BF_APPROX` fast-reject prefilter from path #2 — it can prove a
-//! region cannot satisfy the filter, but cannot prove the
-//! converse.
+//! Paths #1 and #2, plus every non-Overworld dim, run through the
+//! same simple "`gen_biomes` + bitmask" implementation here.
+//! Cubiomes' swap-map chain in path #2 is purely an early-exit
+//! optimisation, so the Pass/Fail answer matches the exhaustive
+//! approach used here. cubiomes' return-2 `ExclusionStop`
+//! outcome is not synthesised — callers should treat it as Pass
+//! for the exclusion filter.
+//!
+//! Only path #3 (1.18+ Overworld) returns
+//! [`CheckForBiomesResult::Unsupported`]: cubiomes uses libc
+//! `rand()` for the Monte Carlo sampling phase, so the
+//! random-walk path can have false negatives that differ
+//! per-platform. The exhaustive Rust approach would give the
+//! *correct* answer but not the cubiomes-bit-exact one.
+//!
+//! A separate [`approx_prefilter_at_layer`] entrypoint exposes
+//! the `BF_APPROX` fast-reject prefilter from path #2 — it can
+//! prove a region cannot satisfy the filter, but cannot prove
+//! the converse.
 
 use crate::finder::biome_filter::BiomeFilter;
 use crate::generator::{Generator, Range};

@@ -1,12 +1,15 @@
-//! Structure variant data — `getVariant` partial port.
+//! Structure variant data — bit-exact port of cubiomes'
+//! `getVariant` from `finders.c`.
 //!
-//! Bit-exact port of the `Village` + `Bastion` arms of cubiomes'
-//! `getVariant` from `finders.c`. The full function covers
-//! `Village`, `Bastion`, `Ancient_City`, `Ruined_Portal`,
-//! `Monument`, `Igloo`, `Geode`, and `End_City`; this commit ships
-//! just the `Village` + `Bastion` arms, which is what
-//! `is_viable_structure_pos`'s 1.18+ Overworld and 1.18+ Nether
-//! paths consume. The remaining arms can be added on demand.
+//! Covers every per-structure variant decoder cubiomes implements:
+//! `Village` (per-biome 1.14+ table + pre-1.14 abandoned flag),
+//! `Bastion` (4 sub-types), `AncientCity`, `TrialChambers`,
+//! `Monument`, `DesertPyramid` / `JungleTemple` / `SwampHut`
+//! (the `Feature`/temple family share one helper), `Igloo` (with
+//! the basement RNG draw), `Geode`, and `RuinedPortal` /
+//! `RuinedPortalN` (with the per-biome shape/family fallback).
+//! Other types return `None` from [`get_variant`] — cubiomes does
+//! not define variants for them.
 
 #![allow(
     clippy::too_many_lines,
