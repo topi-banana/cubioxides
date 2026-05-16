@@ -39,6 +39,24 @@ pub const fn id_matches(id: i32, valid_b: u64, valid_m: u64) -> bool {
 /// matching-biome cell plus the number of matches found.
 ///
 /// `rng` is advanced in-place to match cubiomes' state mutation.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::biome::Biome;
+/// use cubioxides::finder::locate_biome;
+/// use cubioxides::rng::JavaRng;
+/// use cubioxides::{Dimension, Generator, MCVersion};
+///
+/// // Search for any forest cell within ±128 blocks of the origin.
+/// // The `valid_b` mask sets bits 0..128; here we just allow plains
+/// // (id=1) and forest (id=4).
+/// let mut g = Generator::new(MCVersion::V1_16_1, 0);
+/// g.apply_seed(Dimension::Overworld, 0xdead_beef);
+/// let mut rng = JavaRng::new(0);
+/// let valid_b = (1u64 << 1) | (1u64 << 4);
+/// let (_pos, _matches) = locate_biome(&g, 0, 64, 0, 128, valid_b, 0, &mut rng);
+/// ```
 #[must_use]
 pub fn locate_biome(
     g: &Generator,
