@@ -765,6 +765,27 @@ int cubiomes_call_gen_area_at(int mc, int large_biomes, uint64_t world_seed,
     return genArea(g.layers + layer_id_ord, out, x, z, w, h);
 }
 
+/* Run cubiomes' genArea at an arbitrary layer with a properly
+ * sized cache (matches cubiomes' allocCache(g, r) sizing). The
+ * `out` buffer must hold w*h cells (caller's responsibility). */
+int cubiomes_call_gen_area_at_with_cache(int mc, int large_biomes,
+                                         uint64_t world_seed,
+                                         int layer_id_ord, int *out,
+                                         int x, int z, int w, int h) {
+    Generator g;
+    setupGenerator(&g, mc, large_biomes ? LARGE_BIOMES : 0);
+    applySeed(&g, 0, world_seed);
+    Range r = {1, x, z, w, h, 0, 1};
+    int *cache = allocCache(&g, r);
+    if (!cache) return -1;
+    int err = genArea(g.ls.layers + layer_id_ord, cache, x, z, w, h);
+    if (err == 0) {
+        memcpy(out, cache, sizeof(int) * (size_t)w * h);
+    }
+    free(cache);
+    return err;
+}
+
 /* Run cubiomes' genArea at the per-version entry_1 (Voronoi1). */
 int cubiomes_call_gen_area_at_entry1(int mc, int large_biomes,
                                      uint64_t world_seed, int *out, int x,

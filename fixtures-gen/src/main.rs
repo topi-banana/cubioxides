@@ -73,10 +73,12 @@ fn print_help() {
 }
 
 /// Dump cubiomes' `gen_biomes` at scales 16, 64, 256 for the
-/// V1_16_1 divergent area (rectangle covering the cell range that
+/// `V1_16_1` divergent area (rectangle covering the cell range that
 /// `map_approx_height_legacy`'s scale-4 sample reads from). The
 /// matching Rust test diffs each scale to localise the first
-/// upstream layer where divergence appears.
+/// upstream layer where divergence appears. Also dumps the
+/// `BiomeEdge64` and `Zoom64Hills` parent rings used by `mapHills`.
+#[allow(clippy::too_many_lines)]
 fn debug_mch_scale() -> ExitCode {
     let mc: c_int = 19; // cubiomes MC_1_16_1
     let seed: u64 = 0x7edf_7985_db06_7c7d;
@@ -84,6 +86,75 @@ fn debug_mch_scale() -> ExitCode {
     // we want roughly (x>>2, z>>2) ± expansion = (-40, -82) to
     // (-36, -78), so let's grab a 6x6 area at scale 16. Similarly
     // for scale 64 and 256.
+    // Direct per-layer dumps via `allocCache` for the scale-64
+    // failing area. L_BIOME_EDGE_64 = ord 25, L_ZOOM_64_HILLS = 28,
+    // L_HILLS_64 = 29. We also dump the (6×6) parent ring used by
+    // mapHills so we can verify both inputs.
+    for (label, layer_ord, x, z, sx, sz) in [
+        (
+            "layer_biome_edge_64",
+            25_i32,
+            -11_i32,
+            -21_i32,
+            4_i32,
+            4_i32,
+        ),
+        ("layer_hills_64", 29_i32, -11_i32, -21_i32, 4_i32, 4_i32),
+        (
+            "layer_biome_edge_64_ring",
+            25_i32,
+            -12_i32,
+            -22_i32,
+            6_i32,
+            6_i32,
+        ),
+        (
+            "layer_zoom_64_hills_ring",
+            28_i32,
+            -12_i32,
+            -22_i32,
+            6_i32,
+            6_i32,
+        ),
+    ] {
+        let mut cache = vec![0_i32; (sx * sz) as usize];
+        let err = unsafe {
+            ffi::cubiomes_call_gen_area_at_with_cache(
+                mc,
+                0,
+                seed,
+                layer_ord,
+                cache.as_mut_ptr(),
+                x,
+                z,
+                sx,
+                sz,
+            )
+        };
+        if err != 0 {
+            eprintln!("cubiomes gen_area_at_with_cache err={err} at {label}");
+            return ExitCode::FAILURE;
+        }
+        let path = workspace_root()
+            .join("fixtures")
+            .join("layers")
+            .join(format!("debug_mch_{label}.bin"));
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let mut file = match File::create(&path) {
+            Ok(f) => BufWriter::new(f),
+            Err(e) => {
+                eprintln!("creating {}: {e}", path.display());
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Err(e) = file.write_all(bytemuck::cast_slice(&cache)) {
+            eprintln!("writing {}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
+        println!("Wrote {} cells to {}", cache.len(), path.display());
+    }
     for (label, scale, x, z, sx, sz) in [
         ("scale16", 16_i32, -41_i32, -83_i32, 8_i32, 8_i32),
         ("scale64", 64_i32, -11_i32, -21_i32, 4_i32, 4_i32),
@@ -134,9 +205,9 @@ fn debug_mch_scale() -> ExitCode {
 }
 
 /// Dump cubiomes' `gen_biomes` output for the legacy
-/// `map_approx_height` Range that triggers a V1_16_1 mismatch
+/// `map_approx_height` Range that triggers a `V1_16_1` mismatch
 /// in stage 14b's parity fixture (cell-by-cell diff with my
-/// Rust gen_biomes localises whether the bug is in the layer
+/// Rust `gen_biomes` localises whether the bug is in the layer
 /// chain or in the per-cell legacy math).
 fn debug_mch_cache() -> ExitCode {
     // Failing seed/coords from map_approx_height_parity (V1_16_1
@@ -195,7 +266,7 @@ fn debug_mch_cache() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Dump cubiomes' gen_biomes output for the exact Range that the
+/// Dump cubiomes' `gen_biomes` output for the exact Range that the
 /// failing Monument pre-1.18 viability check uses. The matching
 /// Rust test reads this fixture and compares cell-by-cell.
 fn debug_monument_cache() -> ExitCode {
@@ -203,7 +274,7 @@ fn debug_monument_cache() -> ExitCode {
     // The `areBiomesViable` radius-29 check sets up Range
     // {scale=4, x=-978, z=154, sx=16, sz=16, y=8, sy=1}.
     let mc: c_int = 15; // cubiomes MC_1_12
-    let seed: u64 = 0x72fdd558873e067e;
+    let seed: u64 = 0x72fd_d558_873e_067e;
     let (x, z, sx, sz, y, sy) = (-978_i32, 154_i32, 16_i32, 16_i32, 8_i32, 1_i32);
     let mut cache = vec![0_i32; (sx * sz * sy) as usize];
     let err = unsafe {
@@ -2423,7 +2494,7 @@ fn write_approx_surface_beta_fixture(path: &Path) -> std::io::Result<()> {
 }
 
 /// `isQuadBase` parity record (kind = 73). Tests the type
-/// dispatcher across (mc, struct_type, radius) combos for both the
+/// dispatcher across (mc, `struct_type`, radius) combos for both the
 /// fast radius=128 path and the generic radius path.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -2490,8 +2561,8 @@ fn write_is_quad_base_fixture(path: &Path) -> std::io::Result<()> {
 }
 
 /// `searchAll48` parity record (kind = 72). Each record covers a
-/// (start, end) 48-bit range with Swamp_Hut + radius=128 + the
-/// LOW20_QUAD_IDEAL constellations. `cnt` is the number of seeds
+/// (start, end) 48-bit range with `Swamp_Hut` + radius=128 + the
+/// `LOW20_QUAD_IDEAL` constellations. `cnt` is the number of seeds
 /// `is_quad_base` accepted in the range; `seeds[0..cnt]` is the
 /// list in cubiomes' iteration order.
 #[repr(C)]
@@ -2546,7 +2617,7 @@ fn write_search_all_48_fixture(path: &Path) -> std::io::Result<()> {
 
 /// `scanForQuads` parity record (kind = 71). For each (s48, x, z,
 /// w, h) tuple, captures the count + first N=8 quad-base hit
-/// positions returned by cubiomes' Swamp_Hut + radius=128 scan.
+/// positions returned by cubiomes' `Swamp_Hut` + radius=128 scan.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct ScanForQuadsRecord {
@@ -2974,8 +3045,8 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
 }
 
 /// `isViableFeatureBiome` parity record (kind = 66). One record per
-/// (mc, structure_type, biome_id) triple — cubiomes panics on
-/// unsupported types so we skip Feature / EndIsland / Geode.
+/// (mc, `structure_type`, `biome_id`) triple — cubiomes panics on
+/// unsupported types so we skip Feature / `EndIsland` / Geode.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct ViableFeatureBiomeRecord {
@@ -3092,6 +3163,7 @@ pub struct MapApproxHeightRecord {
     pub ids_digest: u32,
 }
 
+#[allow(clippy::many_single_char_names, clippy::inconsistent_digit_grouping)]
 fn write_map_approx_height_fixture(path: &Path) -> std::io::Result<()> {
     // (mc, dim) combinations covering each dispatch branch:
     //   - Overworld 1.7 (legacy layered 1.0-1.17 path)
@@ -3101,17 +3173,17 @@ fn write_map_approx_height_fixture(path: &Path) -> std::io::Result<()> {
     //   - End 1.18 (same)
     //   - Nether 1.18 (returns 127, y unwritten)
     //
-    // MC 1.16.1 (ord 19) is currently excluded — the legacy path
-    // diverges there in a way 1.7 doesn't; a follow-up stage will
-    // investigate (likely a per-version layer-stack edge case).
-    let combos: [(i32, i32); 6] = [(10, 0), (22, 0), (28, 0), (17, 1), (22, 1), (22, -1)];
+    // V1_16_1 (ord 19) is now included after fixing the
+    // `get_category_id` plateau threshold (stage 14d-3).
+    let combos: [(i32, i32); 7] =
+        [(10, 0), (19, 0), (22, 0), (28, 0), (17, 1), (22, 1), (22, -1)];
     let per_combo: u64 = 30;
     let (w, h) = (8_i32, 8_i32);
     let total = combos.len() as u64 * per_combo;
     let mut file = BufWriter::new(File::create(path)?);
     write_header(&mut file, 64, total)?;
 
-    let mut rng_state: u64 = 0xa110_de_c0de_5eed;
+    let mut rng_state: u64 = 0xa110_dec0_de5e_ed00;
     for &(mc, dim) in &combos {
         for _ in 0..per_combo {
             rng_state = lcg_step(rng_state);
@@ -5937,6 +6009,17 @@ mod ffi {
             out: *mut c_int,
         ) -> c_int;
         pub fn cubiomes_call_gen_area_at(
+            mc: c_int,
+            large_biomes: c_int,
+            world_seed: u64,
+            layer_id_ord: c_int,
+            out: *mut c_int,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_gen_area_at_with_cache(
             mc: c_int,
             large_biomes: c_int,
             world_seed: u64,

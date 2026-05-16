@@ -392,8 +392,11 @@ impl Biome {
             37 | 165 | 166 | 167 => 37,
             // wooded_badlands_plateau / badlands_plateau — pre-1.16
             // collapses to mesa, 1.16+ keeps the plateau distinction.
+            // cubiomes' check is `mc <= MC_1_15`, so V1_16_1 onward
+            // (ord 19) keeps the plateau category, NOT V1_16 (= V1_16_5,
+            // ord 20).
             38 | 39 => {
-                if mc.is_at_least(crate::mc_version::MCVersion::V1_16) {
+                if mc.is_at_least(crate::mc_version::MCVersion::V1_16_1) {
                     39
                 } else {
                     37
