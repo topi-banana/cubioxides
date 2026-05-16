@@ -1035,3 +1035,38 @@ void cubiomes_call_map_biome(uint64_t world_seed, int mc,
     setLayerSeed(&biome, world_seed);
     mapBiome(&biome, out, x, z, w, h);
 }
+
+#include "finders.h"
+
+/* Generate up to END_CITY_PIECES_MAX End City pieces for the given
+ * (seed, chunkX, chunkZ). Writes the piece count via *out_count and
+ * serialises each piece's bounding box into out_records (one
+ * BBRecord per piece, in cubiomes' emission order). */
+typedef struct {
+    int32_t bb0_x, bb0_y, bb0_z;
+    int32_t bb1_x, bb1_y, bb1_z;
+    int32_t pos_x, pos_y, pos_z;
+    int32_t rot;
+    int32_t type;
+} EndCityBBRecord;
+
+void cubiomes_call_get_end_city_pieces(uint64_t seed, int chunk_x, int chunk_z,
+                                       int *out_count,
+                                       EndCityBBRecord *out_records) {
+    Piece pieces[END_CITY_PIECES_MAX];
+    int n = getEndCityPieces(pieces, seed, chunk_x, chunk_z);
+    *out_count = n;
+    for (int i = 0; i < n; i++) {
+        out_records[i].bb0_x = pieces[i].bb0.x;
+        out_records[i].bb0_y = pieces[i].bb0.y;
+        out_records[i].bb0_z = pieces[i].bb0.z;
+        out_records[i].bb1_x = pieces[i].bb1.x;
+        out_records[i].bb1_y = pieces[i].bb1.y;
+        out_records[i].bb1_z = pieces[i].bb1.z;
+        out_records[i].pos_x = pieces[i].pos.x;
+        out_records[i].pos_y = pieces[i].pos.y;
+        out_records[i].pos_z = pieces[i].pos.z;
+        out_records[i].rot = pieces[i].rot;
+        out_records[i].type = pieces[i].type;
+    }
+}

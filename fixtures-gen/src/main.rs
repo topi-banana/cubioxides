@@ -35,6 +35,7 @@ fn main() -> ExitCode {
         "debug-monument-cache" => debug_monument_cache(),
         "debug-mch-cache" => debug_mch_cache(),
         "debug-mch-scale" => debug_mch_scale(),
+        "debug-end-city" => debug_end_city(),
         "rng" => regenerate_rng(),
         "noise" => regenerate_noise(),
         "layers" => regenerate_layers(),
@@ -78,6 +79,42 @@ fn print_help() {
 /// matching Rust test diffs each scale to localise the first
 /// upstream layer where divergence appears. Also dumps the
 /// `BiomeEdge64` and `Zoom64Hills` parent rings used by `mapHills`.
+fn debug_end_city() -> ExitCode {
+    let seed: u64 = 0xdead_beef_0000;
+    let cx: c_int = 0;
+    let cz: c_int = 0;
+    let mut count: c_int = 0;
+    let mut buf: Vec<ffi::EndCityBBRecord> = vec![ffi::EndCityBBRecord::default(); 421];
+    unsafe {
+        ffi::cubiomes_call_get_end_city_pieces(
+            seed,
+            cx,
+            cz,
+            std::ptr::from_mut(&mut count),
+            buf.as_mut_ptr(),
+        );
+    }
+    println!("count = {count}");
+    for (i, r) in buf.iter().enumerate().take(count as usize) {
+        println!(
+            "  [{}] type={} rot={} pos=({},{},{}) bb0=({},{},{}) bb1=({},{},{})",
+            i,
+            r.type_,
+            r.rot,
+            r.pos_x,
+            r.pos_y,
+            r.pos_z,
+            r.bb0_x,
+            r.bb0_y,
+            r.bb0_z,
+            r.bb1_x,
+            r.bb1_y,
+            r.bb1_z,
+        );
+    }
+    ExitCode::SUCCESS
+}
+
 #[allow(clippy::too_many_lines)]
 fn debug_mch_scale() -> ExitCode {
     let mc: c_int = 19; // cubiomes MC_1_16_1
@@ -927,6 +964,10 @@ fn regenerate_layers() -> ExitCode {
     }
     if let Err(err) = write_get_spawn_fixture(&fixtures_dir.join("get_spawn.bin")) {
         eprintln!("get_spawn fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_end_city_pieces_fixture(&fixtures_dir.join("end_city_pieces.bin")) {
+        eprintln!("end_city_pieces fixture failed: {err}");
         return ExitCode::FAILURE;
     }
     if let Err(err) =
@@ -3140,6 +3181,82 @@ fn write_get_spawn_fixture(path: &Path) -> std::io::Result<()> {
                 seed,
                 spawn_x: px,
                 spawn_z: pz,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
+}
+
+/// End City piece-tree parity record (kind = 80). For each seed +
+/// chunk position, captures the piece count and a `hash32` over the
+/// concatenated bb0/bb1/pos/rot/type fields of each emitted piece.
+/// Hashing keeps the fixture compact even for big trees (~400 pieces).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct EndCityPiecesRecord {
+    pub seed: u64,
+    pub chunk_x: i32,
+    pub chunk_z: i32,
+    pub count: u32,
+    pub digest: u32,
+}
+
+fn end_city_digest(records: &[ffi::EndCityBBRecord], n: usize) -> u32 {
+    let mut h: u32 = 0;
+    for r in records.iter().take(n) {
+        for v in [
+            r.bb0_x, r.bb0_y, r.bb0_z, r.bb1_x, r.bb1_y, r.bb1_z, r.pos_x, r.pos_y, r.pos_z, r.rot,
+            r.type_,
+        ] {
+            h = hash32(h.wrapping_add(v as u32));
+        }
+    }
+    h
+}
+
+fn write_end_city_pieces_fixture(path: &Path) -> std::io::Result<()> {
+    // Sample seeds across a small chunk-coord grid. Most End-Cities
+    // generate when the chunk is on a viable End-island, but the
+    // piece tree itself runs regardless once getEndCityPieces is
+    // called — bit-exact parity only needs the same RNG path.
+    let seeds: [u64; 4] = [
+        0x0000_dead_beef_0000,
+        0x1234_5678_9abc_def0,
+        0x7edf_7985_db06_7c7d,
+        0xa110_dec0_de5e_ed00,
+    ];
+    let chunks: [(i32, i32); 6] = [
+        (0, 0),
+        (8, 8),
+        (-16, 4),
+        (32, -32),
+        (-100, 100),
+        (1000, -1000),
+    ];
+    let total = (seeds.len() * chunks.len()) as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 80, total)?;
+
+    let mut buf: Vec<ffi::EndCityBBRecord> = vec![ffi::EndCityBBRecord::default(); 421];
+    for &seed in &seeds {
+        for &(cx, cz) in &chunks {
+            let mut count: c_int = 0;
+            unsafe {
+                ffi::cubiomes_call_get_end_city_pieces(
+                    seed,
+                    cx,
+                    cz,
+                    std::ptr::from_mut(&mut count),
+                    buf.as_mut_ptr(),
+                );
+            }
+            let rec = EndCityPiecesRecord {
+                seed,
+                chunk_x: cx,
+                chunk_z: cz,
+                count: count as u32,
+                digest: end_city_digest(&buf, count as usize),
             };
             file.write_all(bytemuck::bytes_of(&rec))?;
         }
@@ -5435,6 +5552,24 @@ mod ffi {
         pub hi: u64,
     }
 
+    /// C-layout End City piece bounding-box record, mirroring the
+    /// `EndCityBBRecord` typedef in `cubiomes_layers_ffi.c`.
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy, Default)]
+    pub struct EndCityBBRecord {
+        pub bb0_x: i32,
+        pub bb0_y: i32,
+        pub bb0_z: i32,
+        pub bb1_x: i32,
+        pub bb1_y: i32,
+        pub bb1_z: i32,
+        pub pos_x: i32,
+        pub pos_y: i32,
+        pub pos_z: i32,
+        pub rot: i32,
+        pub type_: i32,
+    }
+
     /// C-layout `PerlinNoise` from `cubiomes/noise.h`.
     #[repr(C)]
     #[derive(Debug, Clone, Copy)]
@@ -5939,6 +6074,13 @@ mod ffi {
             out: *mut c_int,
         ) -> c_int;
         pub fn cubiomes_call_get_fixed_end_gateways(mc: c_int, seed: u64, out_xz: *mut c_int);
+        pub fn cubiomes_call_get_end_city_pieces(
+            seed: u64,
+            chunk_x: c_int,
+            chunk_z: c_int,
+            out_count: *mut c_int,
+            out_records: *mut EndCityBBRecord,
+        );
         pub fn cubiomes_call_scan_for_quads(
             mc: c_int,
             sty: c_int,
