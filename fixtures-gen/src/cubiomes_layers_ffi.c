@@ -1186,3 +1186,5 @@ int cubiomes_call_seed_zero_nextint4(void) {
     setSeed(&cs, 0);
     return nextInt(&cs, 4);
 }
+
+uint64_t cubiomes_call_get_shadow(uint64_t seed) { return getShadow(seed); }

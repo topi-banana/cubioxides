@@ -419,6 +419,21 @@ pub const fn move_structure(base_seed: u64, reg_x: i32, reg_z: i32) -> u64 {
         & 0xffff_ffff_ffff
 }
 
+/// `getShadow(seed)` — return the "shadow" seed (an involution).
+/// `getShadow(getShadow(s)) == s` for any `s`. Mirrors cubiomes' static
+/// inline `getShadow`.
+///
+/// Two seeds related by `getShadow` produce identical biome maps even
+/// though the world seeds differ — they're sometimes called *shadow
+/// seeds* in the seed-mining community.
+#[must_use]
+pub const fn get_shadow(seed: u64) -> u64 {
+    // cubiomes: `-7379792620528906219LL - seed`
+    // Treat both sides as u64 wrapping arithmetic so the negative
+    // i64 constant lands in u64 with the same bit pattern.
+    (-7_379_792_620_528_906_219_i64 as u64).wrapping_sub(seed)
+}
+
 const LCG_K: u64 = 0x0005_deec_e66d;
 const LCG_M: u64 = (1 << 48) - 1;
 const LCG_B: u64 = 0xb;
@@ -694,6 +709,20 @@ mod tests {
         // moveStructure is linear modulo 2^48; round trip recovers
         // the low 48 bits of the original seed.
         assert_eq!(back, s & 0xffff_ffff_ffff);
+    }
+
+    #[test]
+    fn get_shadow_is_involution() {
+        // `get_shadow(get_shadow(s)) == s` for any seed.
+        for s in [
+            0_u64,
+            1,
+            0xdead_beef_cafe_babe,
+            0xffff_ffff_ffff_ffff,
+            0x1234_5678_9abc_def0,
+        ] {
+            assert_eq!(get_shadow(get_shadow(s)), s);
+        }
     }
 
     #[test]

@@ -1084,6 +1084,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("viable_end_city_terrain fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_get_shadow_fixture(&fixtures_dir.join("get_shadow.bin")) {
+        eprintln!("get_shadow fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3349,6 +3353,41 @@ fn write_get_house_list_fixture(path: &Path) -> std::io::Result<()> {
             };
             file.write_all(bytemuck::bytes_of(&rec))?;
         }
+    }
+    file.flush()
+}
+
+/// `getShadow` parity record (kind = 85). Single seed in, single
+/// shadow seed out — verifies the involution and the constant.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct GetShadowRecord {
+    pub seed: u64,
+    pub shadow: u64,
+}
+
+fn write_get_shadow_fixture(path: &Path) -> std::io::Result<()> {
+    let seeds: [u64; 12] = [
+        0,
+        1,
+        0xffff_ffff_ffff_ffff,
+        0x1234_5678_9abc_def0,
+        0xdead_beef_cafe_babe,
+        0x7edf_7985_db06_7c7d,
+        0xa110_dec0_de5e_ed00,
+        0x0000_0000_dead_beef,
+        0x8000_0000_0000_0000,
+        0x7fff_ffff_ffff_ffff,
+        0xabcd_ef01_2345_6789,
+        0x0000_dead_beef_0000,
+    ];
+    let total = seeds.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 85, total)?;
+    for &seed in &seeds {
+        let shadow = unsafe { ffi::cubiomes_call_get_shadow(seed) };
+        let rec = GetShadowRecord { seed, shadow };
+        file.write_all(bytemuck::bytes_of(&rec))?;
     }
     file.flush()
 }
@@ -6487,6 +6526,7 @@ mod ffi {
             z: c_int,
         ) -> c_int;
         pub fn cubiomes_call_seed_zero_nextint4() -> c_int;
+        pub fn cubiomes_call_get_shadow(seed: u64) -> u64;
         pub fn cubiomes_call_debug_end_city_terrain(
             mc: c_int,
             seed: u64,
