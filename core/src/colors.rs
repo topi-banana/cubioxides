@@ -247,6 +247,153 @@ pub fn save_ppm(path: &std::path::Path, pixels: &[u8], sx: u32, sy: u32) -> std:
     Ok(())
 }
 
+/// Reverse-lookup `biome name → biome id`. Mirrors cubiomes' `_str2id`:
+/// scan every biome ID, compare both `MC_NEWEST` and `MC_1_17` names
+/// against `s` via substring match, and return the longest match.
+///
+/// Returns `None` when no biome name appears in the input.
+#[must_use]
+pub fn str_to_biome_id(s: &str) -> Option<i32> {
+    use crate::biome::Biome;
+    use crate::mc_version::MCVersion;
+    if s.is_empty() {
+        return None;
+    }
+    let mut best_len = 0_usize;
+    let mut best_id: Option<i32> = None;
+    for id in 0..256_i32 {
+        let p = Biome::name(MCVersion::NEWEST, id);
+        if let Some(name) = p {
+            if name.len() > best_len && s.contains(name) {
+                best_len = name.len();
+                best_id = Some(id);
+            }
+        }
+        let t = Biome::name(MCVersion::V1_17, id);
+        if let Some(name) = t {
+            if t != p && name.len() > best_len && s.contains(name) {
+                best_len = name.len();
+                best_id = Some(id);
+            }
+        }
+    }
+    best_id
+}
+
+/// Bit-exact port of cubiomes' `parseBiomeColors`. Parses a config
+/// blob of `biome_name #RRGGBB` / `biome_name R G B` / `id R G B`
+/// lines (semicolon-separated also accepted) and updates the palette.
+///
+/// Returns the number of accepted color entries.
+#[allow(clippy::too_many_lines, clippy::similar_names)]
+pub fn parse_biome_colors(biome_colors: &mut [[u8; 3]; 256], buf: &str) -> i32 {
+    let bytes = buf.as_bytes();
+    let mut p: usize = 0;
+    let mut n: i32 = 0;
+    while p < bytes.len() {
+        let mut bstr = String::with_capacity(64);
+        let mut col: [i64; 4] = [0; 4];
+        let mut ic: usize = 0;
+        while p < bytes.len() && bytes[p] != b'\n' && bytes[p] != b';' {
+            let c = bytes[p];
+            // Accumulate biome name characters: lowercase, '_'.
+            if bstr.len() + 1 < 64 {
+                if c.is_ascii_lowercase() || c == b'_' {
+                    bstr.push(c as char);
+                } else if c.is_ascii_uppercase() {
+                    bstr.push(((c - b'A') + b'a') as char);
+                }
+            }
+            // Try color literal: "#hex", "0xhex", decimal.
+            if ic < 4 && (c == b'#' || (c == b'0' && p + 1 < bytes.len() && bytes[p + 1] == b'x')) {
+                // Skip '#' or '0x' prefix (single char beyond the leading '0').
+                let start = p + 1 + usize::from(c == b'0');
+                let (value, consumed) = parse_hex(&bytes[start..]);
+                col[ic] = value;
+                ic += 1;
+                p = start + consumed;
+                continue;
+            } else if ic < 4 && c.is_ascii_digit() {
+                let (value, consumed) = parse_dec(&bytes[p..]);
+                col[ic] = value;
+                ic += 1;
+                p += consumed;
+                continue;
+            }
+            p += 1;
+        }
+        // Skip to end of line.
+        while p < bytes.len() && bytes[p] != b'\n' {
+            p += 1;
+        }
+        while p < bytes.len() && bytes[p] == b'\n' {
+            p += 1;
+        }
+
+        let id = str_to_biome_id(&bstr);
+        if let Some(id) = id {
+            if (0..256).contains(&id) {
+                let idx = id as usize;
+                if ic == 3 {
+                    biome_colors[idx][0] = (col[0] & 0xff) as u8;
+                    biome_colors[idx][1] = (col[1] & 0xff) as u8;
+                    biome_colors[idx][2] = (col[2] & 0xff) as u8;
+                    n += 1;
+                    continue;
+                } else if ic == 1 {
+                    biome_colors[idx][0] = ((col[0] >> 16) & 0xff) as u8;
+                    biome_colors[idx][1] = ((col[0] >> 8) & 0xff) as u8;
+                    biome_colors[idx][2] = (col[0] & 0xff) as u8;
+                    n += 1;
+                    continue;
+                }
+            }
+        }
+        // Fallthrough: "id R G B" or "id #rgb" (no name).
+        if ic == 4 {
+            let idx = (col[0] & 0xff) as usize;
+            biome_colors[idx][0] = (col[1] & 0xff) as u8;
+            biome_colors[idx][1] = (col[2] & 0xff) as u8;
+            biome_colors[idx][2] = (col[3] & 0xff) as u8;
+            n += 1;
+        } else if ic == 2 {
+            let idx = (col[0] & 0xff) as usize;
+            biome_colors[idx][0] = ((col[1] >> 16) & 0xff) as u8;
+            biome_colors[idx][1] = ((col[1] >> 8) & 0xff) as u8;
+            biome_colors[idx][2] = (col[1] & 0xff) as u8;
+            n += 1;
+        }
+    }
+    n
+}
+
+fn parse_dec(buf: &[u8]) -> (i64, usize) {
+    let mut value: i64 = 0;
+    let mut i = 0;
+    while i < buf.len() && buf[i].is_ascii_digit() {
+        value = value * 10 + i64::from(buf[i] - b'0');
+        i += 1;
+    }
+    (value, i)
+}
+
+fn parse_hex(buf: &[u8]) -> (i64, usize) {
+    let mut value: i64 = 0;
+    let mut i = 0;
+    while i < buf.len() {
+        let c = buf[i];
+        let d = match c {
+            b'0'..=b'9' => i64::from(c - b'0'),
+            b'a'..=b'f' => i64::from(c - b'a' + 10),
+            b'A'..=b'F' => i64::from(c - b'A' + 10),
+            _ => break,
+        };
+        value = value * 16 + d;
+        i += 1;
+    }
+    (value, i)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

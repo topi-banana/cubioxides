@@ -1227,6 +1227,13 @@ uint64_t cubiomes_call_get_min_layer_cache_size(int mc, int entry, int sx, int s
     return (uint64_t) getMinLayerCacheSize(&ls.layers[entry], sx, sz);
 }
 
+/* parseBiomeColors wrapper. Caller supplies an empty 256*3 byte palette
+ * (cubiomes does NOT zero-init for the user) and a null-terminated text. */
+extern int parseBiomeColors(unsigned char biomeColors[256][3], const char *buf);
+int cubiomes_call_parse_biome_colors(unsigned char *palette768, const char *buf) {
+    return parseBiomeColors((unsigned char (*)[3]) palette768, buf);
+}
+
 /* checkForTemps wrapper. Caller supplies a flat tc[9] int array. */
 int cubiomes_call_check_for_temps(int mc, uint64_t seed, int x, int z, int w, int h,
                                   const int *tc9) {

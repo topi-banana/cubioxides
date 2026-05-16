@@ -1182,6 +1182,11 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("check_for_temps fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_parse_biome_colors_fixture(&fixtures_dir.join("parse_biome_colors.bin"))
+    {
+        eprintln!("parse_biome_colors fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -4124,6 +4129,40 @@ fn write_check_for_temps_fixture(path: &Path) -> std::io::Result<()> {
             file.write_all(&v.to_le_bytes())?;
         }
         file.write_all(&result.to_le_bytes())?;
+    }
+    file.flush()
+}
+
+/// `parseBiomeColors` payload (kind = 89). Per-record:
+/// `input_len i32`, `input bytes`, `result i32`, `palette [u8; 768]`.
+/// Variable-length records, so we write a length-prefix.
+fn write_parse_biome_colors_fixture(path: &Path) -> std::io::Result<()> {
+    // Each test starts with a base palette of all-zeros (cubiomes does
+    // not zero the palette internally, so we must pass it explicitly).
+    let cases: &[&str] = &[
+        "",
+        "ocean #0000ff\n",
+        "plains 200 180 100\n",
+        "snowy_taiga_mountains #ffeedd\n", // long name wins over snowy_taiga
+        "PLAINS 0x123456\n",               // uppercase + 0x prefix
+        "10 80 80 200\n",                  // id-as-decimal + 3 components
+        "20 0xabcdef\n",                   // id-as-decimal + packed
+        "ocean #001122\nplains #334455\ndesert #667788\n",
+        "ocean #00ff00; plains #ff0000; river #0000ff",
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 89, total)?;
+    for &input in cases {
+        let mut palette = [0_u8; 768];
+        // Convert input to null-terminated cstring.
+        let cstr = std::ffi::CString::new(input).unwrap();
+        let result =
+            unsafe { ffi::cubiomes_call_parse_biome_colors(palette.as_mut_ptr(), cstr.as_ptr()) };
+        file.write_all(&(input.len() as i32).to_le_bytes())?;
+        file.write_all(input.as_bytes())?;
+        file.write_all(&result.to_le_bytes())?;
+        file.write_all(&palette)?;
     }
     file.flush()
 }
@@ -7825,6 +7864,10 @@ mod ffi {
             w: c_int,
             h: c_int,
             tc9: *const c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_parse_biome_colors(
+            palette768: *mut u8,
+            buf: *const std::ffi::c_char,
         ) -> c_int;
         pub fn cubiomes_call_setup_biome_filter(
             mc: c_int,
