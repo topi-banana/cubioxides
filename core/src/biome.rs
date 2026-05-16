@@ -510,6 +510,57 @@ impl From<Biome> for i32 {
     }
 }
 
+/// Cubiomes' `getCategory(mc, id)` — map a biome ID to its
+/// "category" representative biome ID. Returns the cubiomes
+/// `none = -1` sentinel for biomes with no category.
+#[must_use]
+#[allow(clippy::too_many_lines)]
+pub fn get_category(mc: crate::mc_version::MCVersion, id: i32) -> i32 {
+    match id {
+        // beach / snowy_beach -> beach (16)
+        16 | 26 => 16,
+        // desert / desert_hills / desert_lakes -> desert (2)
+        2 | 17 | 130 => 2,
+        // mountains family -> mountains (3)
+        3 | 20 | 34 | 131 | 162 => 3,
+        // forest family -> forest (4)
+        4 | 18 | 27 | 28 | 29 | 132 | 155 | 156 | 157 => 4,
+        // snowy_tundra / snowy_mountains / ice_spikes -> snowy_tundra (12)
+        12 | 13 | 140 => 12,
+        // jungle family -> jungle (21)
+        21 | 22 | 23 | 149 | 151 | 168 | 169 => 21,
+        // mesa / badlands family
+        37 | 165 | 166 | 167 => 37,
+        // 1.15-: -> mesa(37); 1.16+: keep distinction.
+        38 | 39 => {
+            if mc.is_at_least(crate::mc_version::MCVersion::V1_16_1) {
+                39 // badlands_plateau
+            } else {
+                37 // mesa
+            }
+        }
+        // mushroom_fields / mushroom_field_shore -> mushroom_fields (14)
+        14 | 15 => 14,
+        // stone_shore -> stone_shore (25)
+        25 => 25,
+        // ocean family -> ocean (0)
+        0 | 10 | 24 | 44 | 45 | 46 | 47 | 48 | 49 | 50 => 0,
+        // plains / sunflower_plains -> plains (1)
+        1 | 129 => 1,
+        // river / frozen_river -> river (7)
+        7 | 11 => 7,
+        // savanna family -> savanna (35)
+        35 | 36 | 163 | 164 => 35,
+        // swamp family -> swamp (6)
+        6 | 134 => 6,
+        // taiga family -> taiga (5)
+        5 | 19 | 30 | 31 | 32 | 33 | 133 | 158 | 160 | 161 => 5,
+        // nether family -> nether_wastes (8)
+        8 | 170 | 171 | 172 | 173 => 8,
+        _ => -1,
+    }
+}
+
 /// Cubiomes' `getBiomeDepthAndScale` output triple. `grass` is the
 /// minimum surface block-Y for grass placement (0 means the biome
 /// doesn't produce grass; 60–64 are typical for shores / rivers;

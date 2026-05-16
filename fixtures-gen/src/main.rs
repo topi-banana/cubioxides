@@ -2295,6 +2295,18 @@ fn write_get_variant_fixture(path: &Path) -> std::io::Result<()> {
         (17, 20, -1), // Geode V1_17 (JavaRng path)
         (17, 22, -1), // Geode V1_18 (Xoroshiro path)
         (17, 28, -1), // Geode V1_21 WD
+        // Ruined_Portal: biome_id matters (categorizes to plains/desert/etc).
+        (11, 22, 1),   // V1_18 plains
+        (11, 22, 2),   // V1_18 desert
+        (11, 22, 6),   // V1_18 swamp
+        (11, 22, 21),  // V1_18 jungle
+        (11, 22, 0),   // V1_18 ocean
+        (11, 22, 3),   // V1_18 mountains (fallback)
+        (11, 22, 184), // V1_18 mangrove_swamp → swamp fallback
+        (11, 22, 177), // V1_18 meadow → no category → plains
+        (11, 28, 1),   // V1_21 WD plains
+        // Ruined_Portal_N: same logic, nether dim. biome must be in nether category.
+        (12, 22, 8), // V1_18 nether_wastes
     ];
     let per_combo: u64 = 64;
     let total = probes.len() as u64 * per_combo;

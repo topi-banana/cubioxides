@@ -17,6 +17,7 @@
     clippy::doc_markdown
 )]
 
+use crate::biome::get_category;
 use crate::finder::StructureConfig;
 use crate::finder::StructureType;
 use crate::finder::population_seed::{chunk_generate_rng, get_population_seed};
@@ -102,9 +103,79 @@ pub fn get_variant(
         }
         Igloo => Some(get_variant_igloo(&mut r, &mut rng, mc, seed, x, z)),
         Geode => get_variant_geode(&mut r, mc, seed, x, z),
+        RuinedPortal | RuinedPortalN => {
+            Some(get_variant_ruined_portal(&mut r, &mut rng, mc, biome_id))
+        }
         _ => None,
     }
     .map(|()| r)
+}
+
+fn get_variant_ruined_portal(
+    r: &mut StructureVariant,
+    rng: &mut JavaRng,
+    mc: MCVersion,
+    biome_id: i32,
+) {
+    // Step 1: pick a biome family. Cubiomes uses `getCategory` for
+    // the first pass and a per-biome fallback for the second.
+    const DESERT: i32 = 2;
+    const JUNGLE: i32 = 21;
+    const SWAMP: i32 = 6;
+    const OCEAN: i32 = 0;
+    const NETHER_WASTES: i32 = 8;
+    const PLAINS: i32 = 1;
+    const MOUNTAINS: i32 = 3;
+    const MANGROVE_SWAMP: i32 = 184;
+
+    let cat = get_category(mc, biome_id);
+    r.biome = match cat {
+        DESERT | JUNGLE | SWAMP | OCEAN | NETHER_WASTES => cat as i16,
+        _ => -1,
+    };
+
+    if r.biome == -1 {
+        // Fallback: mangrove_swamp maps to swamp; the mountains
+        // family + a handful of 1.18+ peak biomes map to mountains.
+        match biome_id {
+            MANGROVE_SWAMP => r.biome = SWAMP as i16,
+            // mountains, mountain_edge, wooded_mountains, gravelly_mountains,
+            // modified_gravelly_mountains, savanna_plateau, shattered_savanna,
+            // shattered_savanna_plateau, badlands, eroded_badlands,
+            // wooded_badlands_plateau, modified_badlands_plateau,
+            // modified_wooded_badlands_plateau, snowy_taiga_mountains,
+            // taiga_mountains, stony_shore, meadow, frozen_peaks,
+            // jagged_peaks, stony_peaks, snowy_slopes
+            3 | 20 | 34 | 131 | 162 | 36 | 163 | 164 | 37 | 165 | 38 | 167 | 166 | 158 | 133
+            | 25 | 177 | 181 | 180 | 182 | 179 => r.biome = MOUNTAINS as i16,
+            _ => {}
+        }
+    }
+    if r.biome == -1 {
+        r.biome = PLAINS as i16;
+    }
+
+    let biome = r.biome as i32;
+    if biome == PLAINS || biome == MOUNTAINS {
+        r.underground = rng.next_float() < 0.5;
+        if r.underground {
+            r.airpocket = true;
+        } else {
+            r.airpocket = rng.next_float() < 0.5;
+        }
+    } else if biome == JUNGLE {
+        r.airpocket = rng.next_float() < 0.5;
+    }
+    r.giant = rng.next_float() < 0.05;
+    if r.giant {
+        // giant_portal_1..3
+        r.start = (1 + rng.next_int(3)) as u8;
+    } else {
+        // portal_1..10
+        r.start = (1 + rng.next_int(10)) as u8;
+    }
+    r.rotation = rng.next_int(4) as u8;
+    r.mirror = u8::from(rng.next_float() < 0.5);
 }
 
 fn get_variant_geode(
