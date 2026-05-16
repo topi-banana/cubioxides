@@ -365,14 +365,11 @@ fn viable_outpost_legacy(g: &Generator, x: i32, z: i32, chunk_x: i64, chunk_z: i
 /// `mapViableBiome` and `mapViableShore` into the L_BIOME_256 /
 /// L_SHORE_16 layer slots. Those hooks return `err` (propagated as
 /// id `-1` to the final cell) when the requested area contains no
-/// oceanic biome at scale 256. We don't install the hooks, so for
-/// seeds where the scale-16 sample is genuinely deep-ocean but the
-/// containing scale-256 cells have no oceanic neighbour, we return
-/// `true` where cubiomes returns `false`. Both implementations
-/// agree on the actual final biome check via `gen_biomes` (verified
-/// in `tests/debug_monument_cache.rs`); the discrepancy is purely
-/// from the layer-hook early-exit. The `viable_structure_pos`
-/// fixture currently excludes pre-1.18 Monument seeds.
+/// oceanic biome at scale 256 / no viable biome at scale 16. Each
+/// chain call (corners + full-grid) installs the hook separately, so
+/// emulating it correctly requires per-sample early-exit integrated
+/// into `gen_biomes` / `biome_at`. Until that lands, the
+/// `viable_structure_pos` fixture excludes pre-1.18 Monument seeds.
 fn viable_monument_legacy(g: &Generator, chunk_x: i64, chunk_z: i64) -> bool {
     if g.mc.is_before(MCVersion::V1_8) {
         return false;

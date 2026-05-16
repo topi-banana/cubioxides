@@ -324,6 +324,76 @@ pub fn gen_area(
     }
 }
 
+/// Walk the layer DAG from `from` upstream, applying each layer's
+/// parent-area formula. Returns the area `(x, z, w, h)` that
+/// `target` must produce so that `from`'s `(x, z, w, h)` output can
+/// be computed. Returns `None` if `target` is not reachable through
+/// the primary `p` parent chain. Mirrors what cubiomes' chained
+/// `getMap` calls request from each upstream layer.
+#[must_use]
+pub fn compute_upstream_area(
+    stack: &LayerStack,
+    from: LayerId,
+    target: LayerId,
+    x: i32,
+    z: i32,
+    w: usize,
+    h: usize,
+) -> Option<(i32, i32, usize, usize)> {
+    let mut cur = from;
+    let mut cx = x;
+    let mut cz = z;
+    let mut cw = w as i32;
+    let mut ch = h as i32;
+    loop {
+        if cur == target {
+            return Some((cx, cz, cw as usize, ch as usize));
+        }
+        let node = &stack.layers[cur.as_index()];
+        let (px, pz, pw, ph) = match node.op {
+            LayerOp::Zoom | LayerOp::ZoomFuzzy => {
+                let p_x = cx >> 1;
+                let p_z = cz >> 1;
+                let p_w = ((cx + cw) >> 1) - p_x + 1;
+                let p_h = ((cz + ch) >> 1) - p_z + 1;
+                (p_x, p_z, p_w, p_h)
+            }
+            LayerOp::Land
+            | LayerOp::LandB18
+            | LayerOp::Land16
+            | LayerOp::Snow
+            | LayerOp::Snow16
+            | LayerOp::Island
+            | LayerOp::Cool
+            | LayerOp::Heat
+            | LayerOp::Mushroom
+            | LayerOp::DeepOcean
+            | LayerOp::BiomeEdge
+            | LayerOp::Shore
+            | LayerOp::River
+            | LayerOp::Smooth
+            | LayerOp::Hills => (cx - 1, cz - 1, cw + 2, ch + 2),
+            LayerOp::Voronoi => {
+                // Voronoi114 (zoom=4): parent area is roughly (w >> 2) + 2.
+                let p_x = (cx - 2) >> 2;
+                let p_z = (cz - 2) >> 2;
+                let p_w = ((cx + cw - 2) >> 2) - p_x + 2;
+                let p_h = ((cz + ch - 2) >> 2) - p_z + 2;
+                (p_x, p_z, p_w, p_h)
+            }
+            LayerOp::OceanMix => (cx - 8, cz - 8, cw + 16, ch + 16),
+            // Pass-through layers: Continent, Special, Biome, Bamboo,
+            // Noise, SwampRiver, Sunflower, RiverMix, OceanTemp.
+            _ => (cx, cz, cw, ch),
+        };
+        cx = px;
+        cz = pz;
+        cw = pw;
+        ch = ph;
+        cur = node.p?;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::stack::{LayerStack, set_layer_seed, setup_layer_stack};

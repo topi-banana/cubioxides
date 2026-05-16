@@ -2998,11 +2998,13 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
         // Desert_Well pre-1.18.
         (17, 0, 16), // V1_14 OW Desert_Well
         (21, 0, 16), // V1_17 OW Desert_Well
-        // Pre-1.18 Monument: implementation is in place but has a
-        // residual `areBiomesViable` divergence vs cubiomes that
-        // surfaces under specific seeds (likely Range-Y or sy=1
-        // handling); fixtures land in a follow-up after the
-        // diff is localised.
+        // Pre-1.18 Monument: cubiomes installs mapViableBiome /
+        // mapViableShore hooks at L_BIOME_256 / L_SHORE_16 that
+        // early-exit the chain when no oceanic biome is present at
+        // scale 256. Each `getBiomeAt` / `genBiomes` call triggers a
+        // separate hook fire, so per-sample emulation is required.
+        // Fixtures land in a follow-up after the per-sample hook
+        // integration into `gen_biomes` / `biome_at` is implemented.
         // Pre-1.18 Mansion: V1_14 + V1_17.
         (17, 0, 9), // V1_14 OW Mansion
         (21, 0, 9), // V1_17 OW Mansion
