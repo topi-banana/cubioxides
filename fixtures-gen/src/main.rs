@@ -1249,6 +1249,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("sample_climate_para_axis fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_end_large_scale_fixture(&fixtures_dir.join("end_large_scale.bin")) {
+        eprintln!("end_large_scale fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -5017,6 +5021,68 @@ fn write_end_voronoi_fixture(path: &Path) -> std::io::Result<()> {
         };
         file.write_all(&mc.to_le_bytes())?;
         file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&rx.to_le_bytes())?;
+        file.write_all(&ry.to_le_bytes())?;
+        file.write_all(&rz.to_le_bytes())?;
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sy.to_le_bytes())?;
+        file.write_all(&sz.to_le_bytes())?;
+        file.write_all(&err.to_le_bytes())?;
+        for id in &ids {
+            file.write_all(&id.to_le_bytes())?;
+        }
+    }
+    file.flush()
+}
+
+/// End scale > 16 (radial pseudo-biome) parity fixture (kind = 104).
+/// Same record layout as `end_voronoi.bin`.
+fn write_end_large_scale_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (i32, u64, i32, i32, i32, i32, i32, i32);
+    let cases: &[Case] = &[
+        // (mc, seed, rx, ry, rz, sx, sy, sz)
+        // 1.13 (pre-1.14, no negative-rsq branch): scale 64.
+        (16, 0xdead_beef, 0, 0, 0, 4, 1, 4),
+        (16, 0xdead_beef, -10, 0, -10, 8, 1, 8),
+        // 1.14+ (negative-rsq → end_barrens branch active): scale 64.
+        (17, 0xdead_beef, 0, 0, 0, 4, 1, 4),
+        (17, 0xdead_beef, 1000, 0, 1000, 4, 1, 4),
+        // 1.16.1 scale 256.
+        (19, 0xdead_beef, 0, 0, 0, 4, 1, 4),
+        (19, 0xdead_beef, -200, 0, 200, 4, 1, 4),
+        // 1.18 scale 64 + scale 256.
+        (22, 0xcafe_babe, 0, 0, 0, 8, 1, 8),
+        (22, 0xcafe_babe, 0, 0, 0, 4, 1, 4),
+        // 1.21 large vertical stack (Y expansion).
+        (28, 0xabcd_1234, 0, 0, 0, 4, 2, 4),
+        // Scale 1024 — exercises the radial formula extremes.
+        (22, 0xdead_beef, 0, 0, 0, 4, 1, 4),
+    ];
+    // Scales paired with cases above (parallel array).
+    let scales: &[i32] = &[64, 64, 64, 64, 256, 256, 64, 256, 64, 1024];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 104, total)?;
+    for (&(mc, seed, rx, ry, rz, sx, sy, sz), &scale) in cases.iter().zip(scales.iter()) {
+        let n = (sx * sy * sz) as usize;
+        let mut ids = vec![0_i32; n];
+        let err = unsafe {
+            ffi::cubiomes_call_gen_end_large(
+                mc,
+                seed,
+                scale,
+                rx,
+                ry,
+                rz,
+                sx,
+                sy,
+                sz,
+                ids.as_mut_ptr(),
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&scale.to_le_bytes())?;
         file.write_all(&rx.to_le_bytes())?;
         file.write_all(&ry.to_le_bytes())?;
         file.write_all(&rz.to_le_bytes())?;
@@ -9001,6 +9067,18 @@ mod ffi {
         pub fn cubiomes_call_gen_end_voronoi(
             mc: c_int,
             seed: u64,
+            rx: c_int,
+            ry: c_int,
+            rz: c_int,
+            sx: c_int,
+            sy: c_int,
+            sz: c_int,
+            out: *mut c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_gen_end_large(
+            mc: c_int,
+            seed: u64,
+            scale: c_int,
             rx: c_int,
             ry: c_int,
             rz: c_int,

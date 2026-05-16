@@ -541,13 +541,54 @@ impl Generator {
         match r.scale {
             4 => en.map_end(&mut buf, r.x, r.z, r.sx as usize, r.sz as usize),
             16 => en.map_end_biome(&mut buf, r.x, r.z, r.sx as usize, r.sz as usize),
+            scale if scale > 16 => self.gen_end_large_scale(en, &mut buf, r),
             other => {
-                panic!("Generator::gen_biomes: End scale={other} not yet implemented (only 4, 16)")
+                panic!("Generator::gen_biomes: End scale={other} unsupported")
             }
         }
         for k in 0..r.sy as usize {
             for (i, &v) in buf.iter().enumerate() {
                 cache[k * area + i] = Biome(v);
+            }
+        }
+    }
+
+    /// End `scale > 16` — cubiomes' radial-distance pseudo-biome
+    /// generator. Inside r ≤ 16384, returns `the_end`; for 1.13+ when
+    /// `(int)rsq` overflows negative, returns `end_barrens`;
+    /// otherwise samples `endHeightNoise` to choose between
+    /// `end_highlands`, `end_midlands`, `end_barrens`,
+    /// `small_end_islands`.
+    #[allow(clippy::invalid_upcast_comparisons)]
+    fn gen_end_large_scale(&self, en: &EndNoise, buf: &mut [i32], r: Range) {
+        let d = (r.scale as f32) / 8.0_f32;
+        let mc_after_113 = self.mc.is_at_least(MCVersion::V1_14);
+        for j in 0..r.sz as usize {
+            for i in 0..r.sx as usize {
+                let hx = ((i as i64 + r.x as i64) as f32 * d) as i64;
+                let hz = ((j as i64 + r.z as i64) as f32 * d) as i64;
+                let rsq = (hx * hx + hz * hz) as u64;
+                let id = if rsq <= 16384 {
+                    Biome::THE_END.0
+                } else if mc_after_113 && (rsq as i32) < 0 {
+                    // cubiomes' (int)rsq cast: lower 32 bits viewed
+                    // as signed int. Becomes negative once rsq's bit
+                    // 31 is set, which is the "rsq is very large"
+                    // shortcut path.
+                    Biome::END_BARRENS.0
+                } else {
+                    let h = en.end_height_noise(hx as i32, hz as i32, 4);
+                    if h > 40.0 {
+                        Biome::END_HIGHLANDS.0
+                    } else if h >= 0.0 {
+                        Biome::END_MIDLANDS.0
+                    } else if h >= -20.0 {
+                        Biome::END_BARRENS.0
+                    } else {
+                        Biome::SMALL_END_ISLANDS.0
+                    }
+                };
+                buf[j * r.sx as usize + i] = id;
             }
         }
     }
