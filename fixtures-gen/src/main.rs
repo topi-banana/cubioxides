@@ -2270,6 +2270,12 @@ fn write_get_variant_fixture(path: &Path) -> std::io::Result<()> {
         (19, 21, -1), // Bastion V1_17
         (19, 22, -1), // Bastion V1_18
         (19, 28, -1), // Bastion V1_21 WD
+        // Ancient_City: biome_id ignored.
+        (13, 23, -1), // Ancient_City V1_19_2
+        (13, 28, -1), // Ancient_City V1_21 WD
+        // Trial_Chambers: biome_id ignored.
+        (24, 26, -1), // Trial_Chambers V1_21_1
+        (24, 28, -1), // Trial_Chambers V1_21 WD
     ];
     let per_combo: u64 = 64;
     let total = probes.len() as u64 * per_combo;
@@ -2326,7 +2332,7 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
     // path for 1.18+), Ruined_Portal_N (1.16.1+).
     // End: End_City (1.9+), End_Gateway (1.13+).
     // Overworld 1.18+: L_feature path + Village + always-viable.
-    let combos: [(i32, i32, i32); 24] = [
+    let combos: [(i32, i32, i32); 27] = [
         // (mc, dim, structure_type)
         // Nether
         (10, -1, 18), // V1_7 Nether Fortress (returns true)
@@ -2355,6 +2361,10 @@ fn write_viable_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
         (22, 0, 11), // V1_18 OW Ruined_Portal (always viable)
         (22, 0, 17), // V1_18 OW Geode (always viable)
         (22, 0, 15), // V1_18 OW Mineshaft (always viable)
+        // Overworld L_jigsaw (1.19_2+ Ancient_City, 1.21_1+ Trial_Chambers)
+        (23, 0, 13), // V1_19_2 OW Ancient_City
+        (28, 0, 13), // V1_21 WD OW Ancient_City
+        (28, 0, 24), // V1_21 WD OW Trial_Chambers
     ];
     let per_combo: u64 = 64;
     let total = combos.len() as u64 * per_combo;

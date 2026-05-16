@@ -55,6 +55,8 @@ fn mc_from_ord(ord: i32) -> MCVersion {
         19 => MCVersion::V1_16_1,
         21 => MCVersion::V1_17,
         22 => MCVersion::V1_18,
+        23 => MCVersion::V1_19_2,
+        26 => MCVersion::V1_21_1,
         28 => MCVersion::V1_21,
         other => panic!("unsupported MC ordinal: {other}"),
     }

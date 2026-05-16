@@ -80,9 +80,97 @@ pub fn get_variant(
     match structure_type {
         Village => get_variant_village(&mut r, &mut rng, mc, biome_id, x, z),
         Bastion => Some(get_variant_bastion(&mut r, &mut rng, mc, x, z)),
+        AncientCity => Some(get_variant_ancient_city(&mut r, &mut rng, x, z)),
+        TrialChambers => Some(get_variant_trial_chambers(&mut r, &mut rng)),
         _ => None,
     }
     .map(|()| r)
+}
+
+fn get_variant_ancient_city(r: &mut StructureVariant, rng: &mut JavaRng, mut x: i32, mut z: i32) {
+    r.rotation = rng.next_int(4) as u8;
+    r.start = 1 + rng.next_int(3) as i8; // city_center_1..3
+    let mut sx: i16 = 18;
+    let sy: i16 = 31;
+    let mut sz: i16 = 41;
+    // First rotation block computes the "raw" position via the
+    // (x>0) / (x<0) sign trick.
+    match r.rotation {
+        0 => {
+            x = -i32::from(x > 0);
+            z = -i32::from(z > 0);
+            r.sx = sx;
+            r.sz = sz;
+        }
+        1 => {
+            x = i32::from(x < 0) - sz as i32;
+            z = -i32::from(z > 0);
+            r.sx = sz;
+            r.sz = sx;
+        }
+        2 => {
+            x = i32::from(x < 0) - sx as i32;
+            z = i32::from(z < 0) - sz as i32;
+            r.sx = sx;
+            r.sz = sz;
+        }
+        3 => {
+            x = -i32::from(x > 0);
+            z = i32::from(z < 0) - sx as i32;
+            r.sx = sz;
+            r.sz = sx;
+        }
+        _ => unreachable!(),
+    }
+    // Second rotation block uses city_anchor (sx=13, sz=20).
+    sx = 13;
+    sz = 20;
+    match r.rotation {
+        0 => {
+            r.x = (x - sx as i32) as i16;
+            r.z = (z - sz as i32) as i16;
+        }
+        1 => {
+            r.x = (x + sz as i32) as i16;
+            r.z = (z - sx as i32) as i16;
+        }
+        2 => {
+            r.x = (x + sx as i32) as i16;
+            r.z = (z + sz as i32) as i16;
+        }
+        3 => {
+            r.x = (x - sz as i32) as i16;
+            r.z = (z + sx as i32) as i16;
+        }
+        _ => unreachable!(),
+    }
+    r.y = -27;
+    r.sy = sy;
+}
+
+fn get_variant_trial_chambers(r: &mut StructureVariant, rng: &mut JavaRng) {
+    r.y = (rng.next_int(1 + 20) + -40) as i16;
+    r.rotation = rng.next_int(4) as u8;
+    r.start = rng.next_int(2) as i8;
+    r.sx = 19;
+    r.sy = 20;
+    r.sz = 19;
+    match r.rotation {
+        0 => {}
+        1 => {
+            r.x = 1 - r.sz;
+            r.z = 0;
+        }
+        2 => {
+            r.x = 1 - r.sx;
+            r.z = 1 - r.sz;
+        }
+        3 => {
+            r.x = 0;
+            r.z = 1 - r.sx;
+        }
+        _ => unreachable!(),
+    }
 }
 
 fn get_variant_village(

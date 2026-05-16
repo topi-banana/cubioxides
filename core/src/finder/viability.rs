@@ -261,12 +261,32 @@ fn viable_overworld_modern(
             is_viable_feature_biome(g.mc, structure_type, id)
         }
 
+        AncientCity | TrialChambers => {
+            // L_jigsaw path (1.19_2+ / 1.21_1+).
+            if structure_type == AncientCity && g.mc.is_before(MCVersion::V1_19_2) {
+                return false;
+            }
+            if structure_type == TrialChambers && g.mc.is_before(MCVersion::V1_21_1) {
+                return false;
+            }
+            let sv = get_variant(structure_type, g.mc, g.seed, x, z, -1)
+                .expect("L_jigsaw getVariant must succeed");
+            let sample_x =
+                (((chunk_x * 32 + 2 * i64::from(sv.x) + i64::from(sv.sx) - 1) / 2) >> 2) as i32;
+            let sample_z =
+                (((chunk_z * 32 + 2 * i64::from(sv.z) + i64::from(sv.sz) - 1) / 2) >> 2) as i32;
+            let sample_y = i32::from(sv.y) >> 2;
+            let id = g.biome_at(4, sample_x, sample_y, sample_z).0;
+            if id < 0 {
+                return false;
+            }
+            is_viable_feature_biome(g.mc, structure_type, id)
+        }
+
         // Bastion / Fortress are Nether-only — should never reach
         // here. Feature is pre-1.13 only. Defer Monument / Outpost /
-        // Ancient_City / Trial_Chambers / EndCity / EndGateway /
-        // EndIsland to follow-up sub-stages.
-        Feature | Monument | Outpost | AncientCity | TrialChambers | EndCity | EndGateway
-        | EndIsland | Fortress | Bastion => {
+        // EndCity / EndGateway / EndIsland to follow-up sub-stages.
+        Feature | Monument | Outpost | EndCity | EndGateway | EndIsland | Fortress | Bastion => {
             unimplemented!(
                 "Modern Overworld is_viable_structure_pos: {structure_type:?} not yet ported"
             )
