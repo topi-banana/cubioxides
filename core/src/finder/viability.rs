@@ -288,15 +288,100 @@ fn viable_overworld_modern(
 
         Outpost => return viable_outpost_modern(g, x, z, chunk_x, chunk_z),
 
+        Monument => return viable_monument_modern(g, chunk_x, chunk_z),
+
         // Bastion / Fortress are Nether-only — should never reach
-        // here. Feature is pre-1.13 only. Defer Monument /
-        // EndCity / EndGateway / EndIsland to follow-up sub-stages.
-        Feature | Monument | EndCity | EndGateway | EndIsland | Fortress | Bastion => {
+        // here. Feature is pre-1.13 only. Defer EndCity / EndGateway
+        // / EndIsland to follow-up sub-stages.
+        Feature | EndCity | EndGateway | EndIsland | Fortress | Bastion => {
             unimplemented!(
                 "Modern Overworld is_viable_structure_pos: {structure_type:?} not yet ported"
             )
         }
     }
+}
+
+/// Cubiomes' `g_monument_biomes1` — biome mask used by the
+/// final ocean-coverage check (every cell in a 29-block radius
+/// must be one of these).
+const G_MONUMENT_BIOMES1: u64 = (1u64 << Biome::OCEAN.id())
+    | (1u64 << Biome::DEEP_OCEAN.id())
+    | (1u64 << Biome::RIVER.id())
+    | (1u64 << Biome::FROZEN_RIVER.id())
+    | (1u64 << Biome::FROZEN_OCEAN.id())
+    | (1u64 << Biome::DEEP_FROZEN_OCEAN.id())
+    | (1u64 << Biome::COLD_OCEAN.id())
+    | (1u64 << Biome::DEEP_COLD_OCEAN.id())
+    | (1u64 << Biome::LUKEWARM_OCEAN.id())
+    | (1u64 << Biome::DEEP_LUKEWARM_OCEAN.id())
+    | (1u64 << Biome::WARM_OCEAN.id())
+    | (1u64 << Biome::DEEP_WARM_OCEAN.id());
+
+/// 1.18+ Monument viability. Two gates:
+///   1. The biome at the chunk centre (block-Y 36 ≈ ocean floor)
+///      must be deep-ocean.
+///   2. The 29-block radius around the chunk centre must be entirely
+///      ocean/river (cubiomes' `g_monument_biomes1` mask).
+fn viable_monument_modern(g: &Generator, chunk_x: i64, chunk_z: i64) -> bool {
+    let sample_x = (chunk_x * 16 + 8) as i32;
+    let sample_z = (chunk_z * 16 + 8) as i32;
+    // (1) deep-ocean centre check at scale 4, y=36>>2.
+    let id = g.biome_at(4, sample_x >> 2, 36 >> 2, sample_z >> 2).0;
+    if !Biome::is_deep_ocean_id(id) {
+        return false;
+    }
+    // (2) full ocean-mask check over the 29-radius area.
+    are_biomes_viable_modern(g, sample_x, 63, sample_z, 29, G_MONUMENT_BIOMES1, 0)
+}
+
+/// 1.18+ subset of cubiomes' `areBiomesViable`. Samples a grid of
+/// scale-4 biome cells around `(x, y, z)` extending `±rad/4` and
+/// returns `true` iff every cell matches the `(valid_b, valid_m)`
+/// biome mask.
+fn are_biomes_viable_modern(
+    g: &Generator,
+    x: i32,
+    y: i32,
+    z: i32,
+    rad: i32,
+    valid_b: u64,
+    valid_m: u64,
+) -> bool {
+    let x1 = (x - rad) >> 2;
+    let x2 = (x + rad) >> 2;
+    let sx = x2 - x1 + 1;
+    let z1 = (z - rad) >> 2;
+    let z2 = (z + rad) >> 2;
+    let sz = z2 - z1 + 1;
+    let y4 = (y - rad) >> 2;
+
+    let bn = g
+        .biome_noise
+        .as_ref()
+        .expect("are_biomes_viable_modern: modern Overworld must have BiomeNoise");
+
+    // Check corners first; cubiomes also checks the full grid since
+    // `approx == 0` is the default, so we do too.
+    let corners = [(x1, z1), (x2, z2), (x1, z2), (x2, z1)];
+    for (cx, cz) in corners {
+        let id = g.biome_at(4, cx, y4, cz).0;
+        if id < 0 || !crate::finder::locate_biome::id_matches(id, valid_b, valid_m) {
+            return false;
+        }
+    }
+
+    // Full grid — cubiomes uses the `dat` carry for MC-241546-style
+    // order-dependent sampling.
+    for i in 0..sx {
+        let mut dat: u64 = 0;
+        for j in 0..sz {
+            let (id, _) = bn.sample_with_dat(x1 + i, y4, z1 + j, Some(&mut dat), 0);
+            if id < 0 || !crate::finder::locate_biome::id_matches(id, valid_b, valid_m) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// 1.18+ Outpost viability. Three gates:
