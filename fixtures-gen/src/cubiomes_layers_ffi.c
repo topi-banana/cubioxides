@@ -1214,3 +1214,6 @@ int cubiomes_call_id_set_test(uint64_t mL, uint64_t mM, int id) {
 }
 
 int cubiomes_call_get_dimension(int id) { return getDimension(id); }
+
+extern const char *biome2str(int mc, int id);
+const char *cubiomes_call_biome2str(int mc, int id) { return biome2str(mc, id); }

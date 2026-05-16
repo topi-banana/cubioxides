@@ -1105,6 +1105,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("get_dimension fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_biome2str_fixture(&fixtures_dir.join("biome2str.bin")) {
+        eprintln!("biome2str fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3474,6 +3478,59 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
             ids: ids_arr,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `biome2str` parity record (kind = 90). One record per (mc, id).
+/// `name_len` is the byte length of the C string (excluding NUL);
+/// `name` is the first 32 bytes (zero-padded) of the cubiomes
+/// return value, or all-zero if cubiomes returned NULL.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct Biome2StrRecord {
+    pub mc: i32,
+    pub id: i32,
+    pub name_len: i32,
+    pub has_name: i32,
+    pub name: [u8; 32],
+}
+
+fn write_biome2str_fixture(path: &Path) -> std::io::Result<()> {
+    // Cover MC versions that exercise different naming branches:
+    // - V1_13 (pre-1.18: legacy names)
+    // - V1_18 (1.18+ renames)
+    // - V1_21 (latest, includes pale_garden if id 186)
+    let mcs: [i32; 3] = [16, 22, 28];
+    let ids: Vec<i32> = (0..=200).collect();
+    let total = (mcs.len() * ids.len()) as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 90, total)?;
+    for &mc in &mcs {
+        for &id in &ids {
+            let mut name = [0u8; 32];
+            let mut name_len: i32 = 0;
+            let mut has_name: i32 = 0;
+            unsafe {
+                let ptr = ffi::cubiomes_call_biome2str(mc, id);
+                if !ptr.is_null() {
+                    has_name = 1;
+                    let cstr = CStr::from_ptr(ptr);
+                    let bytes = cstr.to_bytes();
+                    let n = bytes.len().min(name.len());
+                    name[..n].copy_from_slice(&bytes[..n]);
+                    name_len = bytes.len() as i32;
+                }
+            }
+            let rec = Biome2StrRecord {
+                mc,
+                id,
+                name_len,
+                has_name,
+                name,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
     }
     file.flush()
 }
@@ -6796,6 +6853,7 @@ mod ffi {
         pub fn cubiomes_call_id_set_add(out_m_l: *mut u64, out_m_m: *mut u64, id: c_int);
         pub fn cubiomes_call_id_set_test(m_l: u64, m_m: u64, id: c_int) -> c_int;
         pub fn cubiomes_call_get_dimension(id: c_int) -> c_int;
+        pub fn cubiomes_call_biome2str(mc: c_int, id: c_int) -> *const std::ffi::c_char;
         pub fn cubiomes_call_can_biome_generate(
             layer_id: c_int,
             mc: c_int,

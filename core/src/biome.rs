@@ -205,6 +205,139 @@ impl Biome {
         Dimension::Overworld
     }
 
+    /// `biome2str(mc, id)` — return the human-readable biome name,
+    /// or `None` if `id` is not a known biome. For 1.18+ the
+    /// "renamed" biomes (`snowy_tundra` → `snowy_plains`, etc.)
+    /// return their 1.18-and-later names; pre-1.18 returns the
+    /// legacy name. Bit-exact port of `cubiomes/util.c::biome2str`.
+    #[must_use]
+    #[allow(clippy::too_many_lines)]
+    pub fn name(mc: crate::mc_version::MCVersion, id: i32) -> Option<&'static str> {
+        if mc.is_at_least(crate::mc_version::MCVersion::V1_18) {
+            // 1.18+ renamed biomes (id is shared with the pre-1.18 name).
+            match id {
+                155 => return Some("old_growth_birch_forest"), // tall_birch_forest
+                32 => return Some("old_growth_pine_taiga"),    // giant_tree_taiga
+                160 => return Some("old_growth_spruce_taiga"), // giant_spruce_taiga
+                12 => return Some("snowy_plains"),             // snowy_tundra
+                23 => return Some("sparse_jungle"),            // jungle_edge
+                25 => return Some("stony_shore"),              // stone_shore
+                3 => return Some("windswept_hills"),           // mountains
+                34 => return Some("windswept_forest"),         // wooded_mountains
+                131 => return Some("windswept_gravelly_hills"), // gravelly_mountains
+                163 => return Some("windswept_savanna"),       // shattered_savanna
+                38 => return Some("wooded_badlands"),          // wooded_badlands_plateau
+                _ => {}
+            }
+        }
+        Some(match id {
+            0 => "ocean",
+            1 => "plains",
+            2 => "desert",
+            3 => "mountains",
+            4 => "forest",
+            5 => "taiga",
+            6 => "swamp",
+            7 => "river",
+            8 => "nether_wastes",
+            9 => "the_end",
+            10 => "frozen_ocean",
+            11 => "frozen_river",
+            12 => "snowy_tundra",
+            13 => "snowy_mountains",
+            14 => "mushroom_fields",
+            15 => "mushroom_field_shore",
+            16 => "beach",
+            17 => "desert_hills",
+            18 => "wooded_hills",
+            19 => "taiga_hills",
+            20 => "mountain_edge",
+            21 => "jungle",
+            22 => "jungle_hills",
+            23 => "jungle_edge",
+            24 => "deep_ocean",
+            25 => "stone_shore",
+            26 => "snowy_beach",
+            27 => "birch_forest",
+            28 => "birch_forest_hills",
+            29 => "dark_forest",
+            30 => "snowy_taiga",
+            31 => "snowy_taiga_hills",
+            32 => "giant_tree_taiga",
+            33 => "giant_tree_taiga_hills",
+            34 => "wooded_mountains",
+            35 => "savanna",
+            36 => "savanna_plateau",
+            37 => "badlands",
+            38 => "wooded_badlands_plateau",
+            39 => "badlands_plateau",
+            40 => "small_end_islands",
+            41 => "end_midlands",
+            42 => "end_highlands",
+            43 => "end_barrens",
+            44 => "warm_ocean",
+            45 => "lukewarm_ocean",
+            46 => "cold_ocean",
+            47 => "deep_warm_ocean",
+            48 => "deep_lukewarm_ocean",
+            49 => "deep_cold_ocean",
+            50 => "deep_frozen_ocean",
+            // Alpha 1.2 – Beta 1.7
+            51 => "seasonal_forest",
+            52 => "rainforest",
+            53 => "shrubland",
+            127 => "the_void",
+            // mutated variants
+            129 => "sunflower_plains",
+            130 => "desert_lakes",
+            131 => "gravelly_mountains",
+            132 => "flower_forest",
+            133 => "taiga_mountains",
+            134 => "swamp_hills",
+            140 => "ice_spikes",
+            149 => "modified_jungle",
+            151 => "modified_jungle_edge",
+            155 => "tall_birch_forest",
+            156 => "tall_birch_hills",
+            157 => "dark_forest_hills",
+            158 => "snowy_taiga_mountains",
+            160 => "giant_spruce_taiga",
+            161 => "giant_spruce_taiga_hills",
+            162 => "modified_gravelly_mountains",
+            163 => "shattered_savanna",
+            164 => "shattered_savanna_plateau",
+            165 => "eroded_badlands",
+            166 => "modified_wooded_badlands_plateau",
+            167 => "modified_badlands_plateau",
+            // 1.14
+            168 => "bamboo_jungle",
+            169 => "bamboo_jungle_hills",
+            // 1.16
+            170 => "soul_sand_valley",
+            171 => "crimson_forest",
+            172 => "warped_forest",
+            173 => "basalt_deltas",
+            // 1.17
+            174 => "dripstone_caves",
+            175 => "lush_caves",
+            // 1.18
+            177 => "meadow",
+            178 => "grove",
+            179 => "snowy_slopes",
+            180 => "jagged_peaks",
+            181 => "frozen_peaks",
+            182 => "stony_peaks",
+            // 1.19
+            183 => "deep_dark",
+            184 => "mangrove_swamp",
+            // 1.20
+            185 => "cherry_grove",
+            // 1.21 Winter Drop
+            186 => "pale_garden",
+            _ => return None,
+        })
+    }
+
     /// `biomeExists(mc, id)` — does this biome exist in the given
     /// MC version? Bit-exact port of `cubiomes/biomes.c::biomeExists`.
     /// Drives both `is_overworld_id` and the stronghold-biome mask.
