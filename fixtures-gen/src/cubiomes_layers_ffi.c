@@ -63,6 +63,21 @@ int cubiomes_call_climate_to_biome(int mc, const uint64_t np[6]) {
 /* Initialise + seed a BiomeNoise in one call, sample at (x, y, z),
  * and write the (biome_id, np[6]) tuple back via the output
  * pointers. */
+#include "finders.h"
+
+/* getStructurePos(type, mc, seed, regX, regZ, pos) — write the
+ * attempt position into pos_x / pos_z. Returns the cubiomes valid
+ * flag (1 = structure placed, 0 = no structure in this region). */
+int cubiomes_call_get_structure_pos(int structure_type, int mc, uint64_t seed,
+                                    int reg_x, int reg_z, int *pos_x,
+                                    int *pos_z) {
+    Pos pos = {0, 0};
+    int valid = getStructurePos(structure_type, mc, seed, reg_x, reg_z, &pos);
+    *pos_x = pos.x;
+    *pos_z = pos.z;
+    return valid;
+}
+
 int cubiomes_call_get_biome_at(int mc, uint32_t flags, int dim, uint64_t seed,
                                int scale, int x, int y, int z) {
     Generator g;

@@ -599,6 +599,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("gen_biomes_range fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_structure_pos_fixture(&fixtures_dir.join("structure_pos.bin")) {
+        eprintln!("structure_pos fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -1798,6 +1802,107 @@ pub struct GeneratorBiomeRecord {
 }
 
 const GENERATOR_BIOME_RECORDS: u64 = 1024;
+
+/// `getStructurePos` parity record (kind = 48). For each random
+/// `(structure_type, mc, seed, reg_x, reg_z)` tuple, stores the
+/// cubiomes-reported `valid` flag plus the attempt position when
+/// `valid = 1`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct StructurePosRecord {
+    pub structure_type: i32,
+    pub mc: i32,
+    pub seed: u64,
+    pub reg_x: i32,
+    pub reg_z: i32,
+    pub pos_x: i32,
+    pub pos_z: i32,
+    pub valid: i32,
+    pub pad: i32,
+}
+
+const STRUCTURE_POS_RECORDS: u64 = 2048;
+
+#[allow(clippy::many_single_char_names)]
+fn write_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 48, STRUCTURE_POS_RECORDS)?;
+
+    // (structure_type_ord, min_mc_ord) — sampled from cubiomes'
+    // enum. Skip Mineshaft (15), Desert_Well (16), Geode (17),
+    // End_Gateway (21), End_Island (22) since those aren't ported
+    // yet. Bastion (19) is included only for mc < 1.18 (the 1.18+
+    // chunkGenerateRnd path is deferred).
+    let types: [(i32, i32); 17] = [
+        (0, 1),   // Feature (Beta-1.12 only)
+        (1, 6),   // Desert_Pyramid (1.3+)
+        (2, 6),   // Jungle_Temple (1.3+)
+        (3, 7),   // Swamp_Hut (1.4+)
+        (4, 12),  // Igloo (1.9+)
+        (5, 2),   // Village (B1.8+)
+        (6, 16),  // Ocean_Ruin (1.13+)
+        (7, 16),  // Shipwreck (1.13+)
+        (8, 11),  // Monument (1.8+)
+        (9, 14),  // Mansion (1.11+)
+        (10, 17), // Outpost (1.14+)
+        (11, 19), // Ruined_Portal (1.16.1+)
+        (12, 19), // Ruined_Portal_N (1.16.1+)
+        (13, 23), // Ancient_City (1.19.2+)
+        (14, 16), // Treasure (1.13+)
+        (18, 3),  // Fortress (1.0+ all paths)
+        (20, 12), // End_City (1.9+)
+    ];
+
+    let mc_pool: [i32; 8] = [2, 3, 10, 15, 19, 22, 25, 28];
+
+    let mut rng_state: u64 = 0x0000_5e94_0d6f_a1e5;
+    for _ in 0..STRUCTURE_POS_RECORDS {
+        rng_state = lcg_step(rng_state);
+        let (ty, min_mc) = types[(rng_state as usize) % types.len()];
+        rng_state = lcg_step(rng_state);
+        let valid_mcs: Vec<i32> = mc_pool.iter().copied().filter(|m| *m >= min_mc).collect();
+        if valid_mcs.is_empty() {
+            continue;
+        }
+        let mc = valid_mcs[(rng_state as usize) % valid_mcs.len()];
+        // Feature only valid up to MC_1_12 (ord 15).
+        let mc = if ty == 0 && mc > 15 { 15 } else { mc };
+        rng_state = lcg_step(rng_state);
+        let seed = rng_state;
+        rng_state = lcg_step(rng_state);
+        let reg_x = (rng_state as i32) % 256;
+        rng_state = lcg_step(rng_state);
+        let reg_z = (rng_state as i32) % 256;
+
+        let mut pos_x: c_int = 0;
+        let mut pos_z: c_int = 0;
+        let valid = unsafe {
+            ffi::cubiomes_call_get_structure_pos(
+                ty,
+                mc,
+                seed,
+                reg_x,
+                reg_z,
+                std::ptr::from_mut(&mut pos_x),
+                std::ptr::from_mut(&mut pos_z),
+            )
+        };
+
+        let rec = StructurePosRecord {
+            structure_type: ty,
+            mc,
+            seed,
+            reg_x,
+            reg_z,
+            pos_x,
+            pos_z,
+            valid,
+            pad: 0,
+        };
+        file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
 
 #[allow(clippy::many_single_char_names)]
 fn write_generator_biome_fixture(path: &Path) -> std::io::Result<()> {
@@ -3651,6 +3756,15 @@ mod ffi {
             x: c_int,
             y: c_int,
             z: c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_get_structure_pos(
+            structure_type: c_int,
+            mc: c_int,
+            seed: u64,
+            reg_x: c_int,
+            reg_z: c_int,
+            pos_x: *mut c_int,
+            pos_z: *mut c_int,
         ) -> c_int;
         pub fn cubiomes_call_gen_biomes(
             mc: c_int,

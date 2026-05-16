@@ -19,6 +19,7 @@
 
 pub mod biome;
 pub mod biomenoise;
+pub mod finder;
 pub mod generator;
 pub mod layer;
 pub mod math;
