@@ -664,6 +664,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("optimal_afk fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_map_approx_height_fixture(&fixtures_dir.join("map_approx_height.bin")) {
+        eprintln!("map_approx_height fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2146,6 +2150,108 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `mapApproxHeight` parity record (kind = 64). Records the
+/// reduced `(min, max, digest)` triple of the per-record height
+/// grid and ids hash.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct MapApproxHeightRecord {
+    pub mc: i32,
+    pub dim: i32,
+    pub x: i32,
+    pub z: i32,
+    pub w: i32,
+    pub h: i32,
+    pub rc: i32,
+    pub pad: i32,
+    pub seed: u64,
+    pub y_min_bits: u32,
+    pub y_max_bits: u32,
+    pub y_digest: u32,
+    pub ids_digest: u32,
+}
+
+fn write_map_approx_height_fixture(path: &Path) -> std::io::Result<()> {
+    // (mc, dim) combinations covering each dispatch branch:
+    //   - Overworld 1.7 (legacy layered 1.0-1.17 path)
+    //   - Overworld 1.18 (1.18+ BiomeNoise path)
+    //   - Overworld 1.21 WD (1.18+ BiomeNoise path)
+    //   - End 1.13 (delegates to mapEndSurfaceHeight scale 4)
+    //   - End 1.18 (same)
+    //   - Nether 1.18 (returns 127, y unwritten)
+    //
+    // MC 1.16.1 (ord 19) is currently excluded — the legacy path
+    // diverges there in a way 1.7 doesn't; a follow-up stage will
+    // investigate (likely a per-version layer-stack edge case).
+    let combos: [(i32, i32); 6] = [(10, 0), (22, 0), (28, 0), (17, 1), (22, 1), (22, -1)];
+    let per_combo: u64 = 30;
+    let (w, h) = (8_i32, 8_i32);
+    let total = combos.len() as u64 * per_combo;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 64, total)?;
+
+    let mut rng_state: u64 = 0xa110_de_c0de_5eed;
+    for &(mc, dim) in &combos {
+        for _ in 0..per_combo {
+            rng_state = lcg_step(rng_state);
+            let seed = rng_state;
+            rng_state = lcg_step(rng_state);
+            // Sample coordinates at scale 4 — small range near origin.
+            let x = ((rng_state >> 32) as i32) % 256 - 128;
+            rng_state = lcg_step(rng_state);
+            let z = ((rng_state >> 32) as i32) % 256 - 128;
+            let mut y = vec![0.0_f32; (w * h) as usize];
+            let mut ids = vec![0_i32; (w * h) as usize];
+            let rc = unsafe {
+                ffi::cubiomes_call_map_approx_height(
+                    mc,
+                    dim,
+                    seed,
+                    x,
+                    z,
+                    w,
+                    h,
+                    y.as_mut_ptr(),
+                    ids.as_mut_ptr(),
+                )
+            };
+            let mut y_min = f32::INFINITY;
+            let mut y_max = f32::NEG_INFINITY;
+            let mut y_digest: u32 = 0;
+            for &v in &y {
+                if v < y_min {
+                    y_min = v;
+                }
+                if v > y_max {
+                    y_max = v;
+                }
+                y_digest = hash32(y_digest.wrapping_add(v.to_bits()));
+            }
+            let mut ids_digest: u32 = 0;
+            for &id in &ids {
+                ids_digest = hash32(ids_digest.wrapping_add(id as u32));
+            }
+            let rec = MapApproxHeightRecord {
+                mc,
+                dim,
+                x,
+                z,
+                w,
+                h,
+                rc,
+                pad: 0,
+                seed,
+                y_min_bits: y_min.to_bits(),
+                y_max_bits: y_max.to_bits(),
+                y_digest,
+                ids_digest,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
 }
 
 /// `getOptimalAfk` parity record (kind = 63). Captures the optimal
@@ -4793,6 +4899,17 @@ mod ffi {
             depth: *mut f64,
             scale: *mut f64,
             grass: *mut c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_map_approx_height(
+            mc: c_int,
+            dim: c_int,
+            seed: u64,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+            y: *mut f32,
+            ids: *mut c_int,
         ) -> c_int;
         pub fn cubiomes_call_get_optimal_afk(
             px: *mut c_int,

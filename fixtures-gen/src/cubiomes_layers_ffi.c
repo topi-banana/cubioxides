@@ -176,6 +176,16 @@ int cubiomes_call_get_biome_depth_and_scale(int id, double *depth,
     return getBiomeDepthAndScale(id, depth, scale, grass);
 }
 
+int cubiomes_call_map_approx_height(int mc, int dim, uint64_t seed, int x,
+                                    int z, int w, int h, float *y, int *ids) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, dim, seed);
+    SurfaceNoise sn;
+    initSurfaceNoise(&sn, dim, seed);
+    return mapApproxHeight(y, ids, &g, &sn, x, z, w, h);
+}
+
 #include "quadbase.h"
 
 void cubiomes_call_get_optimal_afk(int *px, int *pz, int *spcnt, int p0x,

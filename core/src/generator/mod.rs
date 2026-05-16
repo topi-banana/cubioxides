@@ -13,6 +13,10 @@
 //! 3D-range `gen_biomes` (cubiomes' `genBiomes(cache, range)`) lands
 //! in a follow-up.
 
+pub mod height;
+
+pub use height::map_approx_height;
+
 use crate::biome::Biome;
 use crate::biomenoise::{BiomeNoise, BiomeNoiseBeta, EndNoise, NetherNoise, SAMPLE_NO_SHIFT};
 use crate::layer::ops::voronoi::voronoi_access_3d;
