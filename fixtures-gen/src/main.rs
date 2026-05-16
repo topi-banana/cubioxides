@@ -1221,6 +1221,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("approx_prefilter fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_nether_voronoi_fixture(&fixtures_dir.join("nether_voronoi.bin")) {
+        eprintln!("nether_voronoi fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -4894,6 +4898,59 @@ fn write_approx_prefilter_fixture(path: &Path) -> std::io::Result<()> {
             file.write_all(&v.to_le_bytes())?;
         }
         file.write_all(&result.to_le_bytes())?;
+    }
+    file.flush()
+}
+
+/// Nether `gen_biomes` scale=1 voronoi payload (kind = 80). Per-record:
+/// `mc i32, seed u64, rx i32, ry i32, rz i32, sx i32, sy i32, sz i32,
+///  err i32, ids[sx*sy*sz]`.
+fn write_nether_voronoi_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (i32, u64, i32, i32, i32, i32, i32, i32);
+    let cases: &[Case] = &[
+        // (mc, seed, rx, ry, rz, sx, sy, sz)
+        // 1.16.1 single cell at sea level.
+        (19, 0xdead_beef, 100, 64, 100, 1, 1, 1),
+        // 1.18 4x1x4.
+        (22, 0xdead_beef, 0, 64, 0, 4, 1, 4),
+        // 1.18 8x1x8 at y=80.
+        (22, 0xcafe_babe, 0, 80, 0, 8, 1, 8),
+        // 1.21 4x1x4.
+        (28, 0xabcd_1234, 0, 64, 0, 4, 1, 4),
+        // Vertical stack sy>1.
+        (22, 0xdead_beef, 0, 60, 0, 4, 4, 4),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 80, total)?;
+    for &(mc, seed, rx, ry, rz, sx, sy, sz) in cases {
+        let n = (sx * sy * sz) as usize;
+        let mut ids = vec![0_i32; n];
+        let err = unsafe {
+            ffi::cubiomes_call_gen_nether_voronoi(
+                mc,
+                seed,
+                rx,
+                ry,
+                rz,
+                sx,
+                sy,
+                sz,
+                ids.as_mut_ptr(),
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&rx.to_le_bytes())?;
+        file.write_all(&ry.to_le_bytes())?;
+        file.write_all(&rz.to_le_bytes())?;
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sy.to_le_bytes())?;
+        file.write_all(&sz.to_le_bytes())?;
+        file.write_all(&err.to_le_bytes())?;
+        for id in &ids {
+            file.write_all(&id.to_le_bytes())?;
+        }
     }
     file.flush()
 }
@@ -8623,6 +8680,17 @@ mod ffi {
             cz: c_int,
             out64: *mut c_int,
         );
+        pub fn cubiomes_call_gen_nether_voronoi(
+            mc: c_int,
+            seed: u64,
+            rx: c_int,
+            ry: c_int,
+            rz: c_int,
+            sx: c_int,
+            sy: c_int,
+            sz: c_int,
+            out: *mut c_int,
+        ) -> c_int;
         pub fn cubiomes_call_approx_prefilter(
             mc: c_int,
             seed: u64,

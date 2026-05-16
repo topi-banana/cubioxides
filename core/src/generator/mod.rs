@@ -381,11 +381,10 @@ impl Generator {
             return;
         }
         let nn = self.nether.as_ref().expect("Nether noise seeded");
-        assert!(
-            r.scale >= 4,
-            "Generator::gen_biomes: Nether requires scale >= 4 (got {})",
-            r.scale
-        );
+        if r.scale == 1 {
+            self.gen_biomes_nether_voronoi(nn, cache, r);
+            return;
+        }
         let total = r.cell_count();
         let mut buf = vec![0_i32; total];
         nn.map_nether_3d(
@@ -401,6 +400,57 @@ impl Generator {
         );
         for (dst, src) in cache.iter_mut().zip(buf.iter()) {
             *dst = Biome(*src);
+        }
+    }
+
+    /// Nether scale=1 via voronoi access — mirrors cubiomes'
+    /// `genNetherScaled` scale=1 branch.
+    fn gen_biomes_nether_voronoi(&self, nn: &NetherNoise, cache: &mut [Biome], r: Range) {
+        let sx = r.sx as usize;
+        let sy = r.sy as usize;
+        let sz = r.sz as usize;
+        let total = sx * sy * sz;
+        let (src, s_x, s_y, s_z, s_sx, s_sz) = if total > 1 {
+            let s = get_voronoi_src_range(r);
+            let s_total = (s.sx as usize) * (s.sy as usize) * (s.sz as usize);
+            let mut buf = vec![0_i32; s_total];
+            nn.map_nether_3d(
+                &mut buf,
+                s.x,
+                s.y,
+                s.z,
+                s.sx as usize,
+                s.sy as usize,
+                s.sz as usize,
+                4,
+                1.0,
+            );
+            (Some(buf), s.x, s.y, s.z, s.sx as usize, s.sz as usize)
+        } else {
+            (None, 0, 0, 0, 0, 0)
+        };
+        let mut p = 0_usize;
+        for k in 0..sy {
+            for j in 0..sz {
+                for i in 0..sx {
+                    let (x4, y4, z4) = crate::layer::ops::voronoi::voronoi_access_3d(
+                        self.sha,
+                        r.x + i as i32,
+                        r.y + k as i32,
+                        r.z + j as i32,
+                    );
+                    let id = if let Some(src) = &src {
+                        let lx = (x4 - s_x) as usize;
+                        let ly = (y4 - s_y) as usize;
+                        let lz = (z4 - s_z) as usize;
+                        src[ly * s_sx * s_sz + lz * s_sx + lx]
+                    } else {
+                        nn.get_nether_biome(x4, y4, z4).0.0
+                    };
+                    cache[p] = Biome(id);
+                    p += 1;
+                }
+            }
         }
     }
 
