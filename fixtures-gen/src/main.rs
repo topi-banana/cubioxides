@@ -647,6 +647,11 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("end_height_noise fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_end_surface_height_fixture(&fixtures_dir.join("end_surface_height.bin"))
+    {
+        eprintln!("end_surface_height fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2129,6 +2134,97 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `mapEndSurfaceHeight` parity record (kind = 60). One row per
+/// `(mc, seed, x, z, w, h, scale, ymin)` with the digest+min/max
+/// of the resulting f32 grid.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct EndSurfaceHeightRecord {
+    pub mc: i32,
+    pub x: i32,
+    pub z: i32,
+    pub w: i32,
+    pub h: i32,
+    pub scale: i32,
+    pub ymin: i32,
+    pub pad: i32,
+    pub seed: u64,
+    pub y_min_bits: u32,
+    pub y_max_bits: u32,
+    pub digest: u32,
+    pub pad2: u32,
+}
+
+fn write_end_surface_height_fixture(path: &Path) -> std::io::Result<()> {
+    let mc_pool: [i32; 3] = [17, 22, 28];
+    // (scale, w, h) — exercise each supported scale; smaller grids
+    // are fine since the column-sampling logic is per-cell.
+    let scales: [(i32, i32, i32); 4] = [(1, 8, 8), (2, 8, 8), (4, 6, 6), (8, 4, 4)];
+    let per_combo: u64 = 12;
+    let total = mc_pool.len() as u64 * scales.len() as u64 * per_combo;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 60, total)?;
+
+    let mut rng_state: u64 = 0xc011_a87e_face_e711;
+    for &mc in &mc_pool {
+        for &(scale, w, h) in &scales {
+            for _ in 0..per_combo {
+                rng_state = lcg_step(rng_state);
+                let seed = rng_state;
+                rng_state = lcg_step(rng_state);
+                let x = ((rng_state >> 32) as i32) % 256 - 128;
+                rng_state = lcg_step(rng_state);
+                let z = ((rng_state >> 32) as i32) % 256 - 128;
+                rng_state = lcg_step(rng_state);
+                let ymin = (rng_state as i32) & 0x3f;
+                let mut y = vec![0.0_f32; (w * h) as usize];
+                unsafe {
+                    ffi::cubiomes_call_map_end_surface_height(
+                        mc,
+                        seed,
+                        x,
+                        z,
+                        w,
+                        h,
+                        scale,
+                        ymin,
+                        y.as_mut_ptr(),
+                    );
+                }
+                let mut y_min = f32::INFINITY;
+                let mut y_max = f32::NEG_INFINITY;
+                let mut digest: u32 = 0;
+                for &v in &y {
+                    if v < y_min {
+                        y_min = v;
+                    }
+                    if v > y_max {
+                        y_max = v;
+                    }
+                    digest = hash32(digest.wrapping_add(v.to_bits()));
+                }
+                let rec = EndSurfaceHeightRecord {
+                    mc,
+                    x,
+                    z,
+                    w,
+                    h,
+                    scale,
+                    ymin,
+                    pad: 0,
+                    seed,
+                    y_min_bits: y_min.to_bits(),
+                    y_max_bits: y_max.to_bits(),
+                    digest,
+                    pad2: 0,
+                };
+                file.write_all(bytemuck::bytes_of(&rec))?;
+            }
+        }
+    }
+    file.flush()
 }
 
 /// `getEndHeightNoise` parity record (kind = 59). Single height
@@ -4479,6 +4575,17 @@ mod ffi {
             z: c_int,
             range: c_int,
         ) -> f32;
+        pub fn cubiomes_call_map_end_surface_height(
+            mc: c_int,
+            seed: u64,
+            x: c_int,
+            z: c_int,
+            w: c_int,
+            h: c_int,
+            scale: c_int,
+            ymin: c_int,
+            y: *mut f32,
+        ) -> c_int;
         pub fn cubiomes_call_get_mineshafts(
             mc: c_int,
             seed: u64,

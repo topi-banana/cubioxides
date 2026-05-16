@@ -152,6 +152,17 @@ float cubiomes_call_end_height_noise(int mc, uint64_t seed, int x, int z,
     return getEndHeightNoise(&en, x, z, range);
 }
 
+int cubiomes_call_map_end_surface_height(int mc, uint64_t seed, int x, int z,
+                                         int w, int h, int scale, int ymin,
+                                         float *y) {
+    EndNoise en;
+    setEndSeed(&en, mc, seed);
+    SurfaceNoise sn;
+    initSurfaceNoise(&sn, DIM_END, seed);
+    return mapEndSurfaceHeight(y, &en, &sn, x, z, w, h, scale, ymin);
+}
+
+
 void cubiomes_call_nth_strongholds(int mc, uint64_t seed, int n_steps,
                                    int *out_xz) {
     Generator g;
