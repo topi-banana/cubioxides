@@ -23,7 +23,7 @@ pub mod slime;
 pub mod spawn;
 pub mod stronghold;
 
-pub use end::{EndIsland, get_end_islands, map_end_island_height};
+pub use end::{EndIsland, get_end_islands, is_end_chunk_empty, map_end_island_height};
 pub use locate_biome::{id_matches, locate_biome};
 pub use mineshaft::get_mineshafts;
 pub use population_seed::{chunk_generate_rng, get_population_seed};

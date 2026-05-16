@@ -652,6 +652,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("end_surface_height fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_end_chunk_empty_fixture(&fixtures_dir.join("end_chunk_empty.bin")) {
+        eprintln!("end_chunk_empty fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2134,6 +2138,49 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `isEndChunkEmpty` parity record (kind = 61).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct EndChunkEmptyRecord {
+    pub mc: i32,
+    pub chunk_x: i32,
+    pub chunk_z: i32,
+    pub empty: i32,
+    pub seed: u64,
+}
+
+fn write_end_chunk_empty_fixture(path: &Path) -> std::io::Result<()> {
+    let mc_pool: [i32; 3] = [17, 22, 28];
+    let per_mc: u64 = 80;
+    let total = mc_pool.len() as u64 * per_mc;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 61, total)?;
+
+    let mut rng_state: u64 = 0xface_0fff_5eed_b00b;
+    for &mc in &mc_pool {
+        for _ in 0..per_mc {
+            rng_state = lcg_step(rng_state);
+            let seed = rng_state;
+            rng_state = lcg_step(rng_state);
+            // Range close to the center where small_end_islands /
+            // small noise islands matter most; chunk coords ±256.
+            let cx = ((rng_state >> 32) as i32) % 512 - 256;
+            rng_state = lcg_step(rng_state);
+            let cz = ((rng_state >> 32) as i32) % 512 - 256;
+            let empty = unsafe { ffi::cubiomes_call_is_end_chunk_empty(mc, seed, cx, cz) };
+            let rec = EndChunkEmptyRecord {
+                mc,
+                chunk_x: cx,
+                chunk_z: cz,
+                empty,
+                seed,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
 }
 
 /// `mapEndSurfaceHeight` parity record (kind = 60). One row per
@@ -4585,6 +4632,12 @@ mod ffi {
             scale: c_int,
             ymin: c_int,
             y: *mut f32,
+        ) -> c_int;
+        pub fn cubiomes_call_is_end_chunk_empty(
+            mc: c_int,
+            seed: u64,
+            chunk_x: c_int,
+            chunk_z: c_int,
         ) -> c_int;
         pub fn cubiomes_call_get_mineshafts(
             mc: c_int,

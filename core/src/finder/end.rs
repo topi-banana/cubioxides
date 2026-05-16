@@ -17,10 +17,14 @@
 //! Subsequent commits add `mapEndIslandHeight` and the `EndNoise`
 //! integration that turns these islands into actual terrain heights.
 
+#![allow(clippy::needless_range_loop)]
+
 use crate::biome::Biome;
 use crate::biomenoise::end::EndNoise;
+use crate::biomenoise::end_surface::map_end_surface_height;
+use crate::biomenoise::surface::SurfaceNoise;
 use crate::finder::{StructureType, get_structure_config};
-use crate::math::floordiv;
+use crate::math::{floordiv, lerp};
 use crate::mc_version::MCVersion;
 use crate::rng::{JavaRng, Xoroshiro};
 
@@ -231,6 +235,214 @@ pub fn map_end_island_height(
         }
     }
     0
+}
+
+/// `clamped (32 + 46 - y) / 64.0`. Index range: 0..=32.
+const UPPER_DROP: [f64; 33] = [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    63.0 / 64.0,
+    62.0 / 64.0,
+    61.0 / 64.0,
+    60.0 / 64.0,
+    59.0 / 64.0,
+    58.0 / 64.0,
+    57.0 / 64.0,
+    56.0 / 64.0,
+    55.0 / 64.0,
+    54.0 / 64.0,
+    53.0 / 64.0,
+    52.0 / 64.0,
+    51.0 / 64.0,
+    50.0 / 64.0,
+    49.0 / 64.0,
+    48.0 / 64.0,
+    47.0 / 64.0,
+    46.0 / 64.0,
+];
+
+/// `clamped (y - 1) / 7.0`. Index range: 0..=32.
+const LOWER_DROP: [f64; 33] = [
+    0.0,
+    0.0,
+    1.0 / 7.0,
+    2.0 / 7.0,
+    3.0 / 7.0,
+    4.0 / 7.0,
+    5.0 / 7.0,
+    6.0 / 7.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+];
+
+/// `inverse of clamping func: (30 * (1-l) / l + 3000 * (1-u)) / u`.
+/// Indexed only by `y` in `[0, 18]`; cubiomes' array literal omits
+/// entries past 18.
+const INVERSE_DROP: [f64; 19] = [
+    1e9,
+    1e9,
+    180.0,
+    75.0,
+    40.0,
+    22.5,
+    12.0,
+    5.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1000.0 / 21.0,
+    3000.0 / 31.0,
+    9000.0 / 61.0,
+    200.0,
+];
+
+/// `isEndChunkEmpty(en, sn, seed, chunkX, chunkZ)` — return `true`
+/// (cubiomes' 1) when the chunk has no End surface blocks, else
+/// `false` (cubiomes' 0).
+///
+/// Bit-exact port of cubiomes' `isEndChunkEmpty`. Three early-exits:
+/// 1. Any neighbour `small_end_islands` intersects this chunk's footprint.
+/// 2. The inner 2×2 noise cells have a positive value at `y = 8..=14`.
+/// 3. The outer 3×3 noise cells have a positive value at `y = 2..=17`
+///    (only triggers the full `map_end_surface_height` check).
+#[must_use]
+pub fn is_end_chunk_empty(
+    en: &EndNoise,
+    sn: &SurfaceNoise,
+    seed: u64,
+    chunk_x: i32,
+    chunk_z: i32,
+) -> bool {
+    let x = chunk_x * 2;
+    let z = chunk_z * 2;
+
+    // (1) Check if small end islands intersect this chunk.
+    let mut buf = [EndIsland::default(); 2];
+    for jj in -1..=1_i32 {
+        for ii in -1..=1_i32 {
+            let n = get_end_islands(&mut buf, en.mc, seed, chunk_x + ii, chunk_z + jj);
+            for is_ in buf.iter().take(n) {
+                if is_.x + is_.r <= chunk_x * 16 {
+                    continue;
+                }
+                if is_.z + is_.r <= chunk_z * 16 {
+                    continue;
+                }
+                if is_.x - is_.r > chunk_x * 16 + 15 {
+                    continue;
+                }
+                if is_.z - is_.r > chunk_z * 16 + 15 {
+                    continue;
+                }
+                let mut id = 0_i32;
+                en.map_end_biome(std::slice::from_mut(&mut id), is_.x >> 4, is_.z >> 4, 1, 1);
+                if id == Biome::SMALL_END_ISLANDS.id() {
+                    return false;
+                }
+            }
+        }
+    }
+
+    let eps = 0.001_f64;
+    let mut depth = [[0.0_f64; 3]; 3];
+
+    // (2) Inner 2×2 depth values + per-y noise probe.
+    for i in 0..2 {
+        for j in 0..2 {
+            depth[i][j] =
+                en.end_height_noise(x + i as i32, z + j as i32, 0) as f64 - 8.0_f32 as f64;
+            for k in 8..=14 {
+                let u = UPPER_DROP[k as usize];
+                let l = LOWER_DROP[k as usize];
+                let mut noise = depth[i][j];
+                let pivot = INVERSE_DROP[k as usize] - noise;
+                noise += sn.sample_between(x + i as i32, k, z + j as i32, pivot - eps, pivot + eps);
+                noise = lerp(u, -3000.0, noise);
+                noise = lerp(l, -30.0, noise);
+                if noise > 0.0 {
+                    return false;
+                }
+            }
+        }
+    }
+
+    // Fill in the boundary depth values.
+    for i in 0..3_i32 {
+        depth[i as usize][2] = en.end_height_noise(x + i, z + 2, 0) as f64 - 8.0_f32 as f64;
+    }
+    for j in 0..2_i32 {
+        depth[2][j as usize] = en.end_height_noise(x + 2, z + j, 0) as f64 - 8.0_f32 as f64;
+    }
+
+    // (3) Outer 3×3 noise scan; if any cell positive, drop to the
+    //     full height-map check.
+    let mut needs_full_check = false;
+    'outer: for i in 0..3 {
+        for j in 0..3 {
+            for k in 2..18 {
+                let u = UPPER_DROP[k as usize];
+                let l = LOWER_DROP[k as usize];
+                let mut noise = depth[i][j];
+                let pivot = INVERSE_DROP[k as usize] - noise;
+                noise += sn.sample_between(x + i as i32, k, z + j as i32, pivot - eps, pivot + eps);
+                noise = lerp(u, -3000.0, noise);
+                noise = lerp(l, -30.0, noise);
+                if noise > 0.0 {
+                    needs_full_check = true;
+                    break 'outer;
+                }
+            }
+        }
+    }
+
+    if !needs_full_check {
+        return true;
+    }
+
+    // L_check_full: per-block surface height; if any > 0, not empty.
+    let mut y = [0.0_f32; 256];
+    map_end_surface_height(&mut y, en, sn, chunk_x * 16, chunk_z * 16, 16, 16, 1, 0);
+    !y.iter().any(|&v| v != 0.0)
 }
 
 #[cfg(test)]
