@@ -159,9 +159,9 @@ fn flood_fill_gen(
             }
         }
         let next = [(i, j - 1, d), (i, j + 1, d), (i - 1, j, d), (i + 1, j, d)];
-        for (ni, nj, nd) in next {
-            i = ni;
-            j = nj;
+        for (next_i, next_j, next_d) in next {
+            i = next_i;
+            j = next_j;
             if i < 0 || i >= sx || j < 0 || j >= sz {
                 continue;
             }
@@ -169,7 +169,7 @@ fn flood_fill_gen(
             if ids[kk] == i32::MAX {
                 continue;
             }
-            queue.push((ni, nj, nd));
+            queue.push((next_i, next_j, next_d));
         }
     }
     if n == 0 {
