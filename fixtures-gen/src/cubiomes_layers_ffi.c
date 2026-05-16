@@ -1249,3 +1249,47 @@ void cubiomes_call_wilson(double n, double p, double z, double *lo, double *hi) 
 
 extern double inverf(double x);
 double cubiomes_call_inverf(double x) { return inverf(x); }
+
+/* monteCarloBiomes wrapper with a fixed predicate: "biome at (scale, x, y, z)
+ * matches target_id". Returns (result, samples_taken, successes) via out
+ * pointers so we can verify both the bool result and statistics. */
+typedef struct {
+    int target_id;
+    int samples;
+    int successes;
+} mcb_ctx_t;
+
+static int mcb_eval_biome_match(Generator *g, int scale, int x, int y, int z, void *data) {
+    mcb_ctx_t *ctx = (mcb_ctx_t *)data;
+    ctx->samples++;
+    int id = getBiomeAt(g, scale, x, y, z);
+    if (id < 0) return -1;
+    if (id == ctx->target_id) {
+        ctx->successes++;
+        return 1;
+    }
+    return 0;
+}
+
+int cubiomes_call_monte_carlo_biomes(int mc, int dim, uint64_t seed,
+                                     int scale, int rx, int ry, int rz,
+                                     int sx, int sy, int sz,
+                                     uint64_t rng_seed_after_setSeed,
+                                     double coverage, double confidence,
+                                     int target_id,
+                                     int *out_samples, int *out_successes,
+                                     uint64_t *out_rng_after) {
+    Generator g;
+    setupGenerator(&g, mc, 0);
+    applySeed(&g, dim, seed);
+    Range r;
+    r.scale = scale; r.x = rx; r.z = rz; r.sx = sx; r.sz = sz; r.y = ry; r.sy = sy;
+    uint64_t rng = rng_seed_after_setSeed; // raw 48-bit state, already post-setSeed.
+    mcb_ctx_t ctx = {target_id, 0, 0};
+    int ret = monteCarloBiomes(&g, r, &rng, coverage, confidence,
+                               mcb_eval_biome_match, &ctx);
+    *out_samples = ctx.samples;
+    *out_successes = ctx.successes;
+    *out_rng_after = rng;
+    return ret;
+}

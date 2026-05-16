@@ -1137,6 +1137,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("inverf fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_monte_carlo_fixture(&fixtures_dir.join("monte_carlo.bin")) {
+        eprintln!("monte_carlo fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -3506,6 +3510,191 @@ fn write_get_largest_rec_fixture(path: &Path) -> std::io::Result<()> {
             ids: ids_arr,
         };
         file.write_all(bytemuck::bytes_of(&rec))?;
+    }
+    file.flush()
+}
+
+/// `monteCarloBiomes` parity payload (kind = 98). Body layout
+/// (little-endian, no padding):
+/// `mc i32, dim i32, seed u64, scale i32, rx i32, ry i32, rz i32,
+///  sx i32, sy i32, sz i32, padding [i32; 1], rng_initial u64,
+///  coverage f64, confidence f64, target_id i32, result i32,
+///  samples i32, successes i32, rng_after u64`.
+#[allow(clippy::too_many_lines, clippy::unreadable_literal)]
+fn write_monte_carlo_fixture(path: &Path) -> std::io::Result<()> {
+    // Each case: simple square area, coverage 0.5, ocean (0) as target.
+    type Case = (
+        i32,
+        i32,
+        u64,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        u64,
+        f64,
+        f64,
+        i32,
+    );
+    let cases: &[Case] = &[
+        // (mc, dim, seed, scale, rx, ry, rz, sx, sy, sz, rng_initial, cov, conf, target)
+        // Exercise hi+per_m < coverage early-exit (target rare):
+        (
+            22,
+            0,
+            0xdead_beef,
+            4,
+            0,
+            0,
+            0,
+            32,
+            1,
+            32,
+            12345,
+            0.5,
+            0.95,
+            0,
+        ),
+        (
+            22,
+            0,
+            0xdead_beef,
+            4,
+            0,
+            0,
+            0,
+            16,
+            1,
+            16,
+            67890,
+            0.3,
+            0.95,
+            0,
+        ),
+        (
+            22,
+            0,
+            0xcafe_babe,
+            4,
+            -64,
+            0,
+            -64,
+            64,
+            1,
+            64,
+            0xc0ffee,
+            0.4,
+            0.99,
+            1,
+        ),
+        (
+            28,
+            0,
+            0x1234_5678,
+            4,
+            100,
+            0,
+            100,
+            16,
+            1,
+            16,
+            0xfeed,
+            0.5,
+            0.9,
+            0,
+        ),
+        // Trivial coverage=0 — first non-skip sample beats lo - per_m > 0:
+        (22, 0, 0xdead_beef, 4, 0, 0, 0, 16, 1, 16, 1, 0.0, 0.95, 0),
+        // Small buf-path area (n < 4 * wn): triggers shuffle buffer:
+        (22, 0, 0xdead_beef, 4, 0, 0, 0, 4, 1, 4, 99, 0.5, 0.95, 0),
+        // Tiny 2×2 area runs to completion without early exit:
+        (22, 0, 0xdead_beef, 4, 0, 0, 0, 2, 1, 2, 777, 0.9, 0.99, 0),
+        // 1×1 area, coverage 0.0: first eval decides — exercises
+        // lo - per_m > coverage (true) when biome matches:
+        (
+            22,
+            0,
+            0xdead_beef,
+            4,
+            200,
+            0,
+            200,
+            1,
+            1,
+            1,
+            555,
+            0.0,
+            0.95,
+            6,
+        ),
+        // 1×1 area, coverage 0.0 with another target:
+        (
+            22,
+            0,
+            0xdead_beef,
+            4,
+            200,
+            0,
+            200,
+            1,
+            1,
+            1,
+            555,
+            0.0,
+            0.95,
+            27,
+        ),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 98, total)?;
+    for &(mc, dim, seed, scale, rx, ry, rz, sx, sy, sz, rng_init, cov, conf, target) in cases {
+        let mut samples: c_int = 0;
+        let mut successes: c_int = 0;
+        let mut rng_after: u64 = 0;
+        let result = unsafe {
+            ffi::cubiomes_call_monte_carlo_biomes(
+                mc,
+                dim,
+                seed,
+                scale,
+                rx,
+                ry,
+                rz,
+                sx,
+                sy,
+                sz,
+                rng_init,
+                cov,
+                conf,
+                target,
+                std::ptr::from_mut(&mut samples),
+                std::ptr::from_mut(&mut successes),
+                std::ptr::from_mut(&mut rng_after),
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&dim.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&scale.to_le_bytes())?;
+        file.write_all(&rx.to_le_bytes())?;
+        file.write_all(&ry.to_le_bytes())?;
+        file.write_all(&rz.to_le_bytes())?;
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sy.to_le_bytes())?;
+        file.write_all(&sz.to_le_bytes())?;
+        file.write_all(&0_i32.to_le_bytes())?; // pad to align u64
+        file.write_all(&rng_init.to_le_bytes())?;
+        file.write_all(&cov.to_le_bytes())?;
+        file.write_all(&conf.to_le_bytes())?;
+        file.write_all(&target.to_le_bytes())?;
+        file.write_all(&result.to_le_bytes())?;
+        file.write_all(&samples.to_le_bytes())?;
+        file.write_all(&successes.to_le_bytes())?;
+        file.write_all(&rng_after.to_le_bytes())?;
     }
     file.flush()
 }
@@ -7191,6 +7380,25 @@ mod ffi {
         ) -> c_int;
         pub fn cubiomes_call_wilson(n: f64, p: f64, z: f64, lo: *mut f64, hi: *mut f64);
         pub fn cubiomes_call_inverf(x: f64) -> f64;
+        pub fn cubiomes_call_monte_carlo_biomes(
+            mc: c_int,
+            dim: c_int,
+            seed: u64,
+            scale: c_int,
+            rx: c_int,
+            ry: c_int,
+            rz: c_int,
+            sx: c_int,
+            sy: c_int,
+            sz: c_int,
+            rng_seed_after_setseed: u64,
+            coverage: f64,
+            confidence: f64,
+            target_id: c_int,
+            out_samples: *mut c_int,
+            out_successes: *mut c_int,
+            out_rng_after: *mut u64,
+        ) -> c_int;
         pub fn cubiomes_call_can_biome_generate(
             layer_id: c_int,
             mc: c_int,
