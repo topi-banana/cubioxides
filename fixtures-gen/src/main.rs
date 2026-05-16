@@ -2483,9 +2483,9 @@ fn write_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
 
     // (structure_type_ord, min_mc_ord) — sampled from cubiomes'
     // enum. Skip Mineshaft (15) since it isn't a region-grid
-    // structure. Bastion (19) is included only for mc < 1.18
-    // (the 1.18+ chunkGenerateRnd path is deferred).
-    let types: [(i32, i32); 21] = [
+    // structure. Bastion (19) covers both 1.16+/1.17 (`getRegPos`)
+    // and 1.18+ (`chunkGenerateRnd`) paths via the same min_mc=19.
+    let types: [(i32, i32); 22] = [
         (0, 1),   // Feature (Beta-1.12 only)
         (1, 6),   // Desert_Pyramid (1.3+)
         (2, 6),   // Jungle_Temple (1.3+)
@@ -2504,6 +2504,7 @@ fn write_structure_pos_fixture(path: &Path) -> std::io::Result<()> {
         (16, 16), // Desert_Well (1.13+ in cubiomes)
         (17, 21), // Geode (1.17+)
         (18, 3),  // Fortress (1.0+ all paths)
+        (19, 19), // Bastion (1.16.1+; 1.18+ uses chunkGenerateRnd)
         (20, 12), // End_City (1.9+)
         (21, 16), // End_Gateway (1.13+)
         (22, 16), // End_Island (1.13+)

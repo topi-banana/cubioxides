@@ -20,6 +20,30 @@
 use crate::mc_version::MCVersion;
 use crate::rng::{JavaRng, Xoroshiro};
 
+/// `chunkGenerateRnd(worldSeed, chunkX, chunkZ)` — return the
+/// per-chunk Java RNG used by 1.18+ Bastion placement (and by
+/// every cubiomes path that drives 16×16 chunk generation).
+///
+/// Bit-exact port of cubiomes' static inline:
+/// ```c
+/// uint64_t chunkGenerateRnd(uint64_t worldSeed, int chunkX, int chunkZ) {
+///     uint64_t rnd; setSeed(&rnd, worldSeed);
+///     rnd = (nextLong(&rnd) * chunkX) ^ (nextLong(&rnd) * chunkZ) ^ worldSeed;
+///     setSeed(&rnd, rnd); return rnd;
+/// }
+/// ```
+/// The `int * uint64_t` C multiply sign-extends `chunkX` / `chunkZ`
+/// through `int64_t`, which Rust spells as `as i64 as u64`.
+#[must_use]
+pub fn chunk_generate_rng(world_seed: u64, chunk_x: i32, chunk_z: i32) -> JavaRng {
+    let mut rng = JavaRng::new(world_seed);
+    let a = rng.next_long();
+    let b = rng.next_long();
+    let mix =
+        a.wrapping_mul(chunk_x as i64 as u64) ^ b.wrapping_mul(chunk_z as i64 as u64) ^ world_seed;
+    JavaRng::new(mix)
+}
+
 /// `getPopulationSeed(mc, ws, x, z)` — return the chunk-local
 /// decorator RNG seed for the chunk whose block-origin is `(x, z)`.
 #[must_use]

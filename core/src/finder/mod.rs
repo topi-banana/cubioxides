@@ -26,7 +26,7 @@ pub mod stronghold;
 pub use end::{EndIsland, get_end_islands, map_end_island_height};
 pub use locate_biome::{id_matches, locate_biome};
 pub use mineshaft::get_mineshafts;
-pub use population_seed::get_population_seed;
+pub use population_seed::{chunk_generate_rng, get_population_seed};
 pub use quadbase::{
     LOW20_QUAD_CLASSIC, LOW20_QUAD_HUT_BARELY, LOW20_QUAD_HUT_NORMAL, LOW20_QUAD_IDEAL, QuadHutCst,
     get_quad_hut_cst, is_quad_base_feature_24, is_quad_base_feature_24_classic,
@@ -600,8 +600,10 @@ pub fn get_structure_pos(
 
         Bastion => {
             if mc.is_at_least(MCVersion::V1_18) {
-                // 1.18+ uses chunkGenerateRnd which we haven't ported yet.
-                None
+                // 1.18+: standard feature pos, then chunk-RNG check.
+                let p = get_feature_pos(config, seed, reg_x, reg_z);
+                let mut rng = population_seed::chunk_generate_rng(seed, p.x >> 4, p.z >> 4);
+                if rng.next_int(5) >= 2 { Some(p) } else { None }
             } else {
                 let (p, mut rng) = get_reg_pos(seed, reg_x, reg_z, config);
                 if rng.next_int(5) >= 2 { Some(p) } else { None }
