@@ -5,16 +5,15 @@
 //! every result into a 32-bit hash. The expected hashes are taken
 //! verbatim from cubiomes' `b6_hashes` array.
 //!
-//! Only the layer-based MC versions (≤ 1.16) are covered here: 1.18+
-//! lives on the `BiomeNoise` path (M4) which is not yet ported. Beta
-//! 1.8 is omitted because cubiomes itself records `0x00000000` for it
-//! (i.e. no reference value has been pinned upstream).
+//! Beta 1.8 is omitted because cubiomes itself records `0x00000000`
+//! for it (i.e. no reference value has been pinned upstream).
 
 #![allow(clippy::missing_panics_doc)]
 
 use cubioxides::biome::Biome;
+use cubioxides::generator::Generator;
 use cubioxides::layer::{LayerStack, gen_area, set_layer_seed, setup_layer_stack};
-use cubioxides::mc_version::MCVersion;
+use cubioxides::mc_version::{Dimension, MCVersion};
 
 fn hash32(mut x: u32) -> u32 {
     x ^= x >> 15;
@@ -55,6 +54,31 @@ fn get_ref_layered(mc: MCVersion, bits: i32) -> u32 {
     digest
 }
 
+/// Mirror of cubiomes' `getRef(mc, dim=0, bits, scale=4, spread=1)`
+/// for the Modern (1.18+) Overworld path. Builds a fresh
+/// [`Generator`] per cell, applies the deterministic seed, and
+/// samples via `biome_at` at scale=4. Unlike the layered path, this
+/// also picks a `y` from the same per-cell hash that cubiomes uses
+/// (`hash32(s) & 0x7fffffff) % 384 - 64) >> 2`).
+fn get_ref_modern(mc: MCVersion, bits: i32) -> u32 {
+    let r: i32 = 1 << (bits - 1);
+    let mut digest: u32 = 0;
+    let mut g = Generator::new(mc, 0);
+    for x in -r..r {
+        for z in -r..r {
+            let s = ((z as i64) << bits) ^ (x as i64);
+            g.apply_seed(Dimension::Overworld, s as u64);
+            // cubiomes: y = (int)((hash32(s) & 0x7fffffff) % 384 - 64) >> 2
+            let y_raw = ((hash32(s as u32) & 0x7fff_ffff) as i32) % 384 - 64;
+            let y = y_raw >> 2;
+            let id = g.biome_at(4, x, y, z).id();
+            let folded = (s as i32) ^ (id << (2 * bits));
+            digest ^= hash32(folded as u32);
+        }
+    }
+    digest
+}
+
 #[test]
 fn b6_hashes_layered_mc() {
     // (mc, expected) — copied directly from cubiomes/tests.c b6_hashes,
@@ -74,6 +98,25 @@ fn b6_hashes_layered_mc() {
     ];
     for &(mc, expected) in cases {
         let got = get_ref_layered(mc, 6);
+        assert_eq!(
+            got, expected,
+            "testBiomeGen1x1 b6 mismatch for MC {mc:?}: expected {expected:#010x}, got {got:#010x}"
+        );
+    }
+}
+
+#[test]
+fn b6_hashes_modern_mc() {
+    // The 1.18+ entries from cubiomes/tests.c b6_hashes (in
+    // mc_vers order: 1.20, 1.19, 1.19.2, 1.18).
+    let cases: &[(MCVersion, u32)] = &[
+        (MCVersion::V1_20, 0x0f88_88ab),
+        (MCVersion::V1_19, 0x391c_36ec),
+        (MCVersion::V1_19_2, 0xea3e_8c1c),
+        (MCVersion::V1_18, 0xade7_f891),
+    ];
+    for &(mc, expected) in cases {
+        let got = get_ref_modern(mc, 6);
         assert_eq!(
             got, expected,
             "testBiomeGen1x1 b6 mismatch for MC {mc:?}: expected {expected:#010x}, got {got:#010x}"
