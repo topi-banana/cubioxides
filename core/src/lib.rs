@@ -32,6 +32,7 @@ pub mod sha;
 pub mod tables;
 
 pub use biome::Biome;
+pub use generator::{FORCE_OCEAN_VARIANTS, Generator, LARGE_BIOMES, NO_BETA_OCEAN, Range};
 pub use mc_version::{Dimension, MCVersion};
 pub use noise::{DoublePerlinNoise, OctaveNoise, PerlinNoise};
 pub use rng::{JavaRng, Xoroshiro};
