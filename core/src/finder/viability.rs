@@ -18,7 +18,7 @@ use crate::finder::variant::get_variant;
 use crate::finder::{
     StructureType, get_feature_pos, get_structure_config, get_structure_pos, set_attempt_seed,
 };
-use crate::generator::Generator;
+use crate::generator::{Generator, Range};
 use crate::math::floordiv;
 use crate::mc_version::{Dimension, MCVersion};
 
@@ -261,18 +261,14 @@ fn viable_overworld_legacy(
 
         Village => viable_village_legacy(g, chunk_x, chunk_z),
 
+        Monument => viable_monument_legacy(g, chunk_x, chunk_z),
+
+        Mansion => viable_mansion_legacy(g, chunk_x, chunk_z),
+
         // Outpost pre-1.18 needs a recursive Village viability check
         // for mc < 1.16.1; defer to a follow-up.
         Outpost => {
             unimplemented!("Pre-1.18 Outpost viability needs recursive Village check (follow-up)")
-        }
-
-        // Mansion / Monument pre-1.18 use `areBiomesViable` with the
-        // layered biome cache; defer.
-        Mansion | Monument => {
-            unimplemented!(
-                "Pre-1.18 Mansion / Monument viability needs `areBiomesViable` over the layered biome cache (follow-up)"
-            )
         }
 
         Feature | EndCity | EndGateway | EndIsland | Fortress | Bastion => {
@@ -292,6 +288,119 @@ fn legacy_feature_sample(mc: MCVersion, chunk_x: i64, chunk_z: i64) -> (i32, i32
         // 1.16-1.17: sample at chunk*4+2 via L_RIVER_MIX_4.
         ((chunk_x * 4 + 2) as i32, (chunk_z * 4 + 2) as i32, 4)
     }
+}
+
+/// Pre-1.18 Monument viability. Three sub-paths:
+///   - MC ≤ 1.7: never viable.
+///   - MC == 1.8: single scale-1 sample (chunkX*16+8, _, chunkZ*16+8)
+///     must be deep-ocean.
+///   - MC 1.9–1.17: pre-check at scale-16 (Shore16 entry) must be
+///     deep-ocean, then `areBiomesViable` over a 16-radius square
+///     with `g_monument_biomes2` (deep oceans only), then another
+///     check over 29 radius with `g_monument_biomes1` (any ocean
+///     or river).
+fn viable_monument_legacy(g: &Generator, chunk_x: i64, chunk_z: i64) -> bool {
+    if g.mc.is_before(MCVersion::V1_8) {
+        return false;
+    }
+    let sample_x = (chunk_x * 16 + 8) as i32;
+    let sample_z = (chunk_z * 16 + 8) as i32;
+    if g.mc == MCVersion::V1_8 {
+        // 1.8 path: single-sample pre-check at the chunk centre
+        // (block scale=1) — must be deep-ocean before the final
+        // radius-29 check runs.
+        let id = g.biome_at(1, sample_x, 0, sample_z).0;
+        if id < 0 || !Biome::is_deep_ocean_id(id) {
+            return false;
+        }
+    } else {
+        // 1.9 - 1.17. Pre-check at scale-16 (Shore16 entry), then
+        // a 16-radius areBiomesViable over deep-ocean variants only.
+        let id = g.biome_at(16, chunk_x as i32, 0, chunk_z as i32).0;
+        if id < 0 || !Biome::is_deep_ocean_id(id) {
+            return false;
+        }
+        if !are_biomes_viable_legacy(g, sample_x, 63, sample_z, 16, G_MONUMENT_BIOMES2, 0) {
+            return false;
+        }
+    }
+    // Always run the final 29-radius any-ocean / river check.
+    are_biomes_viable_legacy(g, sample_x, 63, sample_z, 29, G_MONUMENT_BIOMES1, 0)
+}
+
+/// Cubiomes' `g_monument_biomes2` — deep-ocean-only mask for the
+/// 16-radius Monument viability pre-check.
+const G_MONUMENT_BIOMES2: u64 = (1u64 << Biome::DEEP_FROZEN_OCEAN.id())
+    | (1u64 << Biome::DEEP_COLD_OCEAN.id())
+    | (1u64 << Biome::DEEP_OCEAN.id())
+    | (1u64 << Biome::DEEP_LUKEWARM_OCEAN.id())
+    | (1u64 << Biome::DEEP_WARM_OCEAN.id());
+
+/// Pre-1.18 Mansion viability. Requires `dark_forest` (id 29) or
+/// `dark_forest_hills` (id 157, > 128 so encoded in mask `m`)
+/// across the full 32-radius square around (chunkX*16+8, _,
+/// chunkZ*16+8).
+fn viable_mansion_legacy(g: &Generator, chunk_x: i64, chunk_z: i64) -> bool {
+    if g.mc.is_before(MCVersion::V1_11) {
+        return false;
+    }
+    let sample_x = (chunk_x * 16 + 8) as i32;
+    let sample_z = (chunk_z * 16 + 8) as i32;
+    let b = 1u64 << Biome::DARK_FOREST.id();
+    let m = 1u64 << (157 - 128); // dark_forest_hills (157)
+    are_biomes_viable_legacy(g, sample_x, 0, sample_z, 32, b, m)
+}
+
+/// Pre-1.18 subset of cubiomes' `areBiomesViable`. Generates a
+/// scale-4 biome cache over a `±rad/4` cell window centred on the
+/// `(x, y, z) >> 2` sample point and returns `true` iff every cell
+/// matches the `(valid_b, valid_m)` biome mask.
+fn are_biomes_viable_legacy(
+    g: &Generator,
+    x: i32,
+    y: i32,
+    z: i32,
+    rad: i32,
+    valid_b: u64,
+    valid_m: u64,
+) -> bool {
+    let x1 = (x - rad) >> 2;
+    let x2 = (x + rad) >> 2;
+    let sx = (x2 - x1 + 1) as u32;
+    let z1 = (z - rad) >> 2;
+    let z2 = (z + rad) >> 2;
+    let sz = (z2 - z1 + 1) as u32;
+    let y4 = (y - rad) >> 2;
+
+    // Check corners first (matches cubiomes — also a perf win since
+    // a corner mismatch saves the full cache allocation).
+    let corners = [(x1, z1), (x2, z2), (x1, z2), (x2, z1)];
+    for (cx, cz) in corners {
+        let id = g.biome_at(4, cx, y4, cz).0;
+        if id < 0 || !crate::finder::locate_biome::id_matches(id, valid_b, valid_m) {
+            return false;
+        }
+    }
+
+    // Full grid via the layered biome cache.
+    let r = Range {
+        scale: 4,
+        x: x1,
+        z: z1,
+        sx,
+        sz,
+        y: y4,
+        sy: 1,
+    };
+    let mut cache = vec![Biome::default(); r.cell_count()];
+    g.gen_biomes(&mut cache, r);
+    for c in cache.iter().take(r.cell_count()) {
+        let id = c.0;
+        if id < 0 || !crate::finder::locate_biome::id_matches(id, valid_b, valid_m) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Pre-1.18 Village viability. MC_1_15 exclusively uses the

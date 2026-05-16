@@ -51,6 +51,7 @@ fn fixture_path() -> PathBuf {
 fn mc_from_ord(ord: i32) -> MCVersion {
     match ord {
         10 => MCVersion::V1_7,
+        11 => MCVersion::V1_8,
         15 => MCVersion::V1_12,
         17 => MCVersion::V1_14,
         18 => MCVersion::V1_15,
