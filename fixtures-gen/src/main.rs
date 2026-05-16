@@ -32,6 +32,14 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         "verify" => verify_ffi(),
+        "debug-overworld" => {
+            for &(mc, id) in &[(17_i32, 40_i32), (17, 168), (17, 169), (17, 14), (17, 1)] {
+                let exists = unsafe { ffi::cubiomes_debug_biome_exists(mc, id) };
+                let overworld = unsafe { ffi::cubiomes_debug_is_overworld(mc, id) };
+                println!("mc={mc} id={id}: biomeExists={exists}, isOverworld={overworld}");
+            }
+            ExitCode::SUCCESS
+        }
         "debug-monument-cache" => debug_monument_cache(),
         "debug-mch-cache" => debug_mch_cache(),
         "debug-mch-scale" => debug_mch_scale(),
@@ -1159,6 +1167,10 @@ fn regenerate_layers() -> ExitCode {
     }
     if let Err(err) = write_gen_potential_fixture(&fixtures_dir.join("gen_potential.bin")) {
         eprintln!("gen_potential fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_biome_filter_fixture(&fixtures_dir.join("biome_filter.bin")) {
+        eprintln!("biome_filter fixture failed: {err}");
         return ExitCode::FAILURE;
     }
     if let Err(err) =
@@ -3917,6 +3929,95 @@ fn write_gen_potential_fixture(path: &Path) -> std::io::Result<()> {
         file.write_all(&biome.to_le_bytes())?;
         file.write_all(&m_l.to_le_bytes())?;
         file.write_all(&m_m.to_le_bytes())?;
+    }
+    file.flush()
+}
+
+/// `setupBiomeFilter` payload (kind = 92). Per-record:
+/// `mc_ord i32`, `flags u32`, `req_len i32`, `exc_len i32`,
+/// `any_len i32`, `req [i32; 8]`, `exc [i32; 8]`, `any [i32; 8]`,
+/// `masks [u64; 26]`, `special_cnt i32`, `out_flags u32`.
+fn write_biome_filter_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (i32, u32, Vec<i32>, Vec<i32>, Vec<i32>);
+    let cases: Vec<Case> = vec![
+        // Each case is (mc, flags, required, excluded, matchany).
+        (17, 0, vec![], vec![], vec![]),
+        // Single mushroom_fields required:
+        (17, 0, vec![14], vec![], vec![]),
+        // Plains + forest:
+        (17, 0, vec![1, 4], vec![], vec![]),
+        // Jungle variants (sets edges_to_find + bamboo bit):
+        (17, 0, vec![168, 169, 21], vec![], vec![]),
+        // Snowy taiga + frozen river:
+        (17, 0, vec![30, 11], vec![], vec![]),
+        // Deep ocean (without FORCE_OCEAN_VARIANTS):
+        (17, 0, vec![24], vec![], vec![]),
+        // Same with FORCE flag:
+        (17, 4, vec![24], vec![], vec![]),
+        // Excluded list with 1.17 (genPotential path active):
+        (17, 0, vec![], vec![0, 24], vec![]),
+        // matchany alone:
+        (17, 0, vec![], vec![], vec![14, 1]),
+        // matchany + required intersection:
+        (17, 0, vec![1], vec![], vec![14]),
+        // 1.6 (pre-1.7, skips genPotential excludes):
+        (10, 0, vec![1], vec![24], vec![]),
+        // 1.13 path with deep_warm_ocean:
+        (17, 0, vec![47], vec![], vec![]),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 92, total)?;
+    for (mc, flags, req, exc, any) in &cases {
+        let mut req8 = [0_i32; 8];
+        let mut exc8 = [0_i32; 8];
+        let mut any8 = [0_i32; 8];
+        for (i, &v) in req.iter().enumerate() {
+            req8[i] = v;
+        }
+        for (i, &v) in exc.iter().enumerate() {
+            exc8[i] = v;
+        }
+        for (i, &v) in any.iter().enumerate() {
+            any8[i] = v;
+        }
+        let mut masks = [0_u64; 26];
+        let mut special_cnt: c_int = 0;
+        let mut out_flags: u32 = 0;
+        unsafe {
+            ffi::cubiomes_call_setup_biome_filter(
+                *mc,
+                *flags,
+                req.as_ptr(),
+                req.len() as c_int,
+                exc.as_ptr(),
+                exc.len() as c_int,
+                any.as_ptr(),
+                any.len() as c_int,
+                masks.as_mut_ptr(),
+                std::ptr::from_mut(&mut special_cnt),
+                std::ptr::from_mut(&mut out_flags),
+            );
+        }
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&flags.to_le_bytes())?;
+        file.write_all(&(req.len() as i32).to_le_bytes())?;
+        file.write_all(&(exc.len() as i32).to_le_bytes())?;
+        file.write_all(&(any.len() as i32).to_le_bytes())?;
+        for v in req8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        for v in exc8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        for v in any8 {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        for v in masks {
+            file.write_all(&v.to_le_bytes())?;
+        }
+        file.write_all(&special_cnt.to_le_bytes())?;
+        file.write_all(&out_flags.to_le_bytes())?;
     }
     file.flush()
 }
@@ -7601,6 +7702,21 @@ mod ffi {
             biome_id: c_int,
             out_m_l: *mut u64,
             out_m_m: *mut u64,
+        );
+        pub fn cubiomes_debug_is_overworld(mc: c_int, id: c_int) -> c_int;
+        pub fn cubiomes_debug_biome_exists(mc: c_int, id: c_int) -> c_int;
+        pub fn cubiomes_call_setup_biome_filter(
+            mc: c_int,
+            flags: u32,
+            required: *const c_int,
+            required_len: c_int,
+            excluded: *const c_int,
+            excluded_len: c_int,
+            matchany: *const c_int,
+            matchany_len: c_int,
+            out_masks: *mut u64,
+            out_special_cnt: *mut c_int,
+            out_flags: *mut u32,
         );
         pub fn cubiomes_call_id_set_add(out_m_l: *mut u64, out_m_m: *mut u64, id: c_int);
         pub fn cubiomes_call_id_set_test(m_l: u64, m_m: u64, id: c_int) -> c_int;

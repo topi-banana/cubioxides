@@ -1216,6 +1216,50 @@ void cubiomes_call_gen_potential(int mc, int layer_id, uint32_t flags, int biome
     *out_m_m = mM;
 }
 
+int cubiomes_debug_is_overworld(int mc, int id) { return isOverworld(mc, id); }
+int cubiomes_debug_biome_exists(int mc, int id) { return biomeExists(mc, id); }
+
+/* setupBiomeFilter wrapper. Returns the entire BiomeFilter struct as
+ * a flat array of 29 u64 (28 mask fields + flags + special_cnt packed). */
+void cubiomes_call_setup_biome_filter(int mc, uint32_t flags,
+                                      const int *required, int required_len,
+                                      const int *excluded, int excluded_len,
+                                      const int *matchany, int matchany_len,
+                                      uint64_t *out_masks, int *out_special_cnt,
+                                      uint32_t *out_flags) {
+    BiomeFilter bf;
+    setupBiomeFilter(&bf, mc, flags, required, required_len, excluded,
+                     excluded_len, matchany, matchany_len);
+    out_masks[0]  = bf.tempsToFind;
+    out_masks[1]  = bf.otempToFind;
+    out_masks[2]  = bf.majorToFind;
+    out_masks[3]  = bf.edgesToFind;
+    out_masks[4]  = bf.raresToFind;
+    out_masks[5]  = bf.raresToFindM;
+    out_masks[6]  = bf.shoreToFind;
+    out_masks[7]  = bf.shoreToFindM;
+    out_masks[8]  = bf.riverToFind;
+    out_masks[9]  = bf.riverToFindM;
+    out_masks[10] = bf.oceanToFind;
+    out_masks[11] = bf.tempsToExcl;
+    out_masks[12] = bf.majorToExcl;
+    out_masks[13] = bf.edgesToExcl;
+    out_masks[14] = bf.raresToExcl;
+    out_masks[15] = bf.raresToExclM;
+    out_masks[16] = bf.shoreToExcl;
+    out_masks[17] = bf.shoreToExclM;
+    out_masks[18] = bf.riverToExcl;
+    out_masks[19] = bf.riverToExclM;
+    out_masks[20] = bf.biomeToExcl;
+    out_masks[21] = bf.biomeToExclM;
+    out_masks[22] = bf.biomeToFind;
+    out_masks[23] = bf.biomeToFindM;
+    out_masks[24] = bf.biomeToPick;
+    out_masks[25] = bf.biomeToPickM;
+    *out_special_cnt = bf.specialCnt;
+    *out_flags = bf.flags;
+}
+
 /* getPossibleBiomesForLimits wrapper: caller supplies the 6×2 limits
  * and a 256-byte output buffer. */
 void cubiomes_call_get_possible_biomes_for_limits(int mc, const int *limits12,
