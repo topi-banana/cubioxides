@@ -29,10 +29,17 @@ pub struct BiomeCenters {
     pub sizes: Vec<i32>,
 }
 
-/// Returns `None` for the pre-1.18 path (not yet ported). For
-/// 1.18+, scans the requested area to find every connected region
-/// of biome `match_id` whose area is at least `minsiz`, up to
-/// `nmax` centres.
+/// `getBiomeCenters(g, r, match_id, minsiz, tol, nmax)` —
+/// locate every connected region of biome `match_id` in the
+/// `r`-area whose cell count is at least `minsiz`, returning their
+/// centroids and sizes (up to `nmax` matches).
+///
+/// Supports any MC version where [`Generator::gen_biomes`] works
+/// (Beta + Layered 1.7-1.17 use a tile-scan + flood-fill that
+/// mirrors cubiomes' pre-1.18 path; 1.18+ uses the climate-axis
+/// pre-filter + flood-fill from cubiomes' Modern path). Returns
+/// `None` if there's no `BiomeNoise` populated when 1.18+ needs
+/// one.
 pub fn get_biome_centers(
     g: &mut Generator,
     r: Range,
@@ -41,57 +48,62 @@ pub fn get_biome_centers(
     tol: i32,
     nmax: usize,
 ) -> Option<BiomeCenters> {
-    if !g.mc.is_at_least(MCVersion::V1_18) {
-        return None;
-    }
     let minsiz = if minsiz <= 0 { 1 } else { minsiz };
     let tol_used = if tol <= 0 { 1 } else { tol };
     let sx = r.sx as i32;
     let sz = r.sz as i32;
     let mut ids: Vec<i32> = vec![-1; (sx as usize) * (sz as usize)];
     let mut step = tol_used;
-
-    let lim = get_biome_para_limits(g.mc, match_id);
-    let para: [usize; 5] = [
-        NP_TEMPERATURE,
-        NP_HUMIDITY,
-        NP_EROSION,
-        NP_CONTINENTALNESS,
-        NP_WEIRDNESS,
-    ];
     if tol == 1 {
         // cubiomes: step = 1 + floor(sqrt(minsiz) * 0.5)
         step = 1 + ((f64::from(minsiz).sqrt() * 0.5).floor() as i32);
     }
-    if let Some(lim) = lim {
-        let bn = g
-            .biome_noise
-            .as_ref()
-            .expect("BiomeNoise must be seeded for 1.18+ biome centers");
-        let mut j = 0_i32;
-        while j < sz {
-            let mut i = 0_i32;
-            while i < sx {
-                for &p in &para {
-                    let (plo, phi) = lim[p];
-                    if plo == i32::MIN && phi == i32::MAX {
-                        continue;
+
+    let effective_match;
+    if g.mc.is_at_least(MCVersion::V1_18) {
+        // 1.18+ path — climate-axis pre-filter.
+        let lim = get_biome_para_limits(g.mc, match_id);
+        let para: [usize; 5] = [
+            NP_TEMPERATURE,
+            NP_HUMIDITY,
+            NP_EROSION,
+            NP_CONTINENTALNESS,
+            NP_WEIRDNESS,
+        ];
+        if let Some(lim) = lim {
+            let bn = g
+                .biome_noise
+                .as_ref()
+                .expect("BiomeNoise must be seeded for 1.18+ biome centers");
+            let mut j = 0_i32;
+            while j < sz {
+                let mut i = 0_i32;
+                while i < sx {
+                    for &p in &para {
+                        let (plo, phi) = lim[p];
+                        if plo == i32::MIN && phi == i32::MAX {
+                            continue;
+                        }
+                        let dpn = &bn.climate[p];
+                        let px = f64::from(r.x + i) * f64::from(r.scale) / 4.0;
+                        let pz = f64::from(r.z + j) * f64::from(r.scale) / 4.0;
+                        let v = (10000.0 * dpn.sample(px, 0.0, pz)) as i32;
+                        if v < plo || v > phi {
+                            ids[(j as usize) * (sx as usize) + (i as usize)] = -2;
+                            break;
+                        }
                     }
-                    let dpn = &bn.climate[p];
-                    let px = f64::from(r.x + i) * f64::from(r.scale) / 4.0;
-                    let pz = f64::from(r.z + j) * f64::from(r.scale) / 4.0;
-                    let v = (10000.0 * dpn.sample(px, 0.0, pz)) as i32;
-                    if v < plo || v > phi {
-                        ids[(j as usize) * (sx as usize) + (i as usize)] = -2;
-                        break;
-                    }
+                    i += step;
                 }
-                i += step;
+                j += step;
             }
-            j += step;
         }
+        effective_match = -1;
+    } else {
+        // Pre-1.18 path — tile-scan via single-biome `check_for_biomes`.
+        scan_pre_118(g, &r, &mut ids, sx, sz, match_id);
+        effective_match = match_id;
     }
-    let effective_match = -1; // post-filter: candidates still have ids == -1
 
     g.apply_seed(Dimension::Overworld, g.seed);
 
@@ -119,6 +131,67 @@ pub fn get_biome_centers(
         j += step;
     }
     Some(centers)
+}
+
+/// Pre-1.18 tile scan — for each `ts × ts` tile in the area, run
+/// `gen_biomes` once and, if any cell matches `match_id`, copy the
+/// tile's biome ids into the global `ids` buffer. Cells in tiles
+/// that don't contain `match_id` stay at `-1`, which the outer
+/// flood-fill's `effective_match = match_id` check naturally
+/// rejects. Mirrors cubiomes' `getBiomeCenters` pre-1.18 branch.
+fn scan_pre_118(g: &mut Generator, r: &Range, ids: &mut [i32], sx: i32, sz: i32, match_id: i32) {
+    use crate::biome::Biome;
+    let ts: i32 = {
+        let mut t = 32 / r.scale.max(1);
+        if (r.sx as i32) + (r.sz as i32) < 32 {
+            t = 8;
+        }
+        t.max(1)
+    };
+    let tx = (f64::from(r.x) / f64::from(ts)).floor() as i32;
+    let tz = (f64::from(r.z) / f64::from(ts)).floor() as i32;
+    let tw = (f64::from(r.x + sx) / f64::from(ts)).ceil() as i32 - tx;
+    let th = (f64::from(r.z + sz) / f64::from(ts)).ceil() as i32 - tz;
+    let mut tile = vec![Biome(0); (ts as usize) * (ts as usize)];
+    for tj in 0..th {
+        for ti in 0..tw {
+            let tr = Range {
+                scale: r.scale,
+                x: (tx + ti) * ts,
+                z: (tz + tj) * ts,
+                sx: ts as u32,
+                sz: ts as u32,
+                y: 0,
+                sy: 1,
+            };
+            g.gen_biomes(&mut tile, tr);
+            // Single-biome filter: any cell == match_id means pass.
+            let mut pass = false;
+            for cell in &tile {
+                if cell.0 == match_id {
+                    pass = true;
+                    break;
+                }
+            }
+            if !pass {
+                continue;
+            }
+            for j in 0..ts {
+                let jj = tr.z + j - r.z;
+                if jj < 0 || jj >= sz {
+                    continue;
+                }
+                for i in 0..ts {
+                    let ii = tr.x + i - r.x;
+                    if ii < 0 || ii >= sx {
+                        continue;
+                    }
+                    ids[(jj as usize) * (sx as usize) + (ii as usize)] =
+                        tile[(j as usize) * (ts as usize) + (i as usize)].0;
+                }
+            }
+        }
+    }
 }
 
 #[allow(clippy::cast_lossless)]

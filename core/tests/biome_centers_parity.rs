@@ -37,6 +37,8 @@ fn read_u64(b: &[u8], off: usize) -> u64 {
 
 fn mc_from_ord(o: i32) -> MCVersion {
     match o {
+        17 => MCVersion::V1_14,
+        19 => MCVersion::V1_16_1,
         22 => MCVersion::V1_18,
         28 => MCVersion::V1_21,
         _ => panic!("unsupported mc ord {o}"),

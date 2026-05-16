@@ -4948,6 +4948,13 @@ fn write_biome_centers_fixture(path: &Path) -> std::io::Result<()> {
         (22, 0xdead_beef, 4, 0, 0, 0, 64, 1, 64, 1, 16, 1, 4),
         // 1.21 jungle (21).
         (28, 0xabcd_1234, 4, 0, 0, 0, 64, 1, 64, 21, 1, 1, 4),
+        // Pre-1.18 (1.16.1, ord 19) — Layered path via gen_biomes
+        // tile scan. Plains (1) over a 32-cell area at scale=4.
+        (19, 0xdead_beef, 4, 0, 0, 0, 32, 1, 32, 1, 1, 1, 8),
+        // 1.16.1 forest (4).
+        (19, 0xcafe_babe, 4, 0, 0, 0, 32, 1, 32, 4, 1, 1, 4),
+        // 1.14 ocean (0) at scale=4.
+        (17, 0xdead_beef, 4, -50, 0, -50, 32, 1, 32, 0, 1, 1, 4),
     ];
     let total = cases.len() as u64;
     let mut file = BufWriter::new(File::create(path)?);
