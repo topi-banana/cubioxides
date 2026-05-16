@@ -3175,8 +3175,15 @@ fn write_map_approx_height_fixture(path: &Path) -> std::io::Result<()> {
     //
     // V1_16_1 (ord 19) is now included after fixing the
     // `get_category_id` plateau threshold (stage 14d-3).
-    let combos: [(i32, i32); 7] =
-        [(10, 0), (19, 0), (22, 0), (28, 0), (17, 1), (22, 1), (22, -1)];
+    let combos: [(i32, i32); 7] = [
+        (10, 0),
+        (19, 0),
+        (22, 0),
+        (28, 0),
+        (17, 1),
+        (22, 1),
+        (22, -1),
+    ];
     let per_combo: u64 = 30;
     let (w, h) = (8_i32, 8_i32);
     let total = combos.len() as u64 * per_combo;
