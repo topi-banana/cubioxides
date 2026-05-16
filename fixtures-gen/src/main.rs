@@ -706,6 +706,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("search_all_48 fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_is_quad_base_fixture(&fixtures_dir.join("is_quad_base.bin")) {
+        eprintln!("is_quad_base fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2188,6 +2192,71 @@ pub struct EndIslandHeightRecord {
     pub y_max_bits: u32,
     pub digest: u32,
     pub pad: u32,
+}
+
+/// `isQuadBase` parity record (kind = 73). Tests the type
+/// dispatcher across (mc, struct_type, radius) combos for both the
+/// fast radius=128 path and the generic radius path.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct IsQuadBaseRecord {
+    pub mc: i32,
+    pub sty: i32,
+    pub radius: i32,
+    pub hit: i32,
+    pub seed: u64,
+    pub sqrad_bits: u32,
+    pub pad: u32,
+}
+
+fn write_is_quad_base_fixture(path: &Path) -> std::io::Result<()> {
+    // (mc, sty, radius) probes covering:
+    //   - Swamp_Hut radius=128 (fast path; already covered by
+    //     is_quad_base_feature_24 but exercised via the dispatcher)
+    //   - Swamp_Hut radius=160 (generic radius path)
+    //   - Outpost radius=160
+    //   - Desert_Pyramid radius=128
+    //   - Ocean_Ruin radius=128
+    let probes: &[(i32, i32, i32)] = &[
+        (22, 3, 128),  // V1_18 Swamp_Hut r=128
+        (22, 3, 160),  // V1_18 Swamp_Hut r=160 (generic)
+        (22, 10, 160), // V1_18 Outpost r=160
+        (22, 1, 128),  // V1_18 Desert_Pyramid r=128
+        (22, 6, 128),  // V1_18 Ocean_Ruin r=128
+    ];
+    let per_combo: u64 = 32;
+    let total = probes.len() as u64 * per_combo;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 73, total)?;
+
+    let mut rng_state: u64 = 0xface_5eed_b00b_face;
+    for &(mc, sty, radius) in probes {
+        for _ in 0..per_combo {
+            rng_state = lcg_step(rng_state);
+            let seed = rng_state & ((1u64 << 48) - 1);
+            let mut sqrad: f32 = 0.0;
+            let hit = unsafe {
+                ffi::cubiomes_call_is_quad_base(
+                    mc,
+                    sty,
+                    seed,
+                    radius,
+                    std::ptr::from_mut(&mut sqrad),
+                )
+            };
+            let rec = IsQuadBaseRecord {
+                mc,
+                sty,
+                radius,
+                hit,
+                seed,
+                sqrad_bits: sqrad.to_bits(),
+                pad: 0,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
 }
 
 /// `searchAll48` parity record (kind = 72). Each record covers a
@@ -5564,6 +5633,13 @@ mod ffi {
             h: c_int,
             out_xz: *mut c_int,
             n: c_int,
+        ) -> c_int;
+        pub fn cubiomes_call_is_quad_base(
+            mc: c_int,
+            sty: c_int,
+            seed: u64,
+            radius: c_int,
+            out_sqrad: *mut f32,
         ) -> c_int;
         pub fn cubiomes_call_search_all48_quad_hut(
             mc: c_int,

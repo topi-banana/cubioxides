@@ -6,6 +6,8 @@
 //! `searchAll48` to harvest quad-witch-hut candidates from 48-bit
 //! seed space.
 
+#![allow(clippy::doc_markdown, clippy::items_after_statements)]
+
 use super::{Pos, StructureConfig};
 
 /// Lower-20-bit "ideal" quad-structure constellations (cubiomes'
@@ -200,6 +202,104 @@ pub fn is_quad_base_feature_24(
 
     let radius = get_enclosing_radius(x0, z0, x1, z1, x2, z2, x3, z3, ax, ay, az, 32, 128);
     if radius < 128.0 { Some(radius) } else { None }
+}
+
+/// `isQuadBaseFeature(sconf, seed, ax, ay, az, radius)` — generic
+/// radius-parameterised quad-structure filter. Used for non-128
+/// radii or non-(R=32, C=24) configs (e.g., Outpost with
+/// `R=32, C=24`, Ocean_Ruin / Shipwreck at non-standard radii).
+///
+/// Returns `Some(sqrad)` on success, `None` otherwise.
+#[must_use]
+#[allow(clippy::many_single_char_names)]
+pub fn is_quad_base_feature(
+    sconf: StructureConfig,
+    seed: u64,
+    ax: i32,
+    ay: i32,
+    az: i32,
+    radius: i32,
+) -> Option<f32> {
+    let seed = seed.wrapping_add(sconf.salt as i64 as u64);
+    let s00 = seed;
+    let s11 = 341_873_128_712_u64
+        .wrapping_add(132_897_987_541)
+        .wrapping_add(seed);
+    const M: u64 = (1u64 << 48) - 1;
+    const B: u64 = 0xb;
+
+    let r = i32::from(sconf.region_size);
+    let c = i32::from(sconf.chunk_range);
+    let cd = radius / 8;
+    let rm = r - ((cd * cd - (r - c + 1) * (r - c + 1)) as f32).sqrt() as i32;
+
+    // Helper: step seed by one LCG iter, return next_int(C).
+    let step = |s: &mut u64| -> i32 {
+        *s = s.wrapping_mul(K).wrapping_add(B) & M;
+        ((*s >> 17) as i32) % c
+    };
+
+    let mut s = s00 ^ K;
+    let x0 = step(&mut s);
+    if x0 <= rm {
+        return None;
+    }
+    let z0 = step(&mut s);
+    if z0 <= rm {
+        return None;
+    }
+
+    let mut s = s11 ^ K;
+    let x1 = step(&mut s);
+    if x1 >= x0 - rm {
+        return None;
+    }
+    let z1 = step(&mut s);
+    if z1 >= z0 - rm {
+        return None;
+    }
+
+    let x = x1 + r - x0;
+    let z = z1 + r - z0;
+    if x * x + z * z > cd * cd {
+        return None;
+    }
+
+    let s01 = 341_873_128_712_u64.wrapping_add(seed);
+    let s10 = 132_897_987_541_u64.wrapping_add(seed);
+
+    let mut s = s01 ^ K;
+    let x2 = step(&mut s);
+    if x2 >= c - rm {
+        return None;
+    }
+    let z2 = step(&mut s);
+    if z2 <= rm {
+        return None;
+    }
+
+    let mut s = s10 ^ K;
+    let x3 = step(&mut s);
+    if x3 <= rm {
+        return None;
+    }
+    let z3 = step(&mut s);
+    if z3 >= c - rm {
+        return None;
+    }
+
+    let x = x2 + r - x3;
+    let z = z3 + r - z2;
+    if x * x + z * z > cd * cd {
+        return None;
+    }
+
+    let sqrad = get_enclosing_radius(x0, z0, x1, z1, x2, z2, x3, z3, ax, ay, az, r, radius);
+    if sqrad < radius as f32 {
+        Some(sqrad)
+    } else {
+        None
+    }
 }
 
 /// Cubiomes' static `getEnclosingRadius` — brute-force the optimal
@@ -486,13 +586,37 @@ pub fn is_quad_base(sconf: StructureConfig, seed: u64, radius: i32) -> Option<f3
         panic!("is_quad_base: unknown struct_type {}", sconf.struct_type);
     };
     match ty {
-        StructureType::SwampHut if radius == 128 => {
+        StructureType::SwampHut => {
             // Cubiomes' isQuadBase passes (7+1, 7+1, 9+1).
-            is_quad_base_feature_24(sconf, seed, 8, 8, 10)
+            if radius == 128 {
+                is_quad_base_feature_24(sconf, seed, 8, 8, 10)
+            } else {
+                is_quad_base_feature(sconf, seed, 8, 8, 10, radius)
+            }
+        }
+        StructureType::DesertPyramid
+        | StructureType::JungleTemple
+        | StructureType::Igloo
+        | StructureType::Village => {
+            // Cubiomes' note: "nothing special spawns here, why
+            // would you want these?" — kept for completeness.
+            if radius == 128 {
+                is_quad_base_feature_24(sconf, seed, 0, 0, 0)
+            } else {
+                is_quad_base_feature(sconf, seed, 0, 0, 0, radius)
+            }
+        }
+        StructureType::Outpost => {
+            // Outposts spawn 8 chunks apart so perfect quad-outposts
+            // don't exist; cubiomes still exposes the check.
+            is_quad_base_feature(sconf, seed, 72, 54, 72, radius)
+        }
+        StructureType::OceanRuin | StructureType::Shipwreck | StructureType::RuinedPortal => {
+            is_quad_base_feature(sconf, seed, 0, 0, 0, radius)
         }
         _ => {
             panic!(
-                "is_quad_base: only Swamp_Hut + radius=128 currently supported (got {ty:?}, r={radius})"
+                "is_quad_base: not implemented for structure type {ty:?} (cubiomes' isQuadBase prints an error and exits for these)"
             )
         }
     }

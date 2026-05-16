@@ -222,6 +222,17 @@ static int search_all_check_quad_hut(uint64_t s48, void *data) {
     return isQuadBase(ctx->sconf, s48, ctx->radius) ? 1 : 0;
 }
 
+int cubiomes_call_is_quad_base(int mc, int sty, uint64_t seed, int radius,
+                               float *out_sqrad) {
+    StructureConfig sc;
+    if (!getStructureConfig(sty, mc, &sc)) {
+        return 0;
+    }
+    float r = isQuadBase(sc, seed, radius);
+    *out_sqrad = r;
+    return r != 0.0f ? 1 : 0;
+}
+
 int cubiomes_call_search_all48_quad_hut(int mc, uint64_t start, uint64_t end,
                                         const uint64_t *low_bits,
                                         int low_bit_count, uint64_t *out_seeds,
