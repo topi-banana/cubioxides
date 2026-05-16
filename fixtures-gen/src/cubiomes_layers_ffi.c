@@ -511,6 +511,23 @@ void cubiomes_call_set_climate_para_seed(int mc, uint64_t init_seed,
     memcpy(out_bits, &v, sizeof(v));
 }
 
+/* sampleClimatePara wrapper for non-depth axes. Returns the sample
+ * as raw f64 bits + the i64 quantised value in np_quantized. */
+void cubiomes_call_sample_climate_para_axis(int mc, uint64_t seed, int large,
+                                            int nptype, int x, int z,
+                                            uint64_t *out_bits,
+                                            int64_t *np_quantized) {
+    BiomeNoise bn;
+    memset(&bn, 0, sizeof(bn));
+    initBiomeNoise(&bn, mc);
+    setBiomeSeed(&bn, seed, large);
+    bn.nptype = nptype;
+    int64_t np[6] = {0};
+    double v = sampleClimatePara(&bn, np, (double)x, (double)z);
+    memcpy(out_bits, &v, sizeof(v));
+    *np_quantized = np[nptype];
+}
+
 void cubiomes_call_map_continent(uint64_t start_seed, int *out, int x, int z,
                                  int w, int h) {
     Layer l;

@@ -204,6 +204,37 @@ impl BiomeNoise {
         (id, np)
     }
 
+    /// Sample a single climate axis at fractional `(x, z)` for `y =
+    /// 0`. Bit-exact port of cubiomes' `sampleClimatePara` for
+    /// non-depth axes (`nptype != NP_DEPTH`); for `NP_DEPTH` use
+    /// [`Self::sample_climate_para_depth`]. Returns the raw `f64`
+    /// sample. If `np_out` is `Some`, the quantised i64 value
+    /// (`(10000.0_f32 * sample as f32) as i64`) is written into
+    /// `np_out[nptype]`, matching cubiomes' side effect on the
+    /// optional `np` array.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `nptype` is `NP_DEPTH` — call the dedicated
+    /// `sample_climate_para_depth` instead.
+    pub fn sample_climate_para_axis(
+        &self,
+        nptype: usize,
+        x: f64,
+        z: f64,
+        np_out: Option<&mut [i64; NP_MAX]>,
+    ) -> f64 {
+        assert!(
+            nptype != NP_DEPTH,
+            "NP_DEPTH requires sample_climate_para_depth"
+        );
+        let p = self.climate[nptype].sample(x, 0.0, z);
+        if let Some(np) = np_out {
+            np[nptype] = (10000.0_f32 * p as f32) as i64;
+        }
+        p
+    }
+
     /// Sample the `NP_DEPTH` climate parameter at fractional `(x, z)`
     /// for `y = 0`. Bit-exact port of cubiomes' `sampleClimatePara`
     /// with `bn->nptype == NP_DEPTH`. Used by 1.18+

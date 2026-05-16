@@ -1244,6 +1244,12 @@ fn regenerate_layers() -> ExitCode {
         return ExitCode::FAILURE;
     }
     if let Err(err) =
+        write_sample_climate_para_axis_fixture(&fixtures_dir.join("sample_climate_para_axis.bin"))
+    {
+        eprintln!("sample_climate_para_axis fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
         eprintln!("viable_feature_biome fixture failed: {err}");
@@ -5182,6 +5188,59 @@ fn write_layer_for_scale_fixture(path: &Path) -> std::io::Result<()> {
     file.flush()
 }
 
+/// `sampleClimatePara` parity fixture for non-depth axes (kind = 103).
+/// Each record: `mc(i32) seed(u64) large(i32) nptype(i32) x(i32)
+/// z(i32) sample_bits(u64) np_quantized(i64)`. Layout = 4 + 8 + 4 +
+/// 4 + 4 + 4 + 8 + 8 = 44 bytes per record.
+fn write_sample_climate_para_axis_fixture(path: &Path) -> std::io::Result<()> {
+    // (mc, seed, large, nptype, x, z)
+    type Case = (i32, u64, i32, i32, i32, i32);
+    const NP_TEMPERATURE: i32 = 0;
+    const NP_HUMIDITY: i32 = 1;
+    const NP_CONTINENTALNESS: i32 = 2;
+    const NP_EROSION: i32 = 3;
+    const NP_WEIRDNESS: i32 = 5;
+    let cases: &[Case] = &[
+        (22, 0xdead_beef, 0, NP_TEMPERATURE, 0, 0),
+        (22, 0xdead_beef, 0, NP_TEMPERATURE, 100, 200),
+        (22, 0xdead_beef, 0, NP_HUMIDITY, 0, 0),
+        (22, 0xdead_beef, 0, NP_HUMIDITY, -50, 75),
+        (22, 0xdead_beef, 0, NP_CONTINENTALNESS, 0, 0),
+        (22, 0xdead_beef, 0, NP_EROSION, 12, -34),
+        (22, 0xdead_beef, 0, NP_WEIRDNESS, 0, 0),
+        (22, 0xdead_beef, 1, NP_TEMPERATURE, 0, 0),
+        (28, 0xabcd_0000, 0, NP_CONTINENTALNESS, 100, -100),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 103, total)?;
+    for &(mc, seed, large, nptype, x, z) in cases {
+        let mut out_bits: u64 = 0;
+        let mut np_q: i64 = 0;
+        unsafe {
+            ffi::cubiomes_call_sample_climate_para_axis(
+                mc,
+                seed,
+                large,
+                nptype,
+                x,
+                z,
+                &mut out_bits,
+                &mut np_q,
+            );
+        }
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&large.to_le_bytes())?;
+        file.write_all(&nptype.to_le_bytes())?;
+        file.write_all(&x.to_le_bytes())?;
+        file.write_all(&z.to_le_bytes())?;
+        file.write_all(&out_bits.to_le_bytes())?;
+        file.write_all(&np_q.to_le_bytes())?;
+    }
+    file.flush()
+}
+
 /// `inverf` parity record (kind = 97). Stored as f64 bits.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -8882,6 +8941,16 @@ mod ffi {
             sz: c_int,
         ) -> u64;
         pub fn cubiomes_call_get_layer_for_scale(mc: c_int, scale: c_int) -> c_int;
+        pub fn cubiomes_call_sample_climate_para_axis(
+            mc: c_int,
+            seed: u64,
+            large: c_int,
+            nptype: c_int,
+            x: c_int,
+            z: c_int,
+            out_bits: *mut u64,
+            np_quantized: *mut i64,
+        );
         pub fn cubiomes_call_check_for_temps(
             mc: c_int,
             seed: u64,
