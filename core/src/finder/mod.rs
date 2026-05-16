@@ -14,15 +14,19 @@
     clippy::enum_glob_use
 )]
 
+pub mod end;
 pub mod locate_biome;
 pub mod mineshaft;
+pub mod population_seed;
 pub mod quadbase;
 pub mod slime;
 pub mod spawn;
 pub mod stronghold;
 
+pub use end::{EndIsland, get_end_islands};
 pub use locate_biome::{id_matches, locate_biome};
 pub use mineshaft::get_mineshafts;
+pub use population_seed::get_population_seed;
 pub use quadbase::{
     LOW20_QUAD_CLASSIC, LOW20_QUAD_HUT_BARELY, LOW20_QUAD_HUT_NORMAL, LOW20_QUAD_IDEAL, QuadHutCst,
     get_quad_hut_cst, is_quad_base_feature_24, is_quad_base_feature_24_classic,
@@ -314,9 +318,23 @@ pub fn get_structure_config(ty: StructureType, mc: MCVersion) -> Option<Structur
             }
             cfg(94251327, 34, 22, TrialChambers, 0, 0.0)
         }
+        EndIsland => {
+            // cubiomes: `return mc >= MC_1_13` (decorator features
+            // are only supported from 1.13+).
+            if !mc.is_at_least(MCVersion::V1_13) {
+                return None;
+            }
+            if mc.is_at_least(MCVersion::V1_17) {
+                // s_end_island = { 0, 1, 1, End_Island, DIM_END, 1.f/14 }
+                cfg(0, 1, 1, EndIsland, 1, 1.0_f32 / 14.0)
+            } else {
+                // s_end_island_116 = { 0, 1, 1, End_Island, DIM_END, 14 }
+                cfg(0, 1, 1, EndIsland, 1, 14.0)
+            }
+        }
         // Mineshaft / Bastion 1.18+ / decorator features (DesertWell,
-        // Geode, EndGateway, EndIsland) land in follow-ups.
-        Mineshaft | DesertWell | Geode | EndGateway | EndIsland => return None,
+        // Geode, EndGateway) land in follow-ups.
+        Mineshaft | DesertWell | Geode | EndGateway => return None,
     };
     Some(cfg)
 }

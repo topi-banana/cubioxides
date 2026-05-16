@@ -631,6 +631,14 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("estimate_spawn fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_population_seed_fixture(&fixtures_dir.join("population_seed.bin")) {
+        eprintln!("population_seed fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
+    if let Err(err) = write_end_islands_fixture(&fixtures_dir.join("end_islands.bin")) {
+        eprintln!("end_islands fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     println!("Wrote layer fixtures into {}", fixtures_dir.display());
     ExitCode::SUCCESS
 }
@@ -2020,6 +2028,113 @@ fn write_spawn_fixture(path: &Path) -> std::io::Result<()> {
                 seed,
                 spawn_x: px,
                 spawn_z: pz,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
+}
+
+/// `getPopulationSeed` parity record (kind = 56). Captures the 3-way
+/// MC dispatch: pre-1.13 (`/2*2+1`), 1.13–1.17 (`|1`, Java RNG),
+/// 1.18+ (`|1`, Xoroshiro). Pre-1.13 path is gated behind a separate
+/// MC pool because cubiomes does not support `getEndIslands` there.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct PopulationSeedRecord {
+    pub mc: i32,
+    pub x: i32,
+    pub z: i32,
+    pub pad: i32,
+    pub ws: u64,
+    pub pop_seed: u64,
+}
+
+fn write_population_seed_fixture(path: &Path) -> std::io::Result<()> {
+    // mc_pool spans every dispatch leg of getPopulationSeed:
+    // - 8 (V1_12): pre-1.13 `/2*2+1` path, Java RNG
+    // - 17 (V1_13): 1.13–1.17 `|1` path, Java RNG
+    // - 21 (V1_17): same Java-RNG path
+    // - 22 (V1_18): 1.18+ Xoroshiro path
+    // - 28 (V1_21): same Xoroshiro path, modern WD btree
+    let mc_pool: [i32; 5] = [8, 17, 21, 22, 28];
+    let per_mc: u64 = 500;
+    let total = mc_pool.len() as u64 * per_mc;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 56, total)?;
+
+    let mut rng_state: u64 = 0x0123_4567_89ab_cdef;
+    for &mc in &mc_pool {
+        for _ in 0..per_mc {
+            rng_state = lcg_step(rng_state);
+            let ws = rng_state;
+            rng_state = lcg_step(rng_state);
+            // Range chunk coordinates -32..32 (block coords -512..512).
+            let x = ((rng_state >> 32) as i32) % 1024 - 512;
+            rng_state = lcg_step(rng_state);
+            let z = ((rng_state >> 32) as i32) % 1024 - 512;
+            let pop_seed = unsafe { ffi::cubiomes_call_get_population_seed(mc, ws, x, z) };
+            let rec = PopulationSeedRecord {
+                mc,
+                x,
+                z,
+                pad: 0,
+                ws,
+                pop_seed,
+            };
+            file.write_all(bytemuck::bytes_of(&rec))?;
+        }
+    }
+    file.flush()
+}
+
+/// `getEndIslands` parity record (kind = 57). One record per
+/// `(mc, seed, chunk_x, chunk_z)` capturing the (0, 1, or 2) island
+/// centres and radii.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct EndIslandsRecord {
+    pub mc: i32,
+    pub chunk_x: i32,
+    pub chunk_z: i32,
+    pub n: i32,
+    pub seed: u64,
+    /// `[x0, y0, z0, r0, x1, y1, z1, r1]`. Unused slots are zero.
+    pub islands: [i32; 8],
+}
+
+fn write_end_islands_fixture(path: &Path) -> std::io::Result<()> {
+    // mc_pool covers each version dispatch of getEndIslands:
+    // - 17 (V1_13): integer-rarity, Java RNG, 1-in-14 hit rate
+    // - 20 (V1_16): same integer-rarity branch as V1_13
+    // - 21 (V1_17): float-rarity 1/14, Java RNG, 2nd island via nextInt(4)==0
+    // - 22 (V1_18): Xoroshiro, 2nd island via xNextIntJ(4)==3
+    // - 28 (V1_21): same Xoroshiro path on the modern btree.
+    let mc_pool: [i32; 5] = [17, 20, 21, 22, 28];
+    let per_mc: u64 = 2000;
+    let total = mc_pool.len() as u64 * per_mc;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 57, total)?;
+
+    let mut rng_state: u64 = 0x55a1_7e51_5e91_dead;
+    for &mc in &mc_pool {
+        for _ in 0..per_mc {
+            rng_state = lcg_step(rng_state);
+            let seed = rng_state;
+            rng_state = lcg_step(rng_state);
+            let cx = ((rng_state >> 32) as i32) % 256 - 128;
+            rng_state = lcg_step(rng_state);
+            let cz = ((rng_state >> 32) as i32) % 256 - 128;
+            let mut buf = [0_i32; 8];
+            let n =
+                unsafe { ffi::cubiomes_call_get_end_islands(mc, seed, cx, cz, buf.as_mut_ptr()) };
+            let rec = EndIslandsRecord {
+                mc,
+                chunk_x: cx,
+                chunk_z: cz,
+                n,
+                seed,
+                islands: buf,
             };
             file.write_all(bytemuck::bytes_of(&rec))?;
         }
@@ -4184,6 +4299,14 @@ mod ffi {
             out_xz: *mut c_int,
         );
         pub fn cubiomes_call_estimate_spawn(mc: c_int, seed: u64, px: *mut c_int, pz: *mut c_int);
+        pub fn cubiomes_call_get_population_seed(mc: c_int, ws: u64, x: c_int, z: c_int) -> u64;
+        pub fn cubiomes_call_get_end_islands(
+            mc: c_int,
+            seed: u64,
+            chunk_x: c_int,
+            chunk_z: c_int,
+            out_xyzr: *mut c_int,
+        ) -> c_int;
         pub fn cubiomes_call_get_mineshafts(
             mc: c_int,
             seed: u64,

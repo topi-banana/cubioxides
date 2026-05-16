@@ -110,6 +110,29 @@ void cubiomes_call_estimate_spawn(int mc, uint64_t seed, int *px, int *pz) {
     *pz = p.z;
 }
 
+#include "finders.h"
+
+/* getPopulationSeed is defined in finders.c but not exported via the
+ * cubiomes public header; forward-declare it locally. */
+extern uint64_t getPopulationSeed(int mc, uint64_t ws, int x, int z);
+
+uint64_t cubiomes_call_get_population_seed(int mc, uint64_t ws, int x, int z) {
+    return getPopulationSeed(mc, ws, x, z);
+}
+
+int cubiomes_call_get_end_islands(int mc, uint64_t seed, int chunk_x,
+                                  int chunk_z, int *out_xyzr) {
+    EndIsland is[2];
+    int n = getEndIslands(is, mc, seed, chunk_x, chunk_z);
+    for (int i = 0; i < n; i++) {
+        out_xyzr[i * 4 + 0] = is[i].x;
+        out_xyzr[i * 4 + 1] = is[i].y;
+        out_xyzr[i * 4 + 2] = is[i].z;
+        out_xyzr[i * 4 + 3] = is[i].r;
+    }
+    return n;
+}
+
 void cubiomes_call_nth_strongholds(int mc, uint64_t seed, int n_steps,
                                    int *out_xz) {
     Generator g;
