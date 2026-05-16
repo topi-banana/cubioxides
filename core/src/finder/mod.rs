@@ -612,6 +612,22 @@ pub fn get_large_structure_pos(config: StructureConfig, seed: u64, reg_x: i32, r
 ///
 /// The transform is `setSeed(s ^ (cx >> 4) ^ ((cz >> 4) << 4))`
 /// followed by a single discarded `next(31)` advance.
+///
+/// # Example
+///
+/// ```
+/// use cubioxides::finder::set_attempt_seed;
+///
+/// // The chunk-attempt RNG used by Outpost / pre-1.16.1 Fortress /
+/// // Stronghold checks. Same inputs always yield the same RNG state;
+/// // the >>4 shift means cx values within the same 16-chunk region
+/// // collapse to one bucket.
+/// let a = set_attempt_seed(0xdead_beef, 0, 0);
+/// let b = set_attempt_seed(0xdead_beef, 15, 0);
+/// assert_eq!(a, b, "0..=15 share the same >> 4 bucket");
+/// let c = set_attempt_seed(0xdead_beef, 16, 0);
+/// assert_ne!(a, c, "cx=16 lands in a different bucket");
+/// ```
 #[must_use]
 pub fn set_attempt_seed(s: u64, cx: i32, cz: i32) -> JavaRng {
     let value = s ^ ((cx >> 4) as i64 as u64) ^ (((cz >> 4) as i64 as u64) << 4);
