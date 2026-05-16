@@ -1213,6 +1213,10 @@ fn regenerate_layers() -> ExitCode {
         eprintln!("beta_gen_biomes fixture failed: {err}");
         return ExitCode::FAILURE;
     }
+    if let Err(err) = write_voronoi_biomes_fixture(&fixtures_dir.join("voronoi_biomes.bin")) {
+        eprintln!("voronoi_biomes fixture failed: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Err(err) =
         write_viable_feature_biome_fixture(&fixtures_dir.join("viable_feature_biome.bin"))
     {
@@ -4728,6 +4732,61 @@ fn write_beta_gen_biomes_fixture(path: &Path) -> std::io::Result<()> {
         file.write_all(&rx.to_le_bytes())?;
         file.write_all(&rz.to_le_bytes())?;
         file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sz.to_le_bytes())?;
+        file.write_all(&err.to_le_bytes())?;
+        for id in &ids {
+            file.write_all(&id.to_le_bytes())?;
+        }
+    }
+    file.flush()
+}
+
+/// `genBiomes` scale=1 voronoi payload (kind = 82). Per-record:
+/// `mc i32, seed u64, rx i32, ry i32, rz i32, sx i32, sy i32, sz i32,
+///  err i32, ids[sx*sy*sz]`.
+fn write_voronoi_biomes_fixture(path: &Path) -> std::io::Result<()> {
+    type Case = (i32, u64, i32, i32, i32, i32, i32, i32);
+    let cases: &[Case] = &[
+        // (mc, seed, rx, ry, rz, sx, sy, sz)
+        // Tiny 1x1x1 (single voronoi sample).
+        (22, 0xdead_beef, 100, 64, 100, 1, 1, 1),
+        // 4x4x1 — engages the src-range cache.
+        (22, 0xdead_beef, 0, 64, 0, 4, 1, 4),
+        // 8x1x8 slice at y=80.
+        (22, 0xcafe_babe, 0, 80, 0, 8, 1, 8),
+        // 1.21 weirdness.
+        (28, 0xabcd_1234, 0, 64, 0, 4, 1, 4),
+        // Off-origin negative coords.
+        (22, 0xdead_beef, -16, 64, -16, 8, 1, 8),
+        // sy>1 vertical stack.
+        (22, 0xdead_beef, 0, 60, 0, 4, 4, 4),
+    ];
+    let total = cases.len() as u64;
+    let mut file = BufWriter::new(File::create(path)?);
+    write_header(&mut file, 82, total)?;
+    for &(mc, seed, rx, ry, rz, sx, sy, sz) in cases {
+        let n = (sx * sy * sz) as usize;
+        let mut ids = vec![0_i32; n];
+        let err = unsafe {
+            ffi::cubiomes_call_gen_voronoi_biomes(
+                mc,
+                seed,
+                rx,
+                ry,
+                rz,
+                sx,
+                sy,
+                sz,
+                ids.as_mut_ptr(),
+            )
+        };
+        file.write_all(&mc.to_le_bytes())?;
+        file.write_all(&seed.to_le_bytes())?;
+        file.write_all(&rx.to_le_bytes())?;
+        file.write_all(&ry.to_le_bytes())?;
+        file.write_all(&rz.to_le_bytes())?;
+        file.write_all(&sx.to_le_bytes())?;
+        file.write_all(&sy.to_le_bytes())?;
         file.write_all(&sz.to_le_bytes())?;
         file.write_all(&err.to_le_bytes())?;
         for id in &ids {
@@ -8462,6 +8521,17 @@ mod ffi {
             cz: c_int,
             out64: *mut c_int,
         );
+        pub fn cubiomes_call_gen_voronoi_biomes(
+            mc: c_int,
+            seed: u64,
+            rx: c_int,
+            ry: c_int,
+            rz: c_int,
+            sx: c_int,
+            sy: c_int,
+            sz: c_int,
+            out: *mut c_int,
+        ) -> c_int;
         pub fn cubiomes_call_gen_beta_biomes(
             mc: c_int,
             seed: u64,

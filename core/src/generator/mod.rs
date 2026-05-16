@@ -350,12 +350,11 @@ impl Generator {
             }
             OverworldKind::Modern => {
                 let bn = self.biome_noise.as_ref().expect("BiomeNoise seeded");
-                assert!(
-                    r.scale >= 4,
-                    "Generator::gen_biomes: Modern requires scale >= 4 (got {})",
-                    r.scale
-                );
-                gen_biome_noise_3d(bn, cache, r, r.scale > 4);
+                if r.scale == 1 {
+                    gen_biome_noise_voronoi(bn, cache, r, self.sha);
+                } else {
+                    gen_biome_noise_3d(bn, cache, r, r.scale > 4);
+                }
             }
             OverworldKind::Beta => {
                 let bnb = self
@@ -435,6 +434,90 @@ impl Generator {
 /// `(r.x + i) * (scale / 4) + scale/8`. `opt` enables the
 /// `SAMPLE_NO_SHIFT` fast-path for large scales (cubiomes' own
 /// optimisation — its caller passes `scale > 4`).
+/// Bit-exact port of cubiomes' `getVoronoiSrcRange`. Expects
+/// `r.scale == 1`; returns a scale-4 range covering the area the
+/// voronoi access-pattern can possibly read from.
+#[must_use]
+fn get_voronoi_src_range(r: Range) -> Range {
+    assert!(r.scale == 1, "get_voronoi_src_range: scale must be 1");
+    let tx = r.x - 2;
+    let tz = r.z - 2;
+    let sx = ((tx + r.sx as i32) >> 2) - (tx >> 2) + 2;
+    let sz = ((tz + r.sz as i32) >> 2) - (tz >> 2) + 2;
+    let (y, sy) = if r.sy < 1 {
+        (0_i32, 0_u32)
+    } else {
+        let ty = r.y - 2;
+        let y = ty >> 2;
+        let sy = ((ty + r.sy as i32) >> 2) - y + 2;
+        (y, sy as u32)
+    };
+    Range {
+        scale: 4,
+        x: tx >> 2,
+        z: tz >> 2,
+        sx: sx as u32,
+        sz: sz as u32,
+        y,
+        sy,
+    }
+}
+
+/// `genBiomeNoiseScaled(bn, out, r, sha)` for `r.scale == 1` —
+/// voronoi-access at block scale. When the requested cell count
+/// is greater than 1, we pre-compute the scale-4 source via
+/// [`gen_biome_noise_3d`] so each voronoi sample becomes a single
+/// cache lookup; otherwise each cell is sampled directly via
+/// [`BiomeNoise::sample`].
+fn gen_biome_noise_voronoi(bn: &BiomeNoise, cache: &mut [Biome], r: Range, sha: u64) {
+    let sx = r.sx as usize;
+    let sy = r.sy as usize;
+    let sz = r.sz as usize;
+    let area = sx * sy * sz;
+    if area > 1 {
+        let s = get_voronoi_src_range(r);
+        let src_len = (s.sx as usize) * (s.sy as usize) * (s.sz as usize);
+        let mut src: Vec<Biome> = vec![Biome(0); src_len];
+        gen_biome_noise_3d(bn, &mut src, s, false);
+        let mut p = 0_usize;
+        for k in 0..sy {
+            for j in 0..sz {
+                for i in 0..sx {
+                    let (x4, y4, z4) = crate::layer::ops::voronoi::voronoi_access_3d(
+                        sha,
+                        r.x + i as i32,
+                        r.y + k as i32,
+                        r.z + j as i32,
+                    );
+                    let lx = (x4 - s.x) as usize;
+                    let ly = (y4 - s.y) as usize;
+                    let lz = (z4 - s.z) as usize;
+                    cache[p] =
+                        src[ly * (s.sx as usize) * (s.sz as usize) + lz * (s.sx as usize) + lx];
+                    p += 1;
+                }
+            }
+        }
+    } else {
+        let mut p = 0_usize;
+        for k in 0..sy {
+            for j in 0..sz {
+                for i in 0..sx {
+                    let (x4, y4, z4) = crate::layer::ops::voronoi::voronoi_access_3d(
+                        sha,
+                        r.x + i as i32,
+                        r.y + k as i32,
+                        r.z + j as i32,
+                    );
+                    let (id, _) = bn.sample(x4, y4, z4, 0);
+                    cache[p] = Biome(id);
+                    p += 1;
+                }
+            }
+        }
+    }
+}
+
 fn gen_biome_noise_3d(bn: &BiomeNoise, cache: &mut [Biome], r: Range, opt: bool) {
     let scale = if r.scale > 4 { r.scale / 4 } else { 1 };
     let mid = scale / 2;
